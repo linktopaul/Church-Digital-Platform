@@ -1,0 +1,65 @@
+name: "Dispatch Next PBI to Jules After Merge"
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  dispatch-next-pbi:
+    name: Label the next ready PBI for Jules
+    if: github.event.pull_request.merged == true
+    permissions:
+      issues: write
+      pull-requests: read
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find next sequential PBI and notify Jules
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pull = context.payload.pull_request;
+            const source = `${pull.title}\n${pull.body || ''}`;
+            const completedMatch = source.match(/(?:PBI\s*#\s*|Module\s+)(\d+)/i);
+
+            if (!completedMatch) {
+              core.setFailed(`Could not identify the completed PBI number from PR #${pull.number}; no issue was labeled.`);
+              return;
+            }
+
+            const completedPbi = Number(completedMatch[1]);
+            const openIssues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100
+            });
+
+            const nextIssue = openIssues
+              .filter(issue => {
+                if (issue.pull_request) return false;
+                const pbiMatch = issue.title.match(/^\[PBI\s*#\s*(\d+)\]/i);
+                if (!pbiMatch || Number(pbiMatch[1]) <= completedPbi) return false;
+                const labels = issue.labels.map(label => label.name.toLowerCase());
+                return labels.includes('ready-for-dev') && !labels.includes('jules');
+              })
+              .sort((a, b) => {
+                const aPbi = Number(a.title.match(/^\[PBI\s*#\s*(\d+)\]/i)[1]);
+                const bPbi = Number(b.title.match(/^\[PBI\s*#\s*(\d+)\]/i)[1]);
+                return aPbi - bPbi;
+              })[0];
+
+            if (!nextIssue) {
+              core.info(`No unassigned ready-for-dev PBI follows PBI #${completedPbi}.`);
+              return;
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: nextIssue.number,
+              labels: ['jules']
+            });
+            core.info(`Applied the jules label to Issue #${nextIssue.number} (${nextIssue.title}). Jules will be notified by the label.`);
