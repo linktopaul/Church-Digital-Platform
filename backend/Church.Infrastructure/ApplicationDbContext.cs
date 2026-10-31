@@ -14,6 +14,7 @@ namespace Church.Infrastructure
         }
 
         public DbSet<Tenant> Tenants { get; set; }
+        public DbSet<Announcement> Announcements { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -27,6 +28,25 @@ namespace Church.Infrastructure
                 entity.Property(e => e.Slug).IsRequired().HasMaxLength(100);
                 entity.HasIndex(e => e.Slug).IsUnique();
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
+            });
+
+            // Configure Announcement entity
+            modelBuilder.Entity<Announcement>(entity =>
+            {
+                entity.ToTable("Announcements");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("church_id").IsRequired();
+                entity.Ignore(e => e.ChurchId);
+                entity.Property(e => e.AuthorId).HasColumnName("author_id").IsRequired();
+                entity.Property(e => e.Title).HasColumnName("title").IsRequired().HasMaxLength(255);
+                entity.Property(e => e.Content).HasColumnName("content").IsRequired();
+                entity.Property(e => e.Priority).HasColumnName("priority").HasConversion<string>().IsRequired();
+                entity.Property(e => e.PublishedAt).HasColumnName("published_at").IsRequired();
+                entity.Property(e => e.ExpiresAt).HasColumnName("expires_at");
+
+                entity.HasIndex(e => e.TenantId);
+                entity.HasIndex(e => e.PublishedAt);
             });
 
             // Apply multi-tenancy filter to all entities implementing IMultiTenantEntity
