@@ -74,6 +74,7 @@ namespace Church.Tests
         {
             // Given an authenticated church member
             var churchId = Guid.NewGuid();
+            var memberId = Guid.NewGuid();
             var authorId = Guid.NewGuid();
 
             var announcement1 = new Announcement
@@ -114,6 +115,7 @@ namespace Church.Tests
             var client = _factory.CreateClient();
             client.DefaultRequestHeaders.Add("X-User-Role", "Member");
             client.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
+            client.DefaultRequestHeaders.Add("X-User-Id", memberId.ToString());
 
             // When the announcement list loads (GET /api/v1/announcements)
             var response = await client.GetAsync("/api/v1/announcements");
@@ -145,9 +147,11 @@ namespace Church.Tests
         {
             // Given a standard church member
             var churchId = Guid.NewGuid();
+            var memberId = Guid.NewGuid();
             var client = _factory.CreateClient();
             client.DefaultRequestHeaders.Add("X-User-Role", "Member");
             client.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
+            client.DefaultRequestHeaders.Add("X-User-Id", memberId.ToString());
 
             var payload = new CreateAnnouncementRequest(
                 Title: "Member unauthorized announcement",
@@ -223,6 +227,7 @@ namespace Church.Tests
         {
             var church1 = Guid.NewGuid();
             var church2 = Guid.NewGuid();
+            var memberId = Guid.NewGuid();
 
             SeedAnnouncements(church1, new List<Announcement>
             {
@@ -255,6 +260,7 @@ namespace Church.Tests
             var client1 = _factory.CreateClient();
             client1.DefaultRequestHeaders.Add("X-User-Role", "Member");
             client1.DefaultRequestHeaders.Add("X-Tenant-Id", church1.ToString());
+            client1.DefaultRequestHeaders.Add("X-User-Id", memberId.ToString());
 
             var response1 = await client1.GetAsync("/api/v1/announcements");
             var announcements1 = await response1.Content.ReadFromJsonAsync<List<AnnouncementResponse>>();

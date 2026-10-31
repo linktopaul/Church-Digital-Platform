@@ -68,11 +68,14 @@ namespace Church.Tests
         public async Task AdminsAndMembers_CannotViewOrUpdateAllRequests_Returns403()
         {
             var churchId = Guid.NewGuid();
+            var adminId = Guid.NewGuid();
+            var memberId = Guid.NewGuid();
 
             // Test Admin
             var adminClient = _factory.CreateClient();
             adminClient.DefaultRequestHeaders.Add("X-User-Role", "Admin");
             adminClient.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
+            adminClient.DefaultRequestHeaders.Add("X-User-Id", adminId.ToString());
 
             var getResponseAdmin = await adminClient.GetAsync("/api/v1/prayer-requests");
             Assert.Equal(HttpStatusCode.Forbidden, getResponseAdmin.StatusCode);
@@ -84,6 +87,7 @@ namespace Church.Tests
             var memberClient = _factory.CreateClient();
             memberClient.DefaultRequestHeaders.Add("X-User-Role", "Member");
             memberClient.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
+            memberClient.DefaultRequestHeaders.Add("X-User-Id", memberId.ToString());
 
             var getResponseMember = await memberClient.GetAsync("/api/v1/prayer-requests");
             Assert.Equal(HttpStatusCode.Forbidden, getResponseMember.StatusCode);
@@ -115,6 +119,7 @@ namespace Church.Tests
             var pastorClient = _factory.CreateClient();
             pastorClient.DefaultRequestHeaders.Add("X-User-Role", "Pastor");
             pastorClient.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
+            pastorClient.DefaultRequestHeaders.Add("X-User-Id", memberId.ToString());
 
             // View all
             var getResponse = await pastorClient.GetAsync("/api/v1/prayer-requests");
