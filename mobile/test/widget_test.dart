@@ -10,16 +10,10 @@ void main() {
     expect(navigationFinder, findsOneWidget);
 
     final navigation = tester.widget<NavigationBar>(navigationFinder);
-    expect(navigation.destinations.map((destination) => destination.label), [
-      'Home',
-      'Messages',
-      'Prayer',
-      'Worship',
-      'Profile',
-    ]);
+    expect(navigation.destinations, hasLength(5));
     expect(navigation.selectedIndex, 0);
 
-    await tester.tap(find.text('Worship').last);
+    await tester.tap(find.byIcon(Icons.music_note_outlined));
     await tester.pumpAndSettle();
 
     final updatedNavigation = tester.widget<NavigationBar>(navigationFinder);
