@@ -2,6 +2,7 @@ name: "Agent: Product Backlog Architect"
 
 on:
   push:
+    branches: [main]
     paths:
       - ".github/product_roadmap.md"
   workflow_dispatch:
@@ -14,17 +15,53 @@ jobs:
   generate-backlog:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: Check out roadmap
         uses: actions/checkout@v4
 
-      - name: Run Gemini Backlog Generator
-        uses: google-github-actions/run-gemini-cli@v1
+      - name: Ensure ready-for-dev label exists
+        uses: actions/github-script@v7
         with:
-          api-key: ${{ secrets.GEMINI_API_KEY }}
+          script: |
+            const name = 'ready-for-dev';
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name
+              });
+              core.info(`Label "${name}" already exists.`);
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name,
+                color: '0E8A16',
+                description: 'Roadmap PBI ready for development'
+              });
+              core.info(`Created label "${name}".`);
+            }
+
+      - name: Generate missing roadmap PBIs
+        uses: google-github-actions/run-gemini-cli@v0
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
           prompt: |
-            Read the contents of '.github/product_roadmap.md'.
-            Compare it against existing GitHub issues.
-            For each roadmap module that doesn't have an issue yet:
-            1. Deconstruct it into ready-for-development Product Backlog Items (PBIs).
-            2. Format each with: User Story, Gherkin Acceptance Criteria, Technical Constraints (Multi-tenant church_id check, RBAC roles), and Target Deliverables.
-            3. Use the GitHub REST API to automatically create each Issue with label 'ready-for-dev'.
+            Read and parse every module in .github/product_roadmap.md.
+            Compare the module numbers and scope with existing repository issues,
+            and create issues only for roadmap work that is not already represented.
+            Do not create duplicate issues.
+
+            For each missing module, create one or more standard GitHub PBI issues.
+            Use titles in the form "[PBI #<module>.<item>]: <concise task title>".
+            Each issue body must contain these headings and content:
+            - User Story
+            - Gherkin Acceptance Criteria
+            - Technical Constraints, including church_id tenant isolation and RBAC roles where relevant
+            - Target Deliverables
+
+            Apply the ready-for-dev label to every created issue. Use the GitHub CLI
+            or GitHub REST API with the provided token. Preserve existing issues and
+            do not edit, close, or delete unrelated issues.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
