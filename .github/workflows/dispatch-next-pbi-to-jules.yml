@@ -8,28 +8,56 @@ permissions: {}
 
 jobs:
   dispatch-next-pbi:
-    name: Label the next ready PBI for Jules
-    if: github.event.pull_request.merged == true && (contains(github.event.pull_request.title, 'PBI #') || contains(github.event.pull_request.body, 'Implemented Module '))
+    name: Label the next eligible PBI for Jules
+    if: github.event.pull_request.merged == true
     permissions:
       issues: write
       pull-requests: read
       contents: read
     runs-on: ubuntu-latest
     steps:
-      - name: Find next sequential PBI and notify Jules
+      - name: Find the completed PBI and dispatch the next eligible PBI
         uses: actions/github-script@v7
         with:
           script: |
             const pull = context.payload.pull_request;
             const source = `${pull.title}\n${pull.body || ''}`;
-            const completedMatch = source.match(/(?:PBI\s*#\s*|Module\s+)(\d+)/i);
+            const closingRefs = [...source.matchAll(/\b(?:close[sd]?|fix(?:es|ed)?|resolve[sd]?)\s+(?:[\w-]+\/[\w.-]+)?#(\d+)/gi)]
+              .map(match => Number(match[1]));
 
-            if (!completedMatch) {
-              core.setFailed(`Could not identify the completed PBI number from PR #${pull.number}; no issue was labeled.`);
+            if (closingRefs.length === 0) {
+              core.info(`PR #${pull.number} has no closing issue reference; no PBI dispatch is needed.`);
               return;
             }
 
-            const completedPbi = Number(completedMatch[1]);
+            const linkedIssues = await Promise.all(closingRefs.map(async issue_number => {
+              try {
+                const result = await github.rest.issues.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number
+                });
+                return result.data;
+              } catch (error) {
+                core.warning(`Could not load linked issue #${issue_number}: ${error.message}`);
+                return null;
+              }
+            }));
+
+            const completedPbis = linkedIssues
+              .filter(issue => issue && !issue.pull_request)
+              .map(issue => {
+                const match = issue.title.match(/^\[PBI\s*#\s*(\d+)\]/i);
+                return match ? Number(match[1]) : null;
+              })
+              .filter(number => number !== null);
+
+            if (completedPbis.length === 0) {
+              core.info(`PR #${pull.number} closes a task issue, not a numbered PBI; no sequential PBI dispatch is needed.`);
+              return;
+            }
+
+            const completedPbi = Math.max(...completedPbis);
             const openIssues = await github.paginate(github.rest.issues.listForRepo, {
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -40,10 +68,13 @@ jobs:
             const nextIssue = openIssues
               .filter(issue => {
                 if (issue.pull_request) return false;
-                const pbiMatch = issue.title.match(/^\[PBI\s*#\s*(\d+)\]/i);
-                if (!pbiMatch || Number(pbiMatch[1]) <= completedPbi) return false;
+                const match = issue.title.match(/^\[PBI\s*#\s*(\d+)\]/i);
+                if (!match || Number(match[1]) <= completedPbi) return false;
                 const labels = issue.labels.map(label => label.name.toLowerCase());
-                return labels.includes('ready-for-dev') && !labels.includes('jules');
+                return labels.includes('ready-for-dev') &&
+                  !labels.includes('jules') &&
+                  !labels.includes('in-progress') &&
+                  !labels.includes('blocked');
               })
               .sort((a, b) => {
                 const aPbi = Number(a.title.match(/^\[PBI\s*#\s*(\d+)\]/i)[1]);
@@ -52,7 +83,7 @@ jobs:
               })[0];
 
             if (!nextIssue) {
-              core.info(`No unassigned ready-for-dev PBI follows PBI #${completedPbi}.`);
+              core.info(`No eligible ready-for-dev PBI follows PBI #${completedPbi}; blocked and deferred PBIs are skipped.`);
               return;
             }
 
@@ -62,4 +93,4 @@ jobs:
               issue_number: nextIssue.number,
               labels: ['jules']
             });
-            core.info(`Applied the jules label to Issue #${nextIssue.number} (${nextIssue.title}). Jules will be notified by the label.`);
+            core.info(`Applied the jules label to Issue #${nextIssue.number} (${nextIssue.title}); Jules will be notified by the label.`);
