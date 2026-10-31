@@ -116,6 +116,141 @@ namespace Church.Infrastructure.Migrations
                     b.ToTable("PrayerRequests", (string)null);
                 });
 
+            modelBuilder.Entity("Church.Core.Setlist", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text")
+                        .HasColumnName("notes");
+
+                    b.Property<DateTime>("ServiceDate")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("service_date");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("church_id");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ServiceDate");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("Setlists", (string)null);
+                });
+
+            modelBuilder.Entity("Church.Core.SetlistItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("KeyOverride")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("key_override");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text")
+                        .HasColumnName("notes");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer")
+                        .HasColumnName("order");
+
+                    b.Property<Guid>("SetlistId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("setlist_id");
+
+                    b.Property<Guid>("SongId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("song_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("church_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SetlistId");
+
+                    b.HasIndex("SongId");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("SetlistItems", (string)null);
+                });
+
+            modelBuilder.Entity("Church.Core.Song", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Artist")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("artist");
+
+                    b.Property<string>("Chords")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("chords");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("DefaultKey")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("default_key");
+
+                    b.Property<string>("Lyrics")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("lyrics");
+
+                    b.Property<int?>("TempoBpm")
+                        .HasColumnType("integer")
+                        .HasColumnName("tempo_bpm");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("church_id");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("Title");
+
+                    b.ToTable("Songs", (string)null);
+                });
+
             modelBuilder.Entity("Church.Core.Tenant", b =>
                 {
                     b.Property<Guid>("Id")
@@ -155,6 +290,30 @@ namespace Church.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("Tenants");
+                });
+
+            modelBuilder.Entity("Church.Core.SetlistItem", b =>
+                {
+                    b.HasOne("Church.Core.Setlist", "Setlist")
+                        .WithMany("Items")
+                        .HasForeignKey("SetlistId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Church.Core.Song", "Song")
+                        .WithMany()
+                        .HasForeignKey("SongId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Setlist");
+
+                    b.Navigation("Song");
+                });
+
+            modelBuilder.Entity("Church.Core.Setlist", b =>
+                {
+                    b.Navigation("Items");
                 });
 #pragma warning restore 612, 618
         }

@@ -264,6 +264,449 @@ prayerRequestsGroup.MapPatch("/{id}/status", [Authorize(Policy = "PastorOnly")] 
     return Results.Ok(response);
 });
 
+// Worship & Choir Playlist Engine Endpoints
+var worshipGroup = app.MapGroup("/api/v1/worship")
+    .RequireAuthorization();
+
+// Helper to resolve tenant ID
+static Guid ResolveTenantId(ITenantService tenantService, ClaimsPrincipal user)
+{
+    var churchId = tenantService.GetCurrentTenantId();
+    if (churchId == Guid.Empty)
+    {
+        var tenantClaim = user.FindFirst("church_id")?.Value ?? user.FindFirst("tenant_id")?.Value;
+        if (Guid.TryParse(tenantClaim, out var parsedId))
+        {
+            churchId = parsedId;
+        }
+    }
+    return churchId;
+}
+
+// ---------------- SONGS ----------------
+
+// Get all songs in the library
+worshipGroup.MapGet("/songs", async (ApplicationDbContext db) =>
+{
+    var songs = await db.Songs
+        .OrderBy(s => s.Title)
+        .Select(s => new SongResponse(
+            s.Id,
+            s.TenantId,
+            s.Title,
+            s.Artist,
+            s.DefaultKey,
+            s.TempoBpm,
+            s.Lyrics,
+            s.Chords,
+            s.CreatedAt
+        ))
+        .ToListAsync();
+
+    return Results.Ok(songs);
+});
+
+// Get a specific song
+worshipGroup.MapGet("/songs/{id:guid}", async (Guid id, ApplicationDbContext db) =>
+{
+    var song = await db.Songs
+        .Where(s => s.Id == id)
+        .Select(s => new SongResponse(
+            s.Id,
+            s.TenantId,
+            s.Title,
+            s.Artist,
+            s.DefaultKey,
+            s.TempoBpm,
+            s.Lyrics,
+            s.Chords,
+            s.CreatedAt
+        ))
+        .FirstOrDefaultAsync();
+
+    if (song == null)
+    {
+        return Results.NotFound(new { error = "Song not found." });
+    }
+
+    return Results.Ok(song);
+});
+
+// Create a song (Admin, Pastor, WorshipLeader)
+worshipGroup.MapPost("/songs", [Authorize(Roles = "Admin,Pastor,WorshipLeader")] async (
+    CreateSongRequest request,
+    ApplicationDbContext db,
+    ITenantService tenantService,
+    ClaimsPrincipal user) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Title))
+    {
+        return Results.BadRequest(new { error = "Song title is required." });
+    }
+
+    var churchId = ResolveTenantId(tenantService, user);
+
+    var song = new Song
+    {
+        Id = Guid.NewGuid(),
+        TenantId = churchId,
+        Title = request.Title.Trim(),
+        Artist = request.Artist?.Trim(),
+        DefaultKey = request.DefaultKey?.Trim(),
+        TempoBpm = request.TempoBpm,
+        Lyrics = request.Lyrics ?? string.Empty,
+        Chords = request.Chords ?? string.Empty,
+        CreatedAt = DateTime.UtcNow
+    };
+
+    db.Songs.Add(song);
+    await db.SaveChangesAsync();
+
+    var response = new SongResponse(
+        song.Id,
+        song.TenantId,
+        song.Title,
+        song.Artist,
+        song.DefaultKey,
+        song.TempoBpm,
+        song.Lyrics,
+        song.Chords,
+        song.CreatedAt
+    );
+
+    return Results.Created($"/api/v1/worship/songs/{song.Id}", response);
+});
+
+// Update a song (Admin, Pastor, WorshipLeader)
+worshipGroup.MapPut("/songs/{id:guid}", [Authorize(Roles = "Admin,Pastor,WorshipLeader")] async (
+    Guid id,
+    UpdateSongRequest request,
+    ApplicationDbContext db) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Title))
+    {
+        return Results.BadRequest(new { error = "Song title is required." });
+    }
+
+    var song = await db.Songs.FirstOrDefaultAsync(s => s.Id == id);
+    if (song == null)
+    {
+        return Results.NotFound(new { error = "Song not found." });
+    }
+
+    song.Title = request.Title.Trim();
+    song.Artist = request.Artist?.Trim();
+    song.DefaultKey = request.DefaultKey?.Trim();
+    song.TempoBpm = request.TempoBpm;
+    song.Lyrics = request.Lyrics ?? string.Empty;
+    song.Chords = request.Chords ?? string.Empty;
+
+    await db.SaveChangesAsync();
+
+    var response = new SongResponse(
+        song.Id,
+        song.TenantId,
+        song.Title,
+        song.Artist,
+        song.DefaultKey,
+        song.TempoBpm,
+        song.Lyrics,
+        song.Chords,
+        song.CreatedAt
+    );
+
+    return Results.Ok(response);
+});
+
+// Delete a song (Admin, Pastor, WorshipLeader)
+worshipGroup.MapDelete("/songs/{id:guid}", [Authorize(Roles = "Admin,Pastor,WorshipLeader")] async (
+    Guid id,
+    ApplicationDbContext db) =>
+{
+    var song = await db.Songs.FirstOrDefaultAsync(s => s.Id == id);
+    if (song == null)
+    {
+        return Results.NotFound(new { error = "Song not found." });
+    }
+
+    // Check if song is in any setlists
+    var isInUse = await db.SetlistItems.AnyAsync(i => i.SongId == id);
+    if (isInUse)
+    {
+        return Results.BadRequest(new { error = "Cannot delete song because it is referenced in one or more service setlists." });
+    }
+
+    db.Songs.Remove(song);
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
+});
+
+// ---------------- SETLISTS ----------------
+
+// Get all setlists (summary)
+worshipGroup.MapGet("/setlists", async (ApplicationDbContext db) =>
+{
+    var setlists = await db.Setlists
+        .OrderByDescending(s => s.ServiceDate)
+        .Select(s => new SetlistResponse(
+            s.Id,
+            s.TenantId,
+            s.Title,
+            s.ServiceDate,
+            s.Notes,
+            s.Items.Count,
+            s.CreatedAt
+        ))
+        .ToListAsync();
+
+    return Results.Ok(setlists);
+});
+
+// Get a setlist with songs
+worshipGroup.MapGet("/setlists/{id:guid}", async (Guid id, ApplicationDbContext db) =>
+{
+    var setlist = await db.Setlists
+        .Where(s => s.Id == id)
+        .Include(s => s.Items.OrderBy(i => i.Order))
+            .ThenInclude(i => i.Song)
+        .FirstOrDefaultAsync();
+
+    if (setlist == null)
+    {
+        return Results.NotFound(new { error = "Setlist not found." });
+    }
+
+    var itemResponses = setlist.Items
+        .OrderBy(i => i.Order)
+        .Select(i => new SetlistItemResponse(
+            i.Id,
+            i.SongId,
+            i.Song?.Title ?? string.Empty,
+            i.Song?.Artist,
+            i.Song?.DefaultKey,
+            i.KeyOverride,
+            i.Song?.TempoBpm,
+            i.Song?.Lyrics ?? string.Empty,
+            i.Song?.Chords ?? string.Empty,
+            i.Order,
+            i.Notes
+        ))
+        .ToList();
+
+    var response = new SetlistDetailResponse(
+        setlist.Id,
+        setlist.TenantId,
+        setlist.Title,
+        setlist.ServiceDate,
+        setlist.Notes,
+        setlist.CreatedAt,
+        itemResponses
+    );
+
+    return Results.Ok(response);
+});
+
+// Create setlist (Admin, Pastor, WorshipLeader)
+worshipGroup.MapPost("/setlists", [Authorize(Roles = "Admin,Pastor,WorshipLeader")] async (
+    CreateSetlistRequest request,
+    ApplicationDbContext db,
+    ITenantService tenantService,
+    ClaimsPrincipal user) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Title))
+    {
+        return Results.BadRequest(new { error = "Setlist title is required." });
+    }
+
+    var churchId = ResolveTenantId(tenantService, user);
+
+    var setlist = new Setlist
+    {
+        Id = Guid.NewGuid(),
+        TenantId = churchId,
+        Title = request.Title.Trim(),
+        ServiceDate = request.ServiceDate,
+        Notes = request.Notes?.Trim(),
+        CreatedAt = DateTime.UtcNow
+    };
+
+    if (request.Items != null && request.Items.Count > 0)
+    {
+        // Verify all songs belong to current tenant
+        var songIds = request.Items.Select(i => i.SongId).Distinct().ToList();
+        var existingCount = await db.Songs.CountAsync(s => songIds.Contains(s.Id));
+        if (existingCount != songIds.Count)
+        {
+            return Results.BadRequest(new { error = "One or more songs do not exist or belong to another church tenant." });
+        }
+
+        foreach (var itemReq in request.Items)
+        {
+            setlist.Items.Add(new SetlistItem
+            {
+                Id = Guid.NewGuid(),
+                TenantId = churchId,
+                SetlistId = setlist.Id,
+                SongId = itemReq.SongId,
+                Order = itemReq.Order,
+                KeyOverride = itemReq.KeyOverride?.Trim(),
+                Notes = itemReq.Notes?.Trim()
+            });
+        }
+    }
+
+    db.Setlists.Add(setlist);
+    await db.SaveChangesAsync();
+
+    // Reload with songs for response
+    var savedSetlist = await db.Setlists
+        .Where(s => s.Id == setlist.Id)
+        .Include(s => s.Items.OrderBy(i => i.Order))
+            .ThenInclude(i => i.Song)
+        .FirstOrDefaultAsync();
+
+    var itemResponses = savedSetlist!.Items
+        .OrderBy(i => i.Order)
+        .Select(i => new SetlistItemResponse(
+            i.Id,
+            i.SongId,
+            i.Song?.Title ?? string.Empty,
+            i.Song?.Artist,
+            i.Song?.DefaultKey,
+            i.KeyOverride,
+            i.Song?.TempoBpm,
+            i.Song?.Lyrics ?? string.Empty,
+            i.Song?.Chords ?? string.Empty,
+            i.Order,
+            i.Notes
+        ))
+        .ToList();
+
+    var detailResponse = new SetlistDetailResponse(
+        savedSetlist.Id,
+        savedSetlist.TenantId,
+        savedSetlist.Title,
+        savedSetlist.ServiceDate,
+        savedSetlist.Notes,
+        savedSetlist.CreatedAt,
+        itemResponses
+    );
+
+    return Results.Created($"/api/v1/worship/setlists/{setlist.Id}", detailResponse);
+});
+
+// Update setlist (Admin, Pastor, WorshipLeader)
+worshipGroup.MapPut("/setlists/{id:guid}", [Authorize(Roles = "Admin,Pastor,WorshipLeader")] async (
+    Guid id,
+    UpdateSetlistRequest request,
+    ApplicationDbContext db,
+    ITenantService tenantService,
+    ClaimsPrincipal user) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Title))
+    {
+        return Results.BadRequest(new { error = "Setlist title is required." });
+    }
+
+    var setlist = await db.Setlists
+        .Include(s => s.Items)
+        .FirstOrDefaultAsync(s => s.Id == id);
+
+    if (setlist == null)
+    {
+        return Results.NotFound(new { error = "Setlist not found." });
+    }
+
+    var churchId = ResolveTenantId(tenantService, user);
+
+    setlist.Title = request.Title.Trim();
+    setlist.ServiceDate = request.ServiceDate;
+    setlist.Notes = request.Notes?.Trim();
+
+    if (request.Items != null)
+    {
+        var songIds = request.Items.Select(i => i.SongId).Distinct().ToList();
+        var existingCount = await db.Songs.CountAsync(s => songIds.Contains(s.Id));
+        if (existingCount != songIds.Count)
+        {
+            return Results.BadRequest(new { error = "One or more songs do not exist or belong to another church tenant." });
+        }
+
+        // Remove old items and replace
+        db.SetlistItems.RemoveRange(setlist.Items);
+        setlist.Items.Clear();
+
+        foreach (var itemReq in request.Items)
+        {
+            setlist.Items.Add(new SetlistItem
+            {
+                Id = Guid.NewGuid(),
+                TenantId = churchId,
+                SetlistId = setlist.Id,
+                SongId = itemReq.SongId,
+                Order = itemReq.Order,
+                KeyOverride = itemReq.KeyOverride?.Trim(),
+                Notes = itemReq.Notes?.Trim()
+            });
+        }
+    }
+
+    await db.SaveChangesAsync();
+
+    var savedSetlist = await db.Setlists
+        .Where(s => s.Id == setlist.Id)
+        .Include(s => s.Items.OrderBy(i => i.Order))
+            .ThenInclude(i => i.Song)
+        .FirstOrDefaultAsync();
+
+    var itemResponses = savedSetlist!.Items
+        .OrderBy(i => i.Order)
+        .Select(i => new SetlistItemResponse(
+            i.Id,
+            i.SongId,
+            i.Song?.Title ?? string.Empty,
+            i.Song?.Artist,
+            i.Song?.DefaultKey,
+            i.KeyOverride,
+            i.Song?.TempoBpm,
+            i.Song?.Lyrics ?? string.Empty,
+            i.Song?.Chords ?? string.Empty,
+            i.Order,
+            i.Notes
+        ))
+        .ToList();
+
+    var detailResponse = new SetlistDetailResponse(
+        savedSetlist.Id,
+        savedSetlist.TenantId,
+        savedSetlist.Title,
+        savedSetlist.ServiceDate,
+        savedSetlist.Notes,
+        savedSetlist.CreatedAt,
+        itemResponses
+    );
+
+    return Results.Ok(detailResponse);
+});
+
+// Delete setlist (Admin, Pastor, WorshipLeader)
+worshipGroup.MapDelete("/setlists/{id:guid}", [Authorize(Roles = "Admin,Pastor,WorshipLeader")] async (
+    Guid id,
+    ApplicationDbContext db) =>
+{
+    var setlist = await db.Setlists.FirstOrDefaultAsync(s => s.Id == id);
+    if (setlist == null)
+    {
+        return Results.NotFound(new { error = "Setlist not found." });
+    }
+
+    db.Setlists.Remove(setlist);
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
+});
+
 app.Run();
 
 // Export Program class for WebApplicationFactory in tests
