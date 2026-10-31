@@ -1,0 +1,137 @@
+name: "Sync PBI Status and MVP Tracker"
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+  issues:
+    types: [closed, reopened]
+  workflow_dispatch:
+  schedule:
+    - cron: "23 3 * * *"
+
+permissions: {}
+
+jobs:
+  sync-status:
+    name: Sync linked issue status and MVP checklist
+    permissions:
+      issues: write
+      pull-requests: read
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reconcile issue labels and MVP checklist
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const ensureLabel = async (name, color, description) => {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                await github.rest.issues.createLabel({ owner, repo, name, color, description });
+              }
+            };
+
+            await ensureLabel('in-progress', '1D76DB', 'An open pull request is linked to this issue');
+            await ensureLabel('done', '6F42C1', 'The issue is closed');
+
+            const allIssues = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'all', per_page: 100
+            });
+            const pullRequests = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: 'open', per_page: 100
+            });
+            const issueByNumber = new Map(allIssues
+              .filter(issue => !issue.pull_request)
+              .map(issue => [issue.number, issue]));
+            const pbiIssues = [...issueByNumber.values()].filter(issue =>
+              /^\[PBI\s*#\s*\d+\]/i.test(issue.title)
+            );
+            const trackedIssues = [...issueByNumber.values()].filter(issue =>
+              /^\[(?:PBI\s*#\s*\d+|MVP Task)\]/i.test(issue.title)
+            );
+
+            const getClosingRefs = text => [...(text || '').matchAll(
+              /\b(?:close[sd]?|fix(?:es|ed)?|resolve[sd]?)\s+(?:[\w-]+\/[\w.-]+)?#(\d+)/gi
+            )].map(match => Number(match[1]));
+
+            const openIssuesWithPRs = new Set();
+            for (const pull of pullRequests) {
+              const source = `${pull.title}\n${pull.body || ''}`;
+              for (const number of getClosingRefs(source)) openIssuesWithPRs.add(number);
+            }
+
+            if (context.eventName === 'pull_request' &&
+                context.payload.action === 'closed' &&
+                context.payload.pull_request.merged) {
+              const mergedPull = context.payload.pull_request;
+              const source = `${mergedPull.title}\n${mergedPull.body || ''}`;
+              for (const issueNumber of getClosingRefs(source)) {
+                const linkedIssue = issueByNumber.get(issueNumber);
+                const isTracked = linkedIssue && trackedIssues.some(issue => issue.number === issueNumber);
+                if (isTracked && linkedIssue.state === 'open') {
+                  await github.rest.issues.update({
+                    owner, repo, issue_number: issueNumber,
+                    state: 'closed', state_reason: 'completed'
+                  });
+                  linkedIssue.state = 'closed';
+                  core.info(`Closed linked delivery issue #${issueNumber} after merged PR #${mergedPull.number}.`);
+                }
+              }
+            }
+
+            const addLabel = async (issue_number, name) => {
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: [name] });
+            };
+            const removeLabel = async (issue_number, name) => {
+              try {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number, name });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+              }
+            };
+
+            for (const issue of trackedIssues) {
+              const labels = new Set(issue.labels.map(label => label.name.toLowerCase()));
+              if (issue.state === 'closed') {
+                if (!labels.has('done')) await addLabel(issue.number, 'done');
+                for (const label of ['in-progress', 'ready-for-dev', 'jules']) {
+                  if (labels.has(label)) await removeLabel(issue.number, label);
+                }
+              } else {
+                if (labels.has('done')) await removeLabel(issue.number, 'done');
+                if (openIssuesWithPRs.has(issue.number)) {
+                  if (!labels.has('in-progress')) await addLabel(issue.number, 'in-progress');
+                } else if (labels.has('in-progress')) {
+                  await removeLabel(issue.number, 'in-progress');
+                }
+              }
+            }
+
+            const trackerNumber = 21;
+            const tracker = issueByNumber.get(trackerNumber);
+            if (!tracker) {
+              core.warning(`MVP tracker issue #${trackerNumber} was not found; labels were still synchronized.`);
+              return;
+            }
+
+            const updatedBody = tracker.body.split('\n').map(line => {
+              if (!/^\s*- \[[ xX]\]/.test(line)) return line;
+              const match = line.match(/\/issues\/(\d+)/);
+              if (!match) return line;
+              const linkedIssue = issueByNumber.get(Number(match[1]));
+              if (!linkedIssue || !/^\[PBI\s*#\s*\d+\]/i.test(linkedIssue.title)) return line;
+              const checkbox = linkedIssue.state === 'closed' ? 'x' : ' ';
+              return line.replace(/^\s*- \[[ xX]\]/, `- [${checkbox}]`);
+            }).join('\n');
+
+            if (updatedBody !== tracker.body) {
+              await github.rest.issues.update({
+                owner, repo, issue_number: trackerNumber, body: updatedBody
+              });
+              core.info('Updated MVP tracker checkboxes from linked PBI issue states.');
+            } else {
+              core.info('MVP tracker checkboxes already match PBI issue states.');
+            }

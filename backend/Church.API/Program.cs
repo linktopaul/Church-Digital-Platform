@@ -283,6 +283,13 @@ static Guid ResolveTenantId(ITenantService tenantService, ClaimsPrincipal user)
     return churchId;
 }
 
+static DateTime NormalizeServiceDate(DateTime serviceDate) => serviceDate.Kind switch
+{
+    DateTimeKind.Utc => serviceDate,
+    DateTimeKind.Local => serviceDate.ToUniversalTime(),
+    _ => DateTime.SpecifyKind(serviceDate, DateTimeKind.Utc)
+};
+
 // ---------------- SONGS ----------------
 
 // Get all songs in the library
@@ -345,6 +352,10 @@ worshipGroup.MapPost("/songs", [Authorize(Roles = "Admin,Pastor,WorshipLeader")]
     }
 
     var churchId = ResolveTenantId(tenantService, user);
+    if (churchId == Guid.Empty)
+    {
+        return Results.BadRequest(new { error = "A valid church tenant is required." });
+    }
 
     var song = new Song
     {
@@ -520,13 +531,17 @@ worshipGroup.MapPost("/setlists", [Authorize(Roles = "Admin,Pastor,WorshipLeader
     }
 
     var churchId = ResolveTenantId(tenantService, user);
+    if (churchId == Guid.Empty)
+    {
+        return Results.BadRequest(new { error = "A valid church tenant is required." });
+    }
 
     var setlist = new Setlist
     {
         Id = Guid.NewGuid(),
         TenantId = churchId,
         Title = request.Title.Trim(),
-        ServiceDate = request.ServiceDate,
+        ServiceDate = NormalizeServiceDate(request.ServiceDate),
         Notes = request.Notes?.Trim(),
         CreatedAt = DateTime.UtcNow
     };
@@ -619,9 +634,13 @@ worshipGroup.MapPut("/setlists/{id:guid}", [Authorize(Roles = "Admin,Pastor,Wors
     }
 
     var churchId = ResolveTenantId(tenantService, user);
+    if (churchId == Guid.Empty)
+    {
+        return Results.BadRequest(new { error = "A valid church tenant is required." });
+    }
 
     setlist.Title = request.Title.Trim();
-    setlist.ServiceDate = request.ServiceDate;
+    setlist.ServiceDate = NormalizeServiceDate(request.ServiceDate);
     setlist.Notes = request.Notes?.Trim();
 
     if (request.Items != null)

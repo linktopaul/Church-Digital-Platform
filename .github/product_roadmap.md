@@ -23,3 +23,18 @@
 
 ## Module 8: Digital Offerings & UPI Contribution Ledger
 - Digital giving through UPI with contribution records, payment references, acknowledgements, and an auditable church contribution ledger
+
+## Module 9: Identity, Sign-In & Tenant Context (Cross-Cutting Foundation)
+- Production-ready member sign-in and sign-out, verified identity, and secure session lifecycle; select an identity provider if none is already established
+- Link authenticated identities to member records and a church tenant; derive tenant context from server-validated identity and enforce tenant isolation across all modules
+- Provide the Flutter app with an authenticated API client that attaches the bearer token and trusted tenant context, and stores credentials securely
+- Enforce server-side least-privilege roles and policies for Member, Pastor, Admin, and WorshipLeader; never trust roles or tenant IDs supplied only by the client
+- Keep test authentication isolated from production authentication; remove or disable header-based test authentication in production
+- Treat this module as a prerequisite for member-specific and role-protected features in Modules 3–8; coordinate API and identity contracts with those module issues
+
+## Module 10: Pilot Deployment & Operations Readiness
+- Deploy the API, database, and Flutter client for a single pilot church using separated development and pilot configuration
+- Protect secrets and connection strings, apply migrations safely, and document the supported upgrade path
+- Verify database backup and restore, health/readiness checks, and useful logs that exclude sensitive member data
+- Provide a pilot smoke checklist for sign-in, tenant isolation, announcements, prayer privacy, worship, and role restrictions
+- Document rollback and recovery steps; avoid assuming a paid hosting or service provider without an explicit cost decision
