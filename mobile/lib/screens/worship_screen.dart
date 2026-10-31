@@ -1,14 +1,26 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import '../models/worship_models.dart';
 
 class WorshipScreen extends StatefulWidget {
   final List<SongItem>? initialSongs;
   final List<SetlistItemData>? initialSetlists;
+  final String apiBaseUrl;
+  final Map<String, String> requestHeaders;
+  final http.Client? client;
 
   const WorshipScreen({
     super.key,
     this.initialSongs,
     this.initialSetlists,
+    this.apiBaseUrl = const String.fromEnvironment(
+      'CHURCH_API_BASE_URL',
+      defaultValue: 'http://10.0.2.2:5178',
+    ),
+    this.requestHeaders = const {},
+    this.client,
   });
 
   @override
@@ -21,48 +33,20 @@ class _WorshipScreenState extends State<WorshipScreen>
   late List<SongItem> _songs;
   late List<SetlistItemData> _setlists;
   String _searchQuery = '';
+  bool _loadingSongs = false;
+  String? _songLoadError;
+  bool _savingSong = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
 
-    _songs = widget.initialSongs ??
-        [
-          const SongItem(
-            id: '1',
-            title: 'Amazing Grace',
-            artist: 'John Newton',
-            defaultKey: 'G',
-            tempoBpm: 72,
-            lyrics:
-                'Amazing grace how sweet the sound\nThat saved a wretch like me\nI once was lost, but now I\'m found\nWas blind, but now I see',
-            chords:
-                '[G] Amazing grace how [C] sweet the [G] sound\nThat [G] saved a wretch like [D] me\nI [G] once was lost, but [C] now I\'m [G] found\nWas [Em] blind, but [D] now I [G] see',
-          ),
-          const SongItem(
-            id: '2',
-            title: 'Way Maker',
-            artist: 'Sinach',
-            defaultKey: 'E',
-            tempoBpm: 68,
-            lyrics:
-                'You are here, moving in our midst\nI worship You, I worship You\nYou are here, working in this place\nI worship You, I worship You',
-            chords:
-                '[E] You are here, moving [B] in our midst\nI worship [C#m] You, I worship [A] You\n[E] You are here, working [B] in this place\nI worship [C#m] You, I worship [A] You',
-          ),
-          const SongItem(
-            id: '3',
-            title: 'Goodness of God',
-            artist: 'Bethel Music',
-            defaultKey: 'G',
-            tempoBpm: 70,
-            lyrics:
-                'I love You, Lord\nFor Your mercy never fails me\nAll my days, I\'ve been held in Your hands\nFrom the moment that I wake up\nUntil I lay my head\nOh, I will sing of the goodness of God',
-            chords:
-                '[G] I love You, Lord\nFor Your [C] mercy never fails [G] me\nAll my [Em] days, I\'ve been [C] held in Your [D] hands\nFrom the [Em] moment that I [C] wake up\nUntil I [G] lay my [D/F#] head [Em]\nOh, I will [C] sing of the [D] goodness of [G] God',
-          ),
-        ];
+    _songs = widget.initialSongs ?? [];
+    _loadingSongs = widget.initialSongs == null;
+    if (widget.initialSongs == null) {
+      _loadSongs();
+    }
 
     _setlists = widget.initialSetlists ??
         [
@@ -129,6 +113,86 @@ class _WorshipScreenState extends State<WorshipScreen>
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  Uri get _songsUri {
+    final base = widget.apiBaseUrl.replaceFirst(RegExp(r"/+$"), "");
+    return Uri.parse("$base/api/v1/worship/songs");
+  }
+
+  Map<String, String> get _apiHeaders => {
+        'Accept': 'application/json',
+        ...widget.requestHeaders,
+      };
+
+  Future<void> _loadSongs() async {
+    setState(() {
+      _loadingSongs = true;
+      _songLoadError = null;
+    });
+    try {
+      final response = await (widget.client?.get(_songsUri, headers: _apiHeaders) ??
+          http.get(_songsUri, headers: _apiHeaders));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception('The worship library could not be loaded (HTTP ${response.statusCode}).');
+      }
+      final decoded = jsonDecode(response.body) as List<dynamic>;
+      final songs = decoded
+          .map((item) => _songFromJson(Map<String, dynamic>.from(item as Map)))
+          .toList();
+      if (!mounted) return;
+      setState(() {
+        _songs = songs;
+        _loadingSongs = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _songLoadError = error.toString();
+        _loadingSongs = false;
+      });
+    }
+  }
+
+  SongItem _songFromJson(Map<String, dynamic> json) => SongItem(
+        id: json['id'].toString(),
+        title: json['title'] as String? ?? '',
+        artist: json['artist'] as String?,
+        defaultKey: json['defaultKey'] as String?,
+        tempoBpm: json['tempoBpm'] as int?,
+        lyrics: json['lyrics'] as String? ?? '',
+        chords: json['chords'] as String? ?? '',
+      );
+
+  Future<void> _createSong({
+    required String title,
+    required String? artist,
+    required String? defaultKey,
+    required int? tempoBpm,
+    required String lyrics,
+    required String chords,
+  }) async {
+    final body = jsonEncode({
+      'title': title,
+      'artist': artist,
+      'defaultKey': defaultKey,
+      'tempoBpm': tempoBpm,
+      'lyrics': lyrics,
+      'chords': chords,
+    });
+    final headers = {..._apiHeaders, 'Content-Type': 'application/json'};
+    final response = await (widget.client?.post(
+          _songsUri,
+          headers: headers,
+          body: body,
+        ) ??
+        http.post(_songsUri, headers: headers, body: body));
+    if (response.statusCode != 201) {
+      throw Exception('Song could not be saved (HTTP ${response.statusCode}).');
+    }
+    final song = _songFromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    if (!mounted) return;
+    setState(() => _songs.add(song));
   }
 
   void _openSongDetail(SongItem song) {
@@ -221,27 +285,35 @@ class _WorshipScreenState extends State<WorshipScreen>
           ),
           ElevatedButton(
             key: const Key('saveSongButton'),
-            onPressed: () {
-              if (titleController.text.trim().isEmpty) return;
-              setState(() {
-                _songs.add(
-                  SongItem(
-                    id: DateTime.now().millisecondsSinceEpoch.toString(),
-                    title: titleController.text.trim(),
-                    artist: artistController.text.trim().isEmpty
-                        ? null
-                        : artistController.text.trim(),
-                    defaultKey: keyController.text.trim().isEmpty
-                        ? 'C'
-                        : keyController.text.trim(),
-                    tempoBpm: int.tryParse(tempoController.text.trim()),
-                    lyrics: lyricsController.text.trim(),
-                    chords: chordsController.text.trim(),
-                  ),
-                );
-              });
-              Navigator.of(context).pop();
-            },
+            onPressed: _savingSong
+                ? null
+                : () async {
+                    if (titleController.text.trim().isEmpty) return;
+                    setState(() => _savingSong = true);
+                    try {
+                      await _createSong(
+                        title: titleController.text.trim(),
+                        artist: artistController.text.trim().isEmpty
+                            ? null
+                            : artistController.text.trim(),
+                        defaultKey: keyController.text.trim().isEmpty
+                            ? null
+                            : keyController.text.trim(),
+                        tempoBpm: int.tryParse(tempoController.text.trim()),
+                        lyrics: lyricsController.text.trim(),
+                        chords: chordsController.text.trim(),
+                      );
+                      if (context.mounted) Navigator.of(context).pop();
+                    } catch (error) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(error.toString())),
+                        );
+                      }
+                    } finally {
+                      if (mounted) setState(() => _savingSong = false);
+                    }
+                  },
             child: const Text('Save Song'),
           ),
         ],
@@ -321,13 +393,28 @@ class _WorshipScreenState extends State<WorshipScreen>
                 ),
               ),
               Expanded(
-                child: filteredSongs.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No songs found.',
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      )
+                child: _loadingSongs
+                    ? const Center(child: CircularProgressIndicator())
+                    : _songLoadError != null
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text('Could not load the worship library.'),
+                                TextButton(
+                                  onPressed: _loadSongs,
+                                  child: const Text('Retry'),
+                                ),
+                              ],
+                            ),
+                          )
+                        : filteredSongs.isEmpty
+                            ? const Center(
+                                child: Text(
+                                  'No songs found.',
+                                  style: TextStyle(color: Colors.grey),
+                                ),
+                              )
                     : ListView.separated(
                         key: const Key('songsListView'),
                         itemCount: filteredSongs.length,
