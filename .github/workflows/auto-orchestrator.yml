@@ -3,9 +3,15 @@ name: "Orchestrator: Test, Auto-Merge & Dispatch Next Issue"
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pull_request_number:
+        description: Pull request to test after an automatic base-branch update
+        required: true
+        type: number
 
 concurrency:
-  group: pr-${{ github.event.pull_request.number || github.ref }}
+  group: pr-${{ github.event.pull_request.number || inputs.pull_request_number || github.ref }}
   cancel-in-progress: true
 
 permissions: {}
@@ -13,13 +19,15 @@ permissions: {}
 jobs:
   test:
     name: .NET 10 unit tests
-    if: github.event.pull_request.draft == false
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
     permissions:
       contents: read
     runs-on: ubuntu-latest
     steps:
-      - name: Check out pull request
+      - name: Check out pull request branch
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v4
@@ -43,7 +51,7 @@ jobs:
   enable-auto-merge:
     name: Enable auto-merge after tests pass
     needs: test
-    if: github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository
+    if: (github.event_name == 'pull_request' && github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
       pull-requests: write
@@ -53,6 +61,23 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const pullNumber = context.payload.pull_request?.number ??
+              Number(context.payload.inputs?.pull_request_number);
+            if (!Number.isInteger(pullNumber) || pullNumber <= 0) {
+              throw new Error('A valid pull_request_number is required.');
+            }
+
+            const { data: pull } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullNumber
+            });
+            if (pull.state !== 'open' || pull.merged || pull.draft ||
+                pull.head.repo?.full_name !== context.repository) {
+              core.info(`Skipping auto-merge for PR #${pullNumber}: it is not an open, ready, same-repository PR.`);
+              return;
+            }
+
             const mutation = `
               mutation EnableAutoMerge($pullRequestId: ID!) {
                 enablePullRequestAutoMerge(input: {
@@ -64,20 +89,18 @@ jobs:
               }
             `;
             try {
-              await github.graphql(mutation, {
-                pullRequestId: context.payload.pull_request.node_id
-              });
-              core.info('Auto-merge enabled successfully via GraphQL.');
+              await github.graphql(mutation, { pullRequestId: pull.node_id });
+              core.info(`Auto-merge enabled successfully for PR #${pullNumber}.`);
             } catch (error) {
               core.warning(`GraphQL auto-merge failed: ${error.message}. Attempting direct squash merge.`);
               try {
                 await github.rest.pulls.merge({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
-                  pull_number: context.payload.pull_request.number,
+                  pull_number: pullNumber,
                   merge_method: 'squash'
                 });
-                core.info('Direct squash merge succeeded.');
+                core.info(`Direct squash merge succeeded for PR #${pullNumber}.`);
               } catch (mergeErr) {
                 core.warning(`Direct squash merge also failed: ${mergeErr.message}`);
                 throw error;
