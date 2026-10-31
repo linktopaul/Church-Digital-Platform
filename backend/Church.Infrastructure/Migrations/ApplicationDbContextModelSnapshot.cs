@@ -70,6 +70,166 @@ namespace Church.Infrastructure.Migrations
                     b.ToTable("Announcements", (string)null);
                 });
 
+            modelBuilder.Entity("Church.Core.FellowshipGroup", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("GroupType")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("group_type");
+
+                    b.Property<bool>("IsPrivate")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_private");
+
+                    b.Property<Guid?>("LeaderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("leader_id");
+
+                    b.Property<string>("LeaderName")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("leader_name");
+
+                    b.Property<string>("Location")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("location");
+
+                    b.Property<string>("MeetingSchedule")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("meeting_schedule");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("church_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GroupType");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("FellowshipGroups", (string)null);
+                });
+
+            modelBuilder.Entity("Church.Core.FellowshipMember", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("FellowshipGroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("fellowship_group_id");
+
+                    b.Property<DateTime>("JoinedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("joined_at");
+
+                    b.Property<Guid>("MemberId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("member_id");
+
+                    b.Property<string>("MemberName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("member_name");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("role");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("church_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FellowshipGroupId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("FellowshipGroupId", "MemberId")
+                        .IsUnique();
+
+                    b.ToTable("FellowshipMembers", (string)null);
+                });
+
+            modelBuilder.Entity("Church.Core.FellowshipPost", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AuthorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("author_id");
+
+                    b.Property<string>("AuthorName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("author_name");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("content");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("FellowshipGroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("fellowship_group_id");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("church_id");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("FellowshipGroupId");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("FellowshipPosts", (string)null);
+                });
+
             modelBuilder.Entity("Church.Core.PrayerRequest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -292,6 +452,28 @@ namespace Church.Infrastructure.Migrations
                     b.ToTable("Tenants");
                 });
 
+            modelBuilder.Entity("Church.Core.FellowshipMember", b =>
+                {
+                    b.HasOne("Church.Core.FellowshipGroup", "FellowshipGroup")
+                        .WithMany("Members")
+                        .HasForeignKey("FellowshipGroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("FellowshipGroup");
+                });
+
+            modelBuilder.Entity("Church.Core.FellowshipPost", b =>
+                {
+                    b.HasOne("Church.Core.FellowshipGroup", "FellowshipGroup")
+                        .WithMany("Posts")
+                        .HasForeignKey("FellowshipGroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("FellowshipGroup");
+                });
+
             modelBuilder.Entity("Church.Core.SetlistItem", b =>
                 {
                     b.HasOne("Church.Core.Setlist", "Setlist")
@@ -309,6 +491,13 @@ namespace Church.Infrastructure.Migrations
                     b.Navigation("Setlist");
 
                     b.Navigation("Song");
+                });
+
+            modelBuilder.Entity("Church.Core.FellowshipGroup", b =>
+                {
+                    b.Navigation("Members");
+
+                    b.Navigation("Posts");
                 });
 
             modelBuilder.Entity("Church.Core.Setlist", b =>

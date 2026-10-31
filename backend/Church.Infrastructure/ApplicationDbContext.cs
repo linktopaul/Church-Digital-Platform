@@ -19,6 +19,9 @@ namespace Church.Infrastructure
         public DbSet<Song> Songs { get; set; }
         public DbSet<Setlist> Setlists { get; set; }
         public DbSet<SetlistItem> SetlistItems { get; set; }
+        public DbSet<FellowshipGroup> FellowshipGroups { get; set; }
+        public DbSet<FellowshipMember> FellowshipMembers { get; set; }
+        public DbSet<FellowshipPost> FellowshipPosts { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -134,6 +137,77 @@ namespace Church.Infrastructure
                     .WithMany()
                     .HasForeignKey(e => e.SongId)
                     .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // Configure FellowshipGroup entity
+            modelBuilder.Entity<FellowshipGroup>(entity =>
+            {
+                entity.ToTable("FellowshipGroups");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("church_id").IsRequired();
+                entity.Ignore(e => e.ChurchId);
+                entity.Property(e => e.Name).HasColumnName("name").IsRequired().HasMaxLength(255);
+                entity.Property(e => e.Description).HasColumnName("description");
+                entity.Property(e => e.GroupType).HasColumnName("group_type").HasConversion<string>().IsRequired();
+                entity.Property(e => e.LeaderId).HasColumnName("leader_id");
+                entity.Property(e => e.LeaderName).HasColumnName("leader_name").HasMaxLength(255);
+                entity.Property(e => e.MeetingSchedule).HasColumnName("meeting_schedule").HasMaxLength(255);
+                entity.Property(e => e.Location).HasColumnName("location").HasMaxLength(255);
+                entity.Property(e => e.IsPrivate).HasColumnName("is_private").IsRequired();
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+
+                entity.HasIndex(e => e.TenantId);
+                entity.HasIndex(e => e.GroupType);
+
+                entity.HasMany(e => e.Members)
+                    .WithOne(m => m.FellowshipGroup!)
+                    .HasForeignKey(m => m.FellowshipGroupId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasMany(e => e.Posts)
+                    .WithOne(p => p.FellowshipGroup!)
+                    .HasForeignKey(p => p.FellowshipGroupId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure FellowshipMember entity
+            modelBuilder.Entity<FellowshipMember>(entity =>
+            {
+                entity.ToTable("FellowshipMembers");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("church_id").IsRequired();
+                entity.Ignore(e => e.ChurchId);
+                entity.Property(e => e.FellowshipGroupId).HasColumnName("fellowship_group_id").IsRequired();
+                entity.Property(e => e.MemberId).HasColumnName("member_id").IsRequired();
+                entity.Property(e => e.MemberName).HasColumnName("member_name").IsRequired().HasMaxLength(255);
+                entity.Property(e => e.Role).HasColumnName("role").IsRequired().HasMaxLength(50);
+                entity.Property(e => e.JoinedAt).HasColumnName("joined_at").IsRequired();
+
+                entity.HasIndex(e => e.TenantId);
+                entity.HasIndex(e => e.FellowshipGroupId);
+                entity.HasIndex(e => new { e.FellowshipGroupId, e.MemberId }).IsUnique();
+            });
+
+            // Configure FellowshipPost entity
+            modelBuilder.Entity<FellowshipPost>(entity =>
+            {
+                entity.ToTable("FellowshipPosts");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("church_id").IsRequired();
+                entity.Ignore(e => e.ChurchId);
+                entity.Property(e => e.FellowshipGroupId).HasColumnName("fellowship_group_id").IsRequired();
+                entity.Property(e => e.AuthorId).HasColumnName("author_id").IsRequired();
+                entity.Property(e => e.AuthorName).HasColumnName("author_name").IsRequired().HasMaxLength(255);
+                entity.Property(e => e.Title).HasColumnName("title").IsRequired().HasMaxLength(255);
+                entity.Property(e => e.Content).HasColumnName("content").IsRequired();
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+
+                entity.HasIndex(e => e.TenantId);
+                entity.HasIndex(e => e.FellowshipGroupId);
+                entity.HasIndex(e => e.CreatedAt);
             });
 
             // Apply multi-tenancy filter to all entities implementing IMultiTenantEntity
