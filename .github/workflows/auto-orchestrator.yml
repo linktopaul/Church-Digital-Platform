@@ -63,26 +63,9 @@ jobs:
                 }
               }
             `;
-            try {
-              await github.graphql(mutation, {
-                pullRequestId: context.payload.pull_request.node_id
-              });
-              core.info('Auto-merge enabled successfully via GraphQL.');
-            } catch (error) {
-              core.warning(`GraphQL auto-merge failed: ${error.message}. Attempting direct squash merge.`);
-              try {
-                await github.rest.pulls.merge({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  pull_number: context.payload.pull_request.number,
-                  merge_method: 'squash'
-                });
-                core.info('Direct squash merge succeeded.');
-              } catch (mergeErr) {
-                core.warning(`Direct squash merge also failed: ${mergeErr.message}`);
-                throw error;
-              }
-            }
+            await github.graphql(mutation, {
+              pullRequestId: context.payload.pull_request.node_id
+            });
 
   dispatch-next-issue:
     name: Label next sequential issue after merge
