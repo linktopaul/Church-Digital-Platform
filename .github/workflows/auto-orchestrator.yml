@@ -1,0 +1,75 @@
+name: "Orchestrator: Auto-Merge & Dispatch Next Issue"
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  auto-verify-and-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Run Build and Unit Tests
+        run: |
+          if ls backend/*.sln 1> /dev/null 2>&1 || ls backend/*.csproj 1> /dev/null 2>&1; then
+            dotnet test backend --verbosity normal
+          else
+            echo "No test suite found yet, skipping."
+          fi
+
+      - name: Auto-Merge Pull Request
+        uses: pascalgn/automerge-action@v0.16.4
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          MERGE_LABELS: ""
+          MERGE_METHOD: "squash"
+          MERGE_DELETE_BRANCH: "true"
+
+  dispatch-next-task:
+    needs: auto-verify-and-merge
+    runs-on: ubuntu-latest
+    steps:
+      - name: Label Next Open Issue for Jules
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // 1. Fetch open issues ordered chronologically
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              sort: 'created',
+              direction: 'asc'
+            });
+
+            // 2. Find the first issue that isn't already running or completed
+            const nextIssue = issues.data.find(issue => 
+              !issue.pull_request && 
+              !issue.labels.some(l => l.name === 'jules')
+            );
+
+            if (nextIssue) {
+              console.log(`Assigning next task: Issue #${nextIssue.number} - ${nextIssue.title}`);
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: nextIssue.number,
+                labels: ['jules']
+              });
+            } else {
+              console.log('No remaining issues to dispatch.');
+            }
