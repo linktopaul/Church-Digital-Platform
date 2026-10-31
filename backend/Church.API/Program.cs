@@ -24,6 +24,8 @@ builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("CanPublishAnnouncements", policy =>
         policy.RequireRole("Admin", "Pastor"));
+    options.AddPolicy("PastorOnly", policy =>
+        policy.RequireRole("Pastor"));
 });
 
 var app = builder.Build();
@@ -122,6 +124,146 @@ announcementsGroup.MapPost("/", [Authorize(Roles = "Admin,Pastor")] async (
     return Results.Created($"/api/v1/announcements/{announcement.Id}", response);
 });
 
+// Prayer Request Endpoints
+var prayerRequestsGroup = app.MapGroup("/api/v1/prayer-requests")
+    .RequireAuthorization();
+
+// Submit a prayer request (Members)
+prayerRequestsGroup.MapPost("/", async (
+    CreatePrayerRequestRequest request,
+    ApplicationDbContext db,
+    ITenantService tenantService,
+    ClaimsPrincipal user) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Content))
+    {
+        return Results.BadRequest(new { error = "Content is required." });
+    }
+
+    var churchId = tenantService.GetCurrentTenantId();
+    if (churchId == Guid.Empty)
+    {
+        var tenantClaim = user.FindFirst("church_id")?.Value ?? user.FindFirst("tenant_id")?.Value;
+        if (Guid.TryParse(tenantClaim, out var parsedId))
+        {
+            churchId = parsedId;
+        }
+    }
+
+    if (churchId == Guid.Empty)
+    {
+        return Results.BadRequest(new { error = "A valid church tenant is required." });
+    }
+
+    var memberIdString = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
+    _ = Guid.TryParse(memberIdString, out var memberId);
+    if (memberId == Guid.Empty)
+    {
+        return Results.Unauthorized();
+    }
+
+    var prayerRequest = new PrayerRequest
+    {
+        Id = Guid.NewGuid(),
+        ChurchId = churchId,
+        MemberId = memberId,
+        Content = request.Content.Trim(),
+        Status = PrayerRequestStatus.Submitted,
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow
+    };
+
+    db.PrayerRequests.Add(prayerRequest);
+    await db.SaveChangesAsync();
+
+    var response = new PrayerRequestResponse(
+        prayerRequest.Id,
+        prayerRequest.ChurchId,
+        prayerRequest.MemberId,
+        prayerRequest.Content,
+        prayerRequest.Status,
+        prayerRequest.CreatedAt,
+        prayerRequest.UpdatedAt
+    );
+
+    return Results.Created($"/api/v1/prayer-requests/{prayerRequest.Id}", response);
+});
+
+// List all prayer requests (Pastor Only)
+prayerRequestsGroup.MapGet("/", [Authorize(Policy = "PastorOnly")] async (ApplicationDbContext db) =>
+{
+    var requests = await db.PrayerRequests
+        .OrderByDescending(p => p.CreatedAt)
+        .Select(p => new PrayerRequestResponse(
+            p.Id,
+            p.TenantId,
+            p.MemberId,
+            p.Content,
+            p.Status,
+            p.CreatedAt,
+            p.UpdatedAt
+        ))
+        .ToListAsync();
+
+    return Results.Ok(requests);
+});
+
+// List member's own prayer requests
+prayerRequestsGroup.MapGet("/my", async (ApplicationDbContext db, ClaimsPrincipal user) =>
+{
+    var memberIdString = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
+    if (!Guid.TryParse(memberIdString, out var memberId) || memberId == Guid.Empty)
+    {
+        return Results.Unauthorized();
+    }
+
+    var requests = await db.PrayerRequests
+        .Where(p => p.MemberId == memberId)
+        .OrderByDescending(p => p.CreatedAt)
+        .Select(p => new PrayerRequestResponse(
+            p.Id,
+            p.TenantId,
+            p.MemberId,
+            p.Content,
+            p.Status,
+            p.CreatedAt,
+            p.UpdatedAt
+        ))
+        .ToListAsync();
+
+    return Results.Ok(requests);
+});
+
+// Update prayer request status (Pastor Only)
+prayerRequestsGroup.MapPatch("/{id}/status", [Authorize(Policy = "PastorOnly")] async (
+    Guid id,
+    UpdatePrayerRequestStatusRequest request,
+    ApplicationDbContext db) =>
+{
+    var prayerRequest = await db.PrayerRequests.FirstOrDefaultAsync(p => p.Id == id);
+    if (prayerRequest == null)
+    {
+        return Results.NotFound();
+    }
+
+    prayerRequest.Status = request.Status;
+    prayerRequest.UpdatedAt = DateTime.UtcNow;
+
+    await db.SaveChangesAsync();
+
+    var response = new PrayerRequestResponse(
+        prayerRequest.Id,
+        prayerRequest.ChurchId,
+        prayerRequest.MemberId,
+        prayerRequest.Content,
+        prayerRequest.Status,
+        prayerRequest.CreatedAt,
+        prayerRequest.UpdatedAt
+    );
+
+    return Results.Ok(response);
+});
+
 app.Run();
 
 // Export Program class for WebApplicationFactory in tests
@@ -172,7 +314,7 @@ public class CustomAuthHandler : AuthenticationHandler<AuthenticationSchemeOptio
         // Support header-based user claims for direct integration testing and gateway proxying
         // e.g. Authorization header: "TestRole Admin" or "TestRole Member" or headers "X-User-Role", "X-User-Id"
         var role = Request.Headers["X-User-Role"].FirstOrDefault();
-        var userId = Request.Headers["X-User-Id"].FirstOrDefault() ?? Guid.NewGuid().ToString();
+        var userId = Request.Headers["X-User-Id"].FirstOrDefault();
         var churchId = Request.Headers["X-Tenant-Id"].FirstOrDefault();
 
         // Also check Authorization header Bearer token / Test token
@@ -197,11 +339,21 @@ public class CustomAuthHandler : AuthenticationHandler<AuthenticationSchemeOptio
             return Task.FromResult(AuthenticateResult.Fail("No authentication provided"));
         }
 
+        if (!string.Equals(role, "Member", StringComparison.OrdinalIgnoreCase) &&
+            string.IsNullOrWhiteSpace(userId))
+        {
+            userId = Guid.NewGuid().ToString();
+        }
+
         var claims = new List<Claim>
         {
-            new Claim(ClaimTypes.NameIdentifier, userId),
             new Claim(ClaimTypes.Role, role)
         };
+
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            claims.Add(new Claim(ClaimTypes.NameIdentifier, userId));
+        }
 
         if (!string.IsNullOrEmpty(churchId))
         {
