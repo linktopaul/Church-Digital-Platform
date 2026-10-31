@@ -17,3 +17,6 @@
 
 ## Module 6: Fellowship Ministry Spaces
 - Group spaces for Men's Fellowship, Sunday School, and House Prayer groups
+  
+## Module 7: Member Profile & Family Directory
+- Member personal details, family unit linkage, privacy visibility toggles
