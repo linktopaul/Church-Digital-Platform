@@ -10,68 +10,102 @@ on:
     - cron: "*/30 * * * *"
   workflow_dispatch:
 
+concurrency:
+  group: update-stale-pr-branches
+  cancel-in-progress: false
+
 permissions: {}
 
 jobs:
   update-branches:
     name: Update open PRs behind main
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      actions: write
+      checks: read
+      contents: write
       pull-requests: write
     steps:
-      - name: Check for update token
-        id: token
-        env:
-          UPDATE_TOKEN: ${{ secrets.PR_BRANCH_UPDATE_TOKEN }}
-        shell: bash
-        run: |
-          if [ -n "$UPDATE_TOKEN" ]; then
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Add the repository secret PR_BRANCH_UPDATE_TOKEN to enable automatic branch updates. Run this workflow again after adding it."
-          fi
-
-      - name: Update stale same-repository pull requests
-        if: steps.token.outputs.configured == 'true'
+      - name: Update stale branches and dispatch missing checks
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.PR_BRANCH_UPDATE_TOKEN }}
+          github-token: ${{ github.token }}
           script: |
+            const { owner, repo } = context.repo;
             const pullRequests = await github.paginate(github.rest.pulls.list, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              base: 'main',
-              per_page: 100
+              owner, repo, state: 'open', base: 'main', per_page: 100
             });
 
             for (const candidate of pullRequests) {
-              if (candidate.head.repo?.full_name !== context.repo.owner + '/' + context.repo.repo) {
+              if (candidate.head.repo?.full_name !== `${owner}/${repo}`) {
                 core.info(`Skipping PR #${candidate.number}: its branch is in a fork.`);
                 continue;
               }
 
-              const { data: pull } = await github.rest.pulls.get({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: candidate.number
+              let { data: pull } = await github.rest.pulls.get({
+                owner, repo, pull_number: candidate.number
               });
-
-              if (pull.merged || pull.state !== 'open' || pull.mergeable_state !== 'behind') {
-                core.info(`Skipping PR #${pull.number}: merge state is ${pull.mergeable_state}.`);
+              if (pull.merged || pull.state !== 'open' || pull.draft) {
+                core.info(`Skipping PR #${pull.number}: it is merged, closed, or draft.`);
                 continue;
               }
 
-              try {
-                await github.rest.pulls.updateBranch({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  pull_number: pull.number
-                });
-                core.info(`Requested an update for PR #${pull.number}; GitHub Actions checks will run on the updated branch.`);
-              } catch (error) {
-                core.warning(`Could not update PR #${pull.number}: ${error.message}`);
+              if (pull.mergeable_state === 'behind') {
+                const previousHead = pull.head.sha;
+                try {
+                  await github.rest.pulls.updateBranch({
+                    owner, repo, pull_number: pull.number,
+                    expected_head_sha: previousHead
+                  });
+                } catch (error) {
+                  core.warning(`Could not update PR #${pull.number}: ${error.message}`);
+                  continue;
+                }
+
+                for (let attempt = 0; attempt < 8; attempt++) {
+                  await new Promise(resolve => setTimeout(resolve, 5000));
+                  const refreshed = await github.rest.pulls.get({
+                    owner, repo, pull_number: pull.number
+                  });
+                  pull = refreshed.data;
+                  if (pull.head.sha !== previousHead) break;
+                }
+
+                if (pull.head.sha === previousHead) {
+                  core.warning(`GitHub accepted the update request for PR #${pull.number}, but its head did not change yet; the next scheduled run will retry.`);
+                  continue;
+                }
+                core.info(`Updated PR #${pull.number} with the latest main branch.`);
+              }
+
+              const { data: checkRuns } = await github.rest.checks.listForRef({
+                owner, repo, ref: pull.head.sha, per_page: 100
+              });
+              const checkNames = new Set(checkRuns.check_runs.map(check => check.name));
+
+              if (!checkNames.has('.NET 10 unit tests')) {
+                try {
+                  await github.rest.actions.createWorkflowDispatch({
+                    owner, repo, workflow_id: 'auto-orchestrator.yml',
+                    ref: pull.head.ref,
+                    inputs: { pull_request_number: String(pull.number) }
+                  });
+                  core.info(`Dispatched .NET tests and auto-merge check for PR #${pull.number}.`);
+                } catch (error) {
+                  core.warning(`Could not dispatch .NET checks for PR #${pull.number}: ${error.message}. The scheduled run will retry.`);
+                }
+              }
+
+              if (!checkNames.has('Flutter mobile checks')) {
+                try {
+                  await github.rest.actions.createWorkflowDispatch({
+                    owner, repo, workflow_id: 'flutter-mobile-ci.yml',
+                    ref: pull.head.ref
+                  });
+                  core.info(`Dispatched Flutter checks for PR #${pull.number}.`);
+                } catch (error) {
+                  core.warning(`Could not dispatch Flutter checks for PR #${pull.number}: ${error.message}. The scheduled run will retry.`);
+                }
               }
             }
