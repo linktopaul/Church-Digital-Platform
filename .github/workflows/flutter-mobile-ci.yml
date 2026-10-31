@@ -3,6 +3,11 @@ name: "Flutter Mobile Pull Request Checks"
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/flutter-mobile-ci.yml"
   workflow_dispatch:
 
 concurrency:
