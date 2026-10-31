@@ -18,51 +18,102 @@ jobs:
       - name: Check out roadmap
         uses: actions/checkout@v4
 
-      - name: Ensure ready-for-dev label exists
+      - name: Generate missing roadmap PBIs
         uses: actions/github-script@v7
         with:
           script: |
-            const name = 'ready-for-dev';
+            const fs = require('fs');
+            const roadmap = fs.readFileSync('.github/product_roadmap.md', 'utf8');
+            const heading = /^## Module\s+(\d+):\s*(.+?)\s*$/gm;
+            const matches = [...roadmap.matchAll(heading)];
+            if (matches.length === 0) {
+              core.setFailed('No "## Module N: Title" sections found in .github/product_roadmap.md');
+              return;
+            }
+
+            const modules = matches.map((match, index) => {
+              const start = match.index + match[0].length;
+              const end = index + 1 < matches.length ? matches[index + 1].index : roadmap.length;
+              const scope = roadmap.slice(start, end).trim();
+              return {
+                number: Number(match[1]),
+                title: match[2].trim(),
+                scope: scope.split(/\r?\n/).map(line => line.trim()).filter(line => line.startsWith('- ')).map(line => line.slice(2))
+              };
+            });
+
+            const { owner, repo } = context.repo;
+            const existing = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'all',
+              per_page: 100
+            });
+            const represented = new Set(
+              existing
+                .filter(issue => !issue.pull_request)
+                .map(issue => issue.title.match(/^\[PBI #(\d+)(?:\.\d+)?\]/i))
+                .filter(Boolean)
+                .map(match => Number(match[1]))
+            );
+
+            const labelName = 'ready-for-dev';
             try {
-              await github.rest.issues.getLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                name
-              });
-              core.info(`Label "${name}" already exists.`);
+              await github.rest.issues.getLabel({ owner, repo, name: labelName });
+              core.info(`Label "${labelName}" already exists.`);
             } catch (error) {
               if (error.status !== 404) throw error;
               await github.rest.issues.createLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                name,
+                owner,
+                repo,
+                name: labelName,
                 color: '0E8A16',
                 description: 'Roadmap PBI ready for development'
               });
-              core.info(`Created label "${name}".`);
+              core.info(`Created label "${labelName}".`);
             }
 
-      - name: Generate missing roadmap PBIs
-        uses: google-github-actions/run-gemini-cli@v0
-        with:
-          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
-          prompt: |
-            Read and parse every module in .github/product_roadmap.md.
-            Compare the module numbers and scope with existing repository issues,
-            and create issues only for roadmap work that is not already represented.
-            Do not create duplicate issues.
+            for (const module of modules) {
+              if (represented.has(module.number)) {
+                core.info(`Skipping Module ${module.number}; an issue already represents it.`);
+                continue;
+              }
 
-            For each missing module, create one or more standard GitHub PBI issues.
-            Use titles in the form "[PBI #<module>.<item>]: <concise task title>".
-            Each issue body must contain these headings and content:
-            - User Story
-            - Gherkin Acceptance Criteria
-            - Technical Constraints, including church_id tenant isolation and RBAC roles where relevant
-            - Target Deliverables
+              const scopeText = module.scope.length
+                ? module.scope.map(item => `- ${item}`).join('\n')
+                : '- Deliver the roadmap capabilities listed for this module.';
+              const body = [
+                '## User Story',
+                `As a church member or ministry leader, I want ${module.title.toLowerCase()} so that the church can support this ministry need in one secure platform.`,
+                '',
+                '## Gherkin Acceptance Criteria',
+                '- **Given** an authenticated user in a church tenant, **when** they use this module, **then** the capabilities in the roadmap scope are available according to their role.',
+                '- **Given** a user without the required role or visibility, **when** they attempt a restricted action or access restricted information, **then** the server denies access.',
+                '- **Given** data belonging to another church tenant, **when** this module reads or changes data, **then** that data is never exposed or modified.',
+                '',
+                '## Roadmap Scope',
+                scopeText,
+                '',
+                '## Technical Constraints',
+                '- Scope all church-owned data by church_id and enforce tenant isolation on the server.',
+                '- Enforce role-based permissions and privacy visibility controls where applicable.',
+                '- Keep implementation consistent with the existing .NET 10 backend and Flutter client architecture.',
+                '- Add automated tests for the module behavior, authorization, and tenant isolation that apply.',
+                '',
+                '## Target Deliverables',
+                '- Implement the module capabilities listed in the roadmap scope.',
+                '- Add or update backend API/domain and persistence components where required.',
+                '- Add or update the member-facing client screens where required.',
+                '- Include applicable automated tests and concise setup or usage notes.'
+              ].join('\n');
 
-            Apply the ready-for-dev label to every created issue. Use the GitHub CLI
-            or GitHub REST API with the provided token. Preserve existing issues and
-            do not edit, close, or delete unrelated issues.
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GEMINI_CLI_TRUST_WORKSPACE: "true"
+              const created = await github.rest.issues.create({
+                owner,
+                repo,
+                title: `[PBI #${module.number}]: ${module.title}`,
+                body,
+                labels: [labelName]
+              });
+              represented.add(module.number);
+              core.info(`Created ${created.data.html_url}`);
+            }
