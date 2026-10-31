@@ -150,6 +150,11 @@ prayerRequestsGroup.MapPost("/", async (
         }
     }
 
+    if (churchId == Guid.Empty)
+    {
+        return Results.BadRequest(new { error = "A valid church tenant is required." });
+    }
+
     var memberIdString = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
     _ = Guid.TryParse(memberIdString, out var memberId);
     if (memberId == Guid.Empty)
@@ -306,7 +311,7 @@ public class CustomAuthHandler : AuthenticationHandler<AuthenticationSchemeOptio
         // Support header-based user claims for direct integration testing and gateway proxying
         // e.g. Authorization header: "TestRole Admin" or "TestRole Member" or headers "X-User-Role", "X-User-Id"
         var role = Request.Headers["X-User-Role"].FirstOrDefault();
-        var userId = Request.Headers["X-User-Id"].FirstOrDefault() ?? Guid.NewGuid().ToString();
+        var userId = Request.Headers["X-User-Id"].FirstOrDefault();
         var churchId = Request.Headers["X-Tenant-Id"].FirstOrDefault();
 
         // Also check Authorization header Bearer token / Test token
@@ -330,6 +335,14 @@ public class CustomAuthHandler : AuthenticationHandler<AuthenticationSchemeOptio
         {
             return Task.FromResult(AuthenticateResult.Fail("No authentication provided"));
         }
+
+        if (string.Equals(role, "Member", StringComparison.OrdinalIgnoreCase) &&
+            !Guid.TryParse(userId, out _))
+        {
+            return Task.FromResult(AuthenticateResult.Fail("A stable member ID is required."));
+        }
+
+        userId ??= Guid.NewGuid().ToString();
 
         var claims = new List<Claim>
         {
