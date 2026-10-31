@@ -10,13 +10,16 @@
 - Private prayer requests to Pastor only, status updates (Praying, Answered)
 
 ## Module 4: Worship & Choir Playlist Engine
-- Song catalog with lyrics, keys, chord PDF attachments, and Sunday service setlists
+- Song library with lyrics and chords, plus Sunday service setlists
 
 ## Module 5: Automated Birthday & Anniversary Blessings
 - Cron-driven daily check for birthdays/anniversaries with WhatsApp deep-link notifications
 
 ## Module 6: Fellowship Ministry Spaces
 - Group spaces for Men's Fellowship, Sunday School, and House Prayer groups
-  
+
 ## Module 7: Member Profile & Family Directory
-- Member personal details, family unit linkage, privacy visibility toggles
+- Member personal details, family unit linkage, and privacy visibility controls
+
+## Module 8: Digital Offerings & UPI Contribution Ledger
+- Digital giving through UPI with contribution records, payment references, acknowledgements, and an auditable church contribution ledger
