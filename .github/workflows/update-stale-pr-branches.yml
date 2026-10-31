@@ -3,6 +3,11 @@ name: "Update stale pull request branches"
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+  schedule:
+    - cron: "*/30 * * * *"
   workflow_dispatch:
 
 permissions: {}
