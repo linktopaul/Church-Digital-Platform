@@ -946,9 +946,17 @@ fellowshipGroup.MapPut("/{id:guid}", [Authorize(Roles = "Admin,Pastor,Fellowship
     }
 
     var userId = GetCurrentUserId(user);
-    if (user.IsInRole("FellowshipLeader") && !user.IsInRole("Admin") && !user.IsInRole("Pastor"))
+    var isPrivileged = user.IsInRole("Admin") || user.IsInRole("Pastor");
+    if (!isPrivileged && user.IsInRole("FellowshipLeader"))
     {
-        if (group.LeaderId.HasValue && group.LeaderId.Value != userId)
+        // Finding (3): FellowshipLeader edits must require a non-null LeaderId equal to the authenticated user ID
+        if (!group.LeaderId.HasValue || group.LeaderId.Value != userId || userId == Guid.Empty)
+        {
+            return Results.Forbid();
+        }
+
+        // Leader cannot reassign ownership to someone else or set to null
+        if (request.LeaderId.HasValue && request.LeaderId.Value != userId)
         {
             return Results.Forbid();
         }
@@ -957,8 +965,16 @@ fellowshipGroup.MapPut("/{id:guid}", [Authorize(Roles = "Admin,Pastor,Fellowship
     group.Name = request.Name.Trim();
     group.Description = request.Description?.Trim();
     group.GroupType = request.GroupType;
-    group.LeaderId = request.LeaderId;
-    group.LeaderName = request.LeaderName?.Trim();
+    if (isPrivileged)
+    {
+        group.LeaderId = request.LeaderId;
+        group.LeaderName = request.LeaderName?.Trim();
+    }
+    else
+    {
+        // Keep current leader ID intact if FellowshipLeader is updating
+        group.LeaderName = request.LeaderName?.Trim() ?? group.LeaderName;
+    }
     group.MeetingSchedule = request.MeetingSchedule?.Trim();
     group.Location = request.Location?.Trim();
     group.IsPrivate = request.IsPrivate;
@@ -1020,6 +1036,13 @@ fellowshipGroup.MapPost("/{id:guid}/join", async (
     if (group == null)
     {
         return Results.NotFound(new { error = "Fellowship group not found." });
+    }
+
+    var isPrivileged = user.IsInRole("Admin") || user.IsInRole("Pastor");
+    // Finding (2): Deny unauthorized self-joining of private groups, including when the user knows the ID
+    if (group.IsPrivate && !isPrivileged)
+    {
+        return Results.Forbid();
     }
 
     var churchId = ResolveTenantId(tenantService, user);

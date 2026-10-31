@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import '../models/fellowship_models.dart';
+import '../services/fellowship_api_client.dart';
 
 class MessagesScreen extends StatefulWidget {
-  final List<FellowshipGroupData>? initialGroups;
+  final FellowshipApiClient? apiClient;
 
   const MessagesScreen({
     super.key,
-    this.initialGroups,
+    this.apiClient,
   });
 
   @override
@@ -14,85 +15,41 @@ class MessagesScreen extends StatefulWidget {
 }
 
 class _MessagesScreenState extends State<MessagesScreen> {
-  late List<FellowshipGroupData> _groups;
+  late final FellowshipApiClient _apiClient;
+  List<FellowshipGroupData> _groups = [];
+  bool _isLoading = false;
+  String? _errorMessage;
+
   FellowshipCategory _selectedCategory = FellowshipCategory.all;
   String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
-    _groups = widget.initialGroups ??
-        [
-          FellowshipGroupData(
-            id: '1',
-            name: "Men's Fellowship Brotherhood",
-            description:
-                'Men gathering for spiritual growth, accountability, and community outreach.',
-            category: FellowshipCategory.mensFellowship,
-            leaderName: 'Elder John Thomas',
-            meetingSchedule: 'Saturdays at 7:00 AM',
-            location: 'Main Fellowship Hall',
-            memberCount: 24,
-            isUserMember: true,
-            members: const ['Elder John Thomas', 'Brother Timothy', 'David Miller'],
-            posts: [
-              FellowshipPostData(
-                id: 'p1',
-                authorName: 'Elder John Thomas',
-                title: 'Upcoming Men\'s Breakfast & Outreach',
-                content:
-                    'Join us this Saturday for breakfast followed by community service in the city park.',
-                createdAt: DateTime.now().subtract(const Duration(hours: 4)),
-              ),
-            ],
-          ),
-          FellowshipGroupData(
-            id: '2',
-            name: 'Sunday School - Primary Department',
-            description:
-                'Interactive Bible lessons, crafts, and memory verses for children ages 6 to 10.',
-            category: FellowshipCategory.sundaySchool,
-            leaderName: 'Sister Mary Grace',
-            meetingSchedule: 'Sundays at 9:00 AM',
-            location: 'Education Wing, Room 102',
-            memberCount: 18,
-            isUserMember: false,
-            members: const ['Sister Mary Grace', 'Sister Sarah', 'Deacon Paul'],
-            posts: [
-              FellowshipPostData(
-                id: 'p2',
-                authorName: 'Sister Mary Grace',
-                title: 'Lesson Plan: The Good Samaritan',
-                content:
-                    'Please review the memory verse Luke 10:27 with your children before Sunday!',
-                createdAt: DateTime.now().subtract(const Duration(days: 1)),
-              ),
-            ],
-          ),
-          FellowshipGroupData(
-            id: '3',
-            name: 'North District House Prayer',
-            description:
-                'Weekly home fellowship and intercessory prayer meeting in the North neighborhood.',
-            category: FellowshipCategory.housePrayer,
-            leaderName: 'Brother David & Ruth',
-            meetingSchedule: 'Wednesdays at 7:30 PM',
-            location: "David's Residence, 42 Elm Street",
-            memberCount: 12,
-            isUserMember: false,
-            members: const ['Brother David', 'Ruth', 'Brother Mark'],
-            posts: [
-              FellowshipPostData(
-                id: 'p3',
-                authorName: 'Brother David',
-                title: 'Prayer Focus for this Wednesday',
-                content:
-                    'We will be praying for healing and revival across our local community families.',
-                createdAt: DateTime.now().subtract(const Duration(days: 2)),
-              ),
-            ],
-          ),
-        ];
+    _apiClient = widget.apiClient ?? HttpFellowshipApiClient();
+    _loadGroups();
+  }
+
+  Future<void> _loadGroups() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final fetched = await _apiClient.getFellowshipGroups(
+        category: _selectedCategory != FellowshipCategory.all ? _selectedCategory : null,
+      );
+      setState(() {
+        _groups = fetched;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString();
+        _isLoading = false;
+      });
+    }
   }
 
   void _openGroupDetail(FellowshipGroupData group) {
@@ -100,28 +57,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
       MaterialPageRoute(
         builder: (context) => _FellowshipDetailScreen(
           group: group,
-          onToggleMembership: (isMember) {
+          apiClient: _apiClient,
+          onGroupUpdated: (updated) {
             setState(() {
-              final index = _groups.indexWhere((g) => g.id == group.id);
+              final index = _groups.indexWhere((g) => g.id == updated.id);
               if (index != -1) {
-                final current = _groups[index];
-                _groups[index] = current.copyWith(
-                  isUserMember: isMember,
-                  memberCount: isMember
-                      ? current.memberCount + 1
-                      : (current.memberCount > 0 ? current.memberCount - 1 : 0),
-                );
-              }
-            });
-          },
-          onAddPost: (post) {
-            setState(() {
-              final index = _groups.indexWhere((g) => g.id == group.id);
-              if (index != -1) {
-                final current = _groups[index];
-                _groups[index] = current.copyWith(
-                  posts: [post, ...current.posts],
-                );
+                _groups[index] = updated;
               }
             });
           },
@@ -201,29 +142,30 @@ class _MessagesScreenState extends State<MessagesScreen> {
             ),
             ElevatedButton(
               key: const Key('saveGroupButton'),
-              onPressed: () {
+              onPressed: () async {
                 if (nameController.text.trim().isEmpty) return;
-                setState(() {
-                  _groups.add(
-                    FellowshipGroupData(
-                      id: DateTime.now().millisecondsSinceEpoch.toString(),
-                      name: nameController.text.trim(),
-                      description: descriptionController.text.trim(),
-                      category: selectedType,
-                      leaderName: 'Current User',
-                      meetingSchedule: scheduleController.text.trim().isEmpty
-                          ? null
-                          : scheduleController.text.trim(),
-                      location: locationController.text.trim().isEmpty
-                          ? null
-                          : locationController.text.trim(),
-                      memberCount: 1,
-                      isUserMember: true,
-                      members: const ['Current User'],
-                      posts: const [],
-                    ),
+                try {
+                  final newGroup = await _apiClient.createFellowshipGroup(
+                    name: nameController.text.trim(),
+                    description: descriptionController.text.trim().isEmpty
+                        ? null
+                        : descriptionController.text.trim(),
+                    category: selectedType,
+                    meetingSchedule: scheduleController.text.trim().isEmpty
+                        ? null
+                        : scheduleController.text.trim(),
+                    location: locationController.text.trim().isEmpty
+                        ? null
+                        : locationController.text.trim(),
                   );
-                });
+                  setState(() {
+                    _groups.add(newGroup);
+                  });
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to create space: $e')),
+                  );
+                }
                 Navigator.of(context).pop();
               },
               child: const Text('Create Space'),
@@ -290,6 +232,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                   selected: _selectedCategory == FellowshipCategory.all,
                   onSelected: (val) {
                     setState(() => _selectedCategory = FellowshipCategory.all);
+                    _loadGroups();
                   },
                 ),
                 const SizedBox(width: 8),
@@ -302,6 +245,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                   onSelected: (val) {
                     setState(() => _selectedCategory =
                         FellowshipCategory.mensFellowship);
+                    _loadGroups();
                   },
                 ),
                 const SizedBox(width: 8),
@@ -314,6 +258,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                   onSelected: (val) {
                     setState(() =>
                         _selectedCategory = FellowshipCategory.sundaySchool);
+                    _loadGroups();
                   },
                 ),
                 const SizedBox(width: 8),
@@ -326,6 +271,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                   onSelected: (val) {
                     setState(() =>
                         _selectedCategory = FellowshipCategory.housePrayer);
+                    _loadGroups();
                   },
                 ),
               ],
@@ -352,111 +298,137 @@ class _MessagesScreenState extends State<MessagesScreen> {
             ),
           ),
 
-          // Group List
+          // Group List / Loading / Error
           Expanded(
-            child: filteredGroups.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No fellowship spaces found.',
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  )
-                : ListView.builder(
-                    key: const Key('fellowshipListView'),
-                    itemCount: filteredGroups.length,
-                    itemBuilder: (context, index) {
-                      final group = filteredGroups[index];
-                      return Card(
-                        margin: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        child: ListTile(
-                          key: Key('groupItem_${group.id}'),
-                          leading: CircleAvatar(
-                            backgroundColor: Theme.of(context)
-                                .colorScheme
-                                .primaryContainer,
-                            child: Icon(
-                              _getCategoryIcon(group.category),
-                              color: Theme.of(context)
-                                .colorScheme
-                                .onPrimaryContainer,
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _errorMessage != null
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              _errorMessage!,
+                              style: const TextStyle(color: Colors.red),
                             ),
-                          ),
-                          title: Text(
-                            group.name,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _getCategoryLabel(group.category),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Theme.of(context).colorScheme.primary,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                group.description,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 13),
-                              ),
-                              if (group.meetingSchedule != null) ...[
-                                const SizedBox(height: 4),
-                                Row(
-                                  children: [
-                                    const Icon(Icons.access_time,
-                                        size: 14, color: Colors.grey),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      group.meetingSchedule!,
-                                      style: const TextStyle(
-                                          fontSize: 12, color: Colors.grey),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ],
-                          ),
-                          trailing: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: group.isUserMember
-                                      ? Colors.green.shade50
-                                      : Colors.grey.shade100,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  group.isUserMember ? 'Joined' : 'Join',
-                                  style: TextStyle(
-                                    color: group.isUserMember
-                                        ? Colors.green.shade800
-                                        : Colors.grey.shade700,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '${group.memberCount} members',
-                                style: const TextStyle(
-                                    fontSize: 11, color: Colors.grey),
-                              ),
-                            ],
-                          ),
-                          onTap: () => _openGroupDetail(group),
+                            const SizedBox(height: 8),
+                            ElevatedButton(
+                              onPressed: _loadGroups,
+                              child: const Text('Retry'),
+                            ),
+                          ],
                         ),
-                      );
-                    },
-                  ),
+                      )
+                    : filteredGroups.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'No fellowship spaces found.',
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          )
+                        : ListView.builder(
+                            key: const Key('fellowshipListView'),
+                            itemCount: filteredGroups.length,
+                            itemBuilder: (context, index) {
+                              final group = filteredGroups[index];
+                              return Card(
+                                margin: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
+                                child: ListTile(
+                                  key: Key('groupItem_${group.id}'),
+                                  leading: CircleAvatar(
+                                    backgroundColor: Theme.of(context)
+                                        .colorScheme
+                                        .primaryContainer,
+                                    child: Icon(
+                                      _getCategoryIcon(group.category),
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onPrimaryContainer,
+                                    ),
+                                  ),
+                                  title: Text(
+                                    group.name,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                  subtitle: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _getCategoryLabel(group.category),
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .primary,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        group.description,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontSize: 13),
+                                      ),
+                                      if (group.meetingSchedule != null) ...[
+                                        const SizedBox(height: 4),
+                                        Row(
+                                          children: [
+                                            const Icon(Icons.access_time,
+                                                size: 14, color: Colors.grey),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              group.meetingSchedule!,
+                                              style: const TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  trailing: Column(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.center,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: group.isUserMember
+                                              ? Colors.green.shade50
+                                              : Colors.grey.shade100,
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                        child: Text(
+                                          group.isUserMember ? 'Joined' : 'Join',
+                                          style: TextStyle(
+                                            color: group.isUserMember
+                                                ? Colors.green.shade800
+                                                : Colors.grey.shade700,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '${group.memberCount} members',
+                                        style: const TextStyle(
+                                            fontSize: 11, color: Colors.grey),
+                                      ),
+                                    ],
+                                  ),
+                                  onTap: () => _openGroupDetail(group),
+                                ),
+                              );
+                            },
+                          ),
           ),
         ],
       ),
@@ -472,13 +444,13 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
 class _FellowshipDetailScreen extends StatefulWidget {
   final FellowshipGroupData group;
-  final ValueChanged<bool> onToggleMembership;
-  final ValueChanged<FellowshipPostData> onAddPost;
+  final FellowshipApiClient apiClient;
+  final ValueChanged<FellowshipGroupData> onGroupUpdated;
 
   const _FellowshipDetailScreen({
     required this.group,
-    required this.onToggleMembership,
-    required this.onAddPost,
+    required this.apiClient,
+    required this.onGroupUpdated,
   });
 
   @override
@@ -489,21 +461,67 @@ class _FellowshipDetailScreen extends StatefulWidget {
 class _FellowshipDetailScreenState extends State<_FellowshipDetailScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  late bool _isMember;
-  late List<FellowshipPostData> _posts;
+  late FellowshipGroupData _currentGroup;
+  bool _isLoadingDetail = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _isMember = widget.group.isUserMember;
-    _posts = List.from(widget.group.posts);
+    _currentGroup = widget.group;
+    _fetchDetail();
+  }
+
+  Future<void> _fetchDetail() async {
+    setState(() => _isLoadingDetail = true);
+    try {
+      final detail = await widget.apiClient.getFellowshipGroupDetail(_currentGroup.id);
+      setState(() {
+        _currentGroup = _currentGroup.copyWith(
+          members: detail.members,
+          posts: detail.posts,
+          memberCount: detail.memberCount > 0 ? detail.memberCount : _currentGroup.memberCount,
+          description: detail.description,
+          leaderName: detail.leaderName ?? _currentGroup.leaderName,
+          meetingSchedule: detail.meetingSchedule ?? _currentGroup.meetingSchedule,
+          location: detail.location ?? _currentGroup.location,
+        );
+        _isLoadingDetail = false;
+      });
+      widget.onGroupUpdated(_currentGroup);
+    } catch (_) {
+      setState(() => _isLoadingDetail = false);
+    }
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  Future<void> _toggleMembership() async {
+    final willJoin = !_currentGroup.isUserMember;
+    try {
+      if (willJoin) {
+        await widget.apiClient.joinFellowshipGroup(_currentGroup.id);
+      } else {
+        await widget.apiClient.leaveFellowshipGroup(_currentGroup.id);
+      }
+      setState(() {
+        _currentGroup = _currentGroup.copyWith(
+          isUserMember: willJoin,
+          memberCount: willJoin
+              ? _currentGroup.memberCount + 1
+              : (_currentGroup.memberCount > 0 ? _currentGroup.memberCount - 1 : 0),
+        );
+      });
+      widget.onGroupUpdated(_currentGroup);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Action failed: $e')),
+      );
+    }
   }
 
   void _openCreatePostDialog() {
@@ -537,22 +555,28 @@ class _FellowshipDetailScreenState extends State<_FellowshipDetailScreen>
           ),
           ElevatedButton(
             key: const Key('submitPostButton'),
-            onPressed: () {
+            onPressed: () async {
               if (titleController.text.trim().isEmpty ||
                   contentController.text.trim().isEmpty) {
                 return;
               }
-              final newPost = FellowshipPostData(
-                id: DateTime.now().millisecondsSinceEpoch.toString(),
-                authorName: 'Current User',
-                title: titleController.text.trim(),
-                content: contentController.text.trim(),
-                createdAt: DateTime.now(),
-              );
-              setState(() {
-                _posts.insert(0, newPost);
-              });
-              widget.onAddPost(newPost);
+              try {
+                final created = await widget.apiClient.createPost(
+                  _currentGroup.id,
+                  title: titleController.text.trim(),
+                  content: contentController.text.trim(),
+                );
+                setState(() {
+                  _currentGroup = _currentGroup.copyWith(
+                    posts: [created, ..._currentGroup.posts],
+                  );
+                });
+                widget.onGroupUpdated(_currentGroup);
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Failed to post: $e')),
+                );
+              }
               Navigator.of(context).pop();
             },
             child: const Text('Post'),
@@ -566,24 +590,19 @@ class _FellowshipDetailScreenState extends State<_FellowshipDetailScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.group.name),
+        title: Text(_currentGroup.name),
         actions: [
           TextButton.icon(
             key: const Key('toggleMembershipButton'),
-            onPressed: () {
-              setState(() {
-                _isMember = !_isMember;
-              });
-              widget.onToggleMembership(_isMember);
-            },
+            onPressed: _toggleMembership,
             icon: Icon(
-              _isMember ? Icons.check_circle : Icons.person_add,
-              color: _isMember ? Colors.green : Colors.blue,
+              _currentGroup.isUserMember ? Icons.check_circle : Icons.person_add,
+              color: _currentGroup.isUserMember ? Colors.green : Colors.blue,
             ),
             label: Text(
-              _isMember ? 'Joined' : 'Join',
+              _currentGroup.isUserMember ? 'Joined' : 'Join',
               style: TextStyle(
-                color: _isMember ? Colors.green : Colors.blue,
+                color: _currentGroup.isUserMember ? Colors.green : Colors.blue,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -597,155 +616,162 @@ class _FellowshipDetailScreenState extends State<_FellowshipDetailScreen>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          // Tab 1: Posts / Conversations
-          Column(
-            children: [
-              Expanded(
-                child: _posts.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No messages yet. Start the conversation!',
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      )
-                    : ListView.builder(
-                        key: const Key('postsListView'),
-                        padding: const EdgeInsets.all(12),
-                        itemCount: _posts.length,
-                        itemBuilder: (context, index) {
-                          final post = _posts[index];
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            child: Padding(
+      body: _isLoadingDetail
+          ? const Center(child: CircularProgressIndicator())
+          : TabBarView(
+              controller: _tabController,
+              children: [
+                // Tab 1: Posts / Conversations
+                Column(
+                  children: [
+                    Expanded(
+                      child: _currentGroup.posts.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'No messages yet. Start the conversation!',
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                            )
+                          : ListView.builder(
+                              key: const Key('postsListView'),
                               padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      CircleAvatar(
-                                        radius: 14,
-                                        child: Text(
-                                          post.authorName.isNotEmpty
-                                              ? post.authorName[0]
-                                              : '?',
+                              itemCount: _currentGroup.posts.length,
+                              itemBuilder: (context, index) {
+                                final post = _currentGroup.posts[index];
+                                return Card(
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            CircleAvatar(
+                                              radius: 14,
+                                              child: Text(
+                                                post.authorName.isNotEmpty
+                                                    ? post.authorName[0]
+                                                    : '?',
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              post.authorName,
+                                              style: const TextStyle(
+                                                  fontWeight: FontWeight.bold),
+                                            ),
+                                            const Spacer(),
+                                            const Icon(Icons.schedule,
+                                                size: 14, color: Colors.grey),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              'Recent',
+                                              style: const TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey),
+                                            ),
+                                          ],
                                         ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        post.authorName,
-                                        style: const TextStyle(
-                                            fontWeight: FontWeight.bold),
-                                      ),
-                                      const Spacer(),
-                                      const Icon(Icons.schedule,
-                                          size: 14, color: Colors.grey),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'Today',
-                                        style: const TextStyle(
-                                            fontSize: 12, color: Colors.grey),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    post.title,
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          post.title,
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          post.content,
+                                          style:
+                                              const TextStyle(fontSize: 14),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    post.content,
-                                    style: const TextStyle(fontSize: 14),
-                                  ),
-                                ],
-                              ),
+                                );
+                              },
                             ),
-                          );
-                        },
+                    ),
+                    if (_currentGroup.isUserMember)
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: ElevatedButton.icon(
+                          key: const Key('addPostButton'),
+                          style: ElevatedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(48),
+                          ),
+                          onPressed: _openCreatePostDialog,
+                          icon: const Icon(Icons.create),
+                          label: const Text('Post Update or Prayer Note'),
+                        ),
                       ),
-              ),
-              if (_isMember)
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: ElevatedButton.icon(
-                    key: const Key('addPostButton'),
-                    style: ElevatedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(48),
-                    ),
-                    onPressed: _openCreatePostDialog,
-                    icon: const Icon(Icons.create),
-                    label: const Text('Post Update or Prayer Note'),
-                  ),
+                  ],
                 ),
-            ],
-          ),
 
-          // Tab 2: About & Members
-          ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              Text(
-                'About this Fellowship',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
+                // Tab 2: About & Members
+                ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    Text(
+                      'About this Fellowship',
+                      style:
+                          Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
                     ),
-              ),
-              const SizedBox(height: 8),
-              Text(widget.group.description),
-              const Divider(height: 32),
-              if (widget.group.leaderName != null) ...[
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.person),
-                  title: const Text('Fellowship Leader'),
-                  subtitle: Text(widget.group.leaderName!),
-                ),
-              ],
-              if (widget.group.meetingSchedule != null) ...[
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.calendar_today),
-                  title: const Text('Meeting Schedule'),
-                  subtitle: Text(widget.group.meetingSchedule!),
-                ),
-              ],
-              if (widget.group.location != null) ...[
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.place),
-                  title: const Text('Meeting Location'),
-                  subtitle: Text(widget.group.location!),
-                ),
-              ],
-              const Divider(height: 32),
-              Text(
-                'Members (${widget.group.members.length})',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
+                    const SizedBox(height: 8),
+                    Text(_currentGroup.description),
+                    const Divider(height: 32),
+                    if (_currentGroup.leaderName != null) ...[
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.person),
+                        title: const Text('Fellowship Leader'),
+                        subtitle: Text(_currentGroup.leaderName!),
+                      ),
+                    ],
+                    if (_currentGroup.meetingSchedule != null) ...[
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.calendar_today),
+                        title: const Text('Meeting Schedule'),
+                        subtitle: Text(_currentGroup.meetingSchedule!),
+                      ),
+                    ],
+                    if (_currentGroup.location != null) ...[
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.place),
+                        title: const Text('Meeting Location'),
+                        subtitle: Text(_currentGroup.location!),
+                      ),
+                    ],
+                    const Divider(height: 32),
+                    Text(
+                      'Members (${_currentGroup.members.length})',
+                      style:
+                          Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
                     ),
-              ),
-              const SizedBox(height: 8),
-              ...widget.group.members.map(
-                (m) => ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: CircleAvatar(
-                    radius: 14,
-                    child: Text(m.isNotEmpty ? m[0] : '?'),
-                  ),
-                  title: Text(m),
+                    const SizedBox(height: 8),
+                    ..._currentGroup.members.map(
+                      (m) => ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: CircleAvatar(
+                          radius: 14,
+                          child: Text(m.isNotEmpty ? m[0] : '?'),
+                        ),
+                        title: Text(m),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
-          ),
-        ],
-      ),
+              ],
+            ),
     );
   }
 }

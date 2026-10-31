@@ -244,6 +244,120 @@ namespace Church.Tests
             // Non-member POST message -> 403 Forbidden
             var postAttemptRes = await nonMemberClient.PostAsJsonAsync($"/api/v1/fellowships/{group.Id}/posts", new CreateFellowshipPostRequest("Hello", "Attempt", "NonMember"));
             Assert.Equal(HttpStatusCode.Forbidden, postAttemptRes.StatusCode);
+
+            // Finding (2): Non-member attempts to self-join private group knowing ID -> 403 Forbidden
+            var joinAttemptRes = await nonMemberClient.PostAsJsonAsync($"/api/v1/fellowships/{group.Id}/join", new JoinFellowshipGroupRequest("Intruder"));
+            Assert.Equal(HttpStatusCode.Forbidden, joinAttemptRes.StatusCode);
+
+            // Non-member attempts to read member roster of private group -> 403 Forbidden
+            var membersAttemptRes = await nonMemberClient.GetAsync($"/api/v1/fellowships/{group.Id}/members");
+            Assert.Equal(HttpStatusCode.Forbidden, membersAttemptRes.StatusCode);
+        }
+
+        [Fact]
+        public async Task FellowshipLeader_EditPermissions_EnforcesNonNullOwnershipAndAdminBypass()
+        {
+            var churchId = Guid.NewGuid();
+            var leaderAId = Guid.NewGuid();
+            var leaderBId = Guid.NewGuid();
+
+            var adminClient = _factory.CreateClient();
+            adminClient.DefaultRequestHeaders.Add("X-User-Role", "Admin");
+            adminClient.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
+
+            // 1. Create a group with leaderA
+            var groupA1Res = await adminClient.PostAsJsonAsync("/api/v1/fellowships", new CreateFellowshipGroupRequest(
+                Name: "Leader A Group",
+                Description: "Description A",
+                GroupType: FellowshipGroupType.MensFellowship,
+                LeaderId: leaderAId,
+                LeaderName: "Leader A",
+                MeetingSchedule: "Saturdays",
+                Location: "Room 1",
+                IsPrivate: false
+            ));
+            var groupA1 = await groupA1Res.Content.ReadFromJsonAsync<FellowshipGroupResponse>();
+            Assert.NotNull(groupA1);
+
+            // 2. Create a group with null LeaderId
+            var groupNullLeaderRes = await adminClient.PostAsJsonAsync("/api/v1/fellowships", new CreateFellowshipGroupRequest(
+                Name: "Unassigned Leader Group",
+                Description: "No leader yet",
+                GroupType: FellowshipGroupType.General,
+                LeaderId: null,
+                LeaderName: null,
+                MeetingSchedule: "Fridays",
+                Location: "Room 2",
+                IsPrivate: false
+            ));
+            var groupNullLeader = await groupNullLeaderRes.Content.ReadFromJsonAsync<FellowshipGroupResponse>();
+            Assert.NotNull(groupNullLeader);
+
+            // Client for Leader A
+            var clientLeaderA = _factory.CreateClient();
+            clientLeaderA.DefaultRequestHeaders.Add("X-User-Role", "FellowshipLeader");
+            clientLeaderA.DefaultRequestHeaders.Add("X-User-Id", leaderAId.ToString());
+            clientLeaderA.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
+
+            // Client for Leader B (non-owner)
+            var clientLeaderB = _factory.CreateClient();
+            clientLeaderB.DefaultRequestHeaders.Add("X-User-Role", "FellowshipLeader");
+            clientLeaderB.DefaultRequestHeaders.Add("X-User-Id", leaderBId.ToString());
+            clientLeaderB.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
+
+            // Test 1: Leader A can edit their own group
+            var validEditRes = await clientLeaderA.PutAsJsonAsync($"/api/v1/fellowships/{groupA1.Id}", new UpdateFellowshipGroupRequest(
+                Name: "Leader A Group (Updated)",
+                Description: "Updated desc",
+                GroupType: FellowshipGroupType.MensFellowship,
+                LeaderId: leaderAId,
+                LeaderName: "Leader A",
+                MeetingSchedule: "Saturdays 8 AM",
+                Location: "Room 1B",
+                IsPrivate: false
+            ));
+            Assert.Equal(HttpStatusCode.OK, validEditRes.StatusCode);
+            var updatedA = await validEditRes.Content.ReadFromJsonAsync<FellowshipGroupResponse>();
+            Assert.Equal("Leader A Group (Updated)", updatedA!.Name);
+
+            // Test 2: Leader B attempts to edit Leader A's group -> 403 Forbidden
+            var nonOwnerEditRes = await clientLeaderB.PutAsJsonAsync($"/api/v1/fellowships/{groupA1.Id}", new UpdateFellowshipGroupRequest(
+                Name: "Hijacked by Leader B",
+                Description: "Hacked",
+                GroupType: FellowshipGroupType.MensFellowship,
+                LeaderId: leaderBId,
+                LeaderName: "Leader B",
+                MeetingSchedule: "Never",
+                Location: "Nowhere",
+                IsPrivate: false
+            ));
+            Assert.Equal(HttpStatusCode.Forbidden, nonOwnerEditRes.StatusCode);
+
+            // Test 3: Leader A attempts to edit a group with null LeaderId -> 403 Forbidden
+            var nullLeaderEditRes = await clientLeaderA.PutAsJsonAsync($"/api/v1/fellowships/{groupNullLeader.Id}", new UpdateFellowshipGroupRequest(
+                Name: "Claiming Unassigned Group",
+                Description: "Mine now",
+                GroupType: FellowshipGroupType.General,
+                LeaderId: leaderAId,
+                LeaderName: "Leader A",
+                MeetingSchedule: "Fridays",
+                Location: "Room 2",
+                IsPrivate: false
+            ));
+            Assert.Equal(HttpStatusCode.Forbidden, nullLeaderEditRes.StatusCode);
+
+            // Test 4: Admin/Pastor can edit both group with null LeaderId and group owned by Leader A
+            var adminEditNullRes = await adminClient.PutAsJsonAsync($"/api/v1/fellowships/{groupNullLeader.Id}", new UpdateFellowshipGroupRequest(
+                Name: "Admin Assigned Group",
+                Description: "Assigned by pastor",
+                GroupType: FellowshipGroupType.General,
+                LeaderId: leaderAId,
+                LeaderName: "Leader A",
+                MeetingSchedule: "Sundays",
+                Location: "Sanctuary",
+                IsPrivate: false
+            ));
+            Assert.Equal(HttpStatusCode.OK, adminEditNullRes.StatusCode);
         }
 
         [Fact]

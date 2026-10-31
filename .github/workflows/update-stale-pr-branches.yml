@@ -3,6 +3,9 @@ name: "Update stale pull request branches"
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
   schedule:
     - cron: "*/30 * * * *"
   workflow_dispatch:
@@ -16,18 +19,18 @@ permissions: {}
 jobs:
   update-branches:
     name: Update open PRs behind main
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       actions: write
       checks: read
-      contents: read
+      contents: write
       pull-requests: write
     steps:
-      - name: Refresh branches using repository token
+      - name: Update stale branches and dispatch missing checks
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.PR_BRANCH_UPDATE_TOKEN }}
+          github-token: ${{ github.token }}
           script: |
             const { owner, repo } = context.repo;
             const sameRepository = `${owner}/${repo}`;
@@ -57,7 +60,7 @@ jobs:
                     expected_head_sha: previousHead
                   });
                 } catch (error) {
-                  core.setFailed(`Could not update PR #${pull.number}: ${error.message}`);
+                  core.warning(`Could not update PR #${pull.number}: ${error.message}`);
                   continue;
                 }
 
@@ -75,34 +78,6 @@ jobs:
                   continue;
                 }
                 core.info(`Updated PR #${pull.number} with the latest main branch.`);
-              }
-
-            }
-
-      - name: Dispatch missing CI checks
-        if: always()
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ github.token }}
-          script: |
-            const { owner, repo } = context.repo;
-            const sameRepository = `${owner}/${repo}`;
-            const pullRequests = await github.paginate(github.rest.pulls.list, {
-              owner, repo, state: 'open', base: 'main', per_page: 100
-            });
-
-            for (const candidate of pullRequests) {
-              if (candidate.head.repo?.full_name !== sameRepository) {
-                core.info(`Skipping PR #${candidate.number}: its branch is in a fork.`);
-                continue;
-              }
-
-              let { data: pull } = await github.rest.pulls.get({
-                owner, repo, pull_number: candidate.number
-              });
-              if (pull.merged || pull.state !== 'open' || pull.draft) {
-                core.info(`Skipping PR #${pull.number}: it is merged, closed, or draft.`);
-                continue;
               }
 
               const { data: checkRuns } = await github.rest.checks.listForRef({
