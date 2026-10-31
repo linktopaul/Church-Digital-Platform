@@ -34,8 +34,6 @@ jobs:
             if (!process.env.BRANCH_UPDATE_TOKEN) {
               throw new Error('PR_BRANCH_UPDATE_TOKEN is required; configure the repository-scoped token before running this workflow.');
             }
-            const { getOctokit } = require('@actions/github');
-            const branchClient = getOctokit(process.env.BRANCH_UPDATE_TOKEN);
             const { owner, repo } = context.repo;
             const sameRepository = `${owner}/${repo}`;
             const pullRequests = await github.paginate(github.rest.pulls.list, {
@@ -59,7 +57,8 @@ jobs:
               if (pull.mergeable_state === 'behind') {
                 const previousHead = pull.head.sha;
                 try {
-                  await branchClient.rest.pulls.updateBranch({
+                  await github.rest.pulls.updateBranch({
+                    headers: { authorization: `Bearer ${process.env.BRANCH_UPDATE_TOKEN}` },
                     owner, repo, pull_number: pull.number,
                     expected_head_sha: previousHead
                   });
