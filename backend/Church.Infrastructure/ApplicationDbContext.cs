@@ -15,6 +15,9 @@ namespace Church.Infrastructure
 
         public DbSet<Tenant> Tenants { get; set; }
         public DbSet<Announcement> Announcements { get; set; }
+        public DbSet<Song> Songs { get; set; }
+        public DbSet<Setlist> Setlists { get; set; }
+        public DbSet<SetlistItem> SetlistItems { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -47,6 +50,71 @@ namespace Church.Infrastructure
 
                 entity.HasIndex(e => e.TenantId);
                 entity.HasIndex(e => e.PublishedAt);
+            });
+
+            // Configure Song entity
+            modelBuilder.Entity<Song>(entity =>
+            {
+                entity.ToTable("Songs");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("church_id").IsRequired();
+                entity.Ignore(e => e.ChurchId);
+                entity.Property(e => e.Title).HasColumnName("title").IsRequired().HasMaxLength(255);
+                entity.Property(e => e.Artist).HasColumnName("artist").HasMaxLength(255);
+                entity.Property(e => e.DefaultKey).HasColumnName("default_key").HasMaxLength(10);
+                entity.Property(e => e.TempoBpm).HasColumnName("tempo_bpm");
+                entity.Property(e => e.Lyrics).HasColumnName("lyrics").IsRequired();
+                entity.Property(e => e.Chords).HasColumnName("chords").IsRequired();
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+
+                entity.HasIndex(e => e.TenantId);
+                entity.HasIndex(e => e.Title);
+            });
+
+            // Configure Setlist entity
+            modelBuilder.Entity<Setlist>(entity =>
+            {
+                entity.ToTable("Setlists");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("church_id").IsRequired();
+                entity.Ignore(e => e.ChurchId);
+                entity.Property(e => e.Title).HasColumnName("title").IsRequired().HasMaxLength(255);
+                entity.Property(e => e.ServiceDate).HasColumnName("service_date").IsRequired();
+                entity.Property(e => e.Notes).HasColumnName("notes");
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+
+                entity.HasIndex(e => e.TenantId);
+                entity.HasIndex(e => e.ServiceDate);
+
+                entity.HasMany(e => e.Items)
+                    .WithOne(i => i.Setlist!)
+                    .HasForeignKey(i => i.SetlistId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure SetlistItem entity
+            modelBuilder.Entity<SetlistItem>(entity =>
+            {
+                entity.ToTable("SetlistItems");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("church_id").IsRequired();
+                entity.Ignore(e => e.ChurchId);
+                entity.Property(e => e.SetlistId).HasColumnName("setlist_id").IsRequired();
+                entity.Property(e => e.SongId).HasColumnName("song_id").IsRequired();
+                entity.Property(e => e.Order).HasColumnName("order").IsRequired();
+                entity.Property(e => e.KeyOverride).HasColumnName("key_override").HasMaxLength(10);
+                entity.Property(e => e.Notes).HasColumnName("notes");
+
+                entity.HasIndex(e => e.TenantId);
+                entity.HasIndex(e => e.SetlistId);
+
+                entity.HasOne(e => e.Song)
+                    .WithMany()
+                    .HasForeignKey(e => e.SongId)
+                    .OnDelete(DeleteBehavior.Restrict);
             });
 
             // Apply multi-tenancy filter to all entities implementing IMultiTenantEntity
