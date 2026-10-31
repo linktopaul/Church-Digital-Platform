@@ -1,0 +1,30 @@
+name: "Agent: Product Backlog Architect"
+
+on:
+  push:
+    paths:
+      - ".github/product_roadmap.md"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  generate-backlog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Run Gemini Backlog Generator
+        uses: google-github-actions/run-gemini-cli@v1
+        with:
+          api-key: ${{ secrets.GEMINI_API_KEY }}
+          prompt: |
+            Read the contents of '.github/product_roadmap.md'.
+            Compare it against existing GitHub issues.
+            For each roadmap module that doesn't have an issue yet:
+            1. Deconstruct it into ready-for-development Product Backlog Items (PBIs).
+            2. Format each with: User Story, Gherkin Acceptance Criteria, Technical Constraints (Multi-tenant church_id check, RBAC roles), and Target Deliverables.
+            3. Use the GitHub REST API to automatically create each Issue with label 'ready-for-dev'.
