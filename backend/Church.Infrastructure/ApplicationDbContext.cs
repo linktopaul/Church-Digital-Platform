@@ -15,6 +15,7 @@ namespace Church.Infrastructure
 
         public DbSet<Tenant> Tenants { get; set; }
         public DbSet<Announcement> Announcements { get; set; }
+        public DbSet<PrayerRequest> PrayerRequests { get; set; }
         public DbSet<Song> Songs { get; set; }
         public DbSet<Setlist> Setlists { get; set; }
         public DbSet<SetlistItem> SetlistItems { get; set; }
@@ -50,6 +51,24 @@ namespace Church.Infrastructure
 
                 entity.HasIndex(e => e.TenantId);
                 entity.HasIndex(e => e.PublishedAt);
+            });
+
+            // Configure PrayerRequest entity
+            modelBuilder.Entity<PrayerRequest>(entity =>
+            {
+                entity.ToTable("PrayerRequests");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("church_id").IsRequired();
+                entity.Ignore(e => e.ChurchId);
+                entity.Property(e => e.MemberId).HasColumnName("member_id").IsRequired();
+                entity.Property(e => e.Content).HasColumnName("content").IsRequired();
+                entity.Property(e => e.Status).HasColumnName("status").HasConversion<string>().IsRequired();
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("CURRENT_TIMESTAMP");
+                entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                entity.HasIndex(e => e.TenantId);
+                entity.HasIndex(e => e.MemberId);
             });
 
             // Configure Song entity
