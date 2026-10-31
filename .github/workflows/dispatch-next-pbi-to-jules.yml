@@ -9,7 +9,7 @@ permissions: {}
 jobs:
   dispatch-next-pbi:
     name: Label the next ready PBI for Jules
-    if: github.event.pull_request.merged == true
+    if: github.event.pull_request.merged == true && (contains(github.event.pull_request.title, 'PBI #') || contains(github.event.pull_request.body, 'Implemented Module '))
     permissions:
       issues: write
       pull-requests: read
