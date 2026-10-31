@@ -46,9 +46,6 @@ jobs:
             const issueByNumber = new Map(allIssues
               .filter(issue => !issue.pull_request)
               .map(issue => [issue.number, issue]));
-            const pbiIssues = [...issueByNumber.values()].filter(issue =>
-              /^\[PBI\s*#\s*\d+\]/i.test(issue.title)
-            );
             const trackedIssues = [...issueByNumber.values()].filter(issue =>
               /^\[(?:PBI\s*#\s*\d+|MVP Task)\]/i.test(issue.title)
             );
