@@ -1,4 +1,4 @@
-name: "Orchestrator: Test, Auto-Merge & Dispatch Next Issue"
+name: "Orchestrator: .NET 10 Pull Request Tests"
 
 on:
   pull_request:
@@ -8,18 +8,19 @@ concurrency:
   group: pr-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-permissions: {}
+permissions:
+  contents: read
 
 jobs:
   test:
     name: .NET 10 unit tests
     if: github.event.pull_request.draft == false
-    permissions:
-      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Check out pull request
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v4
@@ -39,94 +40,3 @@ jobs:
             echo "Testing ${project}"
             dotnet test "${project}" --configuration Release --verbosity normal
           done
-
-  enable-auto-merge:
-    name: Enable auto-merge after tests pass
-    needs: test
-    if: github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository
-    permissions:
-      contents: write
-      pull-requests: write
-    runs-on: ubuntu-latest
-    steps:
-      - name: Enable squash auto-merge
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const mutation = `
-              mutation EnableAutoMerge($pullRequestId: ID!) {
-                enablePullRequestAutoMerge(input: {
-                  pullRequestId: $pullRequestId,
-                  mergeMethod: SQUASH
-                }) {
-                  pullRequest { number }
-                }
-              }
-            `;
-            await github.graphql(mutation, {
-              pullRequestId: context.payload.pull_request.node_id
-            });
-
-  dispatch-next-issue:
-    name: Label next sequential issue after merge
-    needs: enable-auto-merge
-    permissions:
-      contents: read
-      issues: write
-      pull-requests: read
-    runs-on: ubuntu-latest
-    steps:
-      - name: Wait for merge and label the next open issue
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const pullNumber = context.payload.pull_request.number;
-            let pullRequest;
-
-            for (let attempt = 0; attempt < 40; attempt++) {
-              const response = await github.rest.pulls.get({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: pullNumber
-              });
-              pullRequest = response.data;
-              if (pullRequest.merged) break;
-              await new Promise(resolve => setTimeout(resolve, 15000));
-            }
-
-            if (!pullRequest?.merged) {
-              throw new Error(`Pull request #${pullNumber} was not merged within 10 minutes; no issue was labeled.`);
-            }
-
-            const references = [
-              ...`${pullRequest.title}\n${pullRequest.body || ''}`.matchAll(/(?:issue|pbi|closes|fixes|resolves)\s*#(\d+)/gi)
-            ].map(match => Number(match[1]));
-            const completedIssue = references.length ? Math.max(...references) : 0;
-
-            const openIssues = await github.paginate(github.rest.issues.listForRepo, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              per_page: 100
-            });
-
-            const nextIssue = openIssues
-              .filter(issue =>
-                !issue.pull_request &&
-                issue.number > completedIssue &&
-                !issue.labels.some(label => label.name.toLowerCase() === 'jules')
-              )
-              .sort((a, b) => a.number - b.number)[0];
-
-            if (!nextIssue) {
-              core.info(`No open, unassigned sequential issue follows Issue #${completedIssue}.`);
-              return;
-            }
-
-            await github.rest.issues.addLabels({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: nextIssue.number,
-              labels: ['jules']
-            });
-            core.info(`Applied the jules label to Issue #${nextIssue.number}: ${nextIssue.title}`);
