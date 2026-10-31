@@ -49,6 +49,9 @@ jobs:
             const pbiIssues = [...issueByNumber.values()].filter(issue =>
               /^\[PBI\s*#\s*\d+\]/i.test(issue.title)
             );
+            const trackedIssues = [...issueByNumber.values()].filter(issue =>
+              /^\[(?:PBI\s*#\s*\d+|MVP Task)\]/i.test(issue.title)
+            );
 
             const getClosingRefs = text => [...(text || '').matchAll(
               /\b(?:close[sd]?|fix(?:es|ed)?|resolve[sd]?)\s+(?:[\w-]+\/[\w.-]+)?#(\d+)/gi
@@ -71,17 +74,20 @@ jobs:
               }
             };
 
-            for (const issue of issueByNumber.values()) {
+            for (const issue of trackedIssues) {
               const labels = new Set(issue.labels.map(label => label.name.toLowerCase()));
               if (issue.state === 'closed') {
                 if (!labels.has('done')) await addLabel(issue.number, 'done');
                 for (const label of ['in-progress', 'ready-for-dev', 'jules']) {
                   if (labels.has(label)) await removeLabel(issue.number, label);
                 }
-              } else if (openIssuesWithPRs.has(issue.number)) {
-                if (!labels.has('in-progress')) await addLabel(issue.number, 'in-progress');
-              } else if (labels.has('in-progress')) {
-                await removeLabel(issue.number, 'in-progress');
+              } else {
+                if (labels.has('done')) await removeLabel(issue.number, 'done');
+                if (openIssuesWithPRs.has(issue.number)) {
+                  if (!labels.has('in-progress')) await addLabel(issue.number, 'in-progress');
+                } else if (labels.has('in-progress')) {
+                  await removeLabel(issue.number, 'in-progress');
+                }
               }
             }
 
@@ -92,10 +98,9 @@ jobs:
               return;
             }
 
-            const baseIssueUrl = `https://github.com/${owner}/${repo}/issues/`;
             const updatedBody = tracker.body.split('\n').map(line => {
               if (!/^\s*- \[[ xX]\]/.test(line)) return line;
-              const match = line.match(new RegExp(baseIssueUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\d+)'));
+              const match = line.match(/\/issues\/(\d+)/);
               if (!match) return line;
               const linkedIssue = issueByNumber.get(Number(match[1]));
               if (!linkedIssue || !/^\[PBI\s*#\s*\d+\]/i.test(linkedIssue.title)) return line;
