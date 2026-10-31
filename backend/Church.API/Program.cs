@@ -212,7 +212,10 @@ prayerRequestsGroup.MapGet("/", [Authorize(Policy = "PastorOnly")] async (Applic
 prayerRequestsGroup.MapGet("/my", async (ApplicationDbContext db, ClaimsPrincipal user) =>
 {
     var memberIdString = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
-    _ = Guid.TryParse(memberIdString, out var memberId);
+    if (!Guid.TryParse(memberIdString, out var memberId) || memberId == Guid.Empty)
+    {
+        return Results.Unauthorized();
+    }
 
     var requests = await db.PrayerRequests
         .Where(p => p.MemberId == memberId)
@@ -336,19 +339,21 @@ public class CustomAuthHandler : AuthenticationHandler<AuthenticationSchemeOptio
             return Task.FromResult(AuthenticateResult.Fail("No authentication provided"));
         }
 
-        if (string.Equals(role, "Member", StringComparison.OrdinalIgnoreCase) &&
-            !Guid.TryParse(userId, out _))
+        if (!string.Equals(role, "Member", StringComparison.OrdinalIgnoreCase) &&
+            string.IsNullOrWhiteSpace(userId))
         {
-            return Task.FromResult(AuthenticateResult.Fail("A stable member ID is required."));
+            userId = Guid.NewGuid().ToString();
         }
-
-        userId ??= Guid.NewGuid().ToString();
 
         var claims = new List<Claim>
         {
-            new Claim(ClaimTypes.NameIdentifier, userId),
             new Claim(ClaimTypes.Role, role)
         };
+
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            claims.Add(new Claim(ClaimTypes.NameIdentifier, userId));
+        }
 
         if (!string.IsNullOrEmpty(churchId))
         {
