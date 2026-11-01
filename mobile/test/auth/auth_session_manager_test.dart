@@ -1,8 +1,9 @@
+import '../support/in_memory_secure_token_storage.dart';
+import '../support/mock_auth_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:church_digital_platform_mobile/auth/auth_provider.dart';
 import 'package:church_digital_platform_mobile/auth/auth_session.dart';
 import 'package:church_digital_platform_mobile/auth/auth_session_manager.dart';
-import 'package:church_digital_platform_mobile/auth/secure_token_storage.dart';
 
 void main() {
   group('AuthSessionManager Lifecycle Tests', () {
@@ -75,7 +76,7 @@ void main() {
         expiresAt: DateTime.now().subtract(const Duration(minutes: 30)),
       );
       await mockStorage.saveSession(expiredSession);
-      mockProvider.refreshException = Exception('Invalid refresh token');
+      mockProvider.refreshException = const TerminalAuthException();
 
       final session = await sessionManager.initialize();
       expect(session, isNull);
@@ -96,6 +97,7 @@ void main() {
       expect(session.accessToken, startsWith('mock_access_token_'));
       expect(sessionManager.currentSession, equals(session));
       expect(await mockStorage.getSession(), equals(session));
+      await pumpEventQueue();
       expect(emissions.length, 1);
       expect(emissions.first, equals(session));
 
@@ -123,9 +125,9 @@ void main() {
         redirectUri: 'uri',
       );
 
-      mockProvider.refreshException = Exception('Revoked token');
+      mockProvider.refreshException = const TerminalAuthException();
 
-      expect(() => sessionManager.refresh(), throwsException);
+      await expectLater(sessionManager.refresh(), throwsException);
       // Wait for async error processing
       await pumpEventQueue();
 
@@ -149,6 +151,7 @@ void main() {
       expect(mockProvider.revokeCount, 1);
       expect(sessionManager.currentSession, isNull);
       expect(await mockStorage.getSession(), isNull);
+      await pumpEventQueue();
       expect(emissions.contains(null), isTrue);
 
       await sub.cancel();
