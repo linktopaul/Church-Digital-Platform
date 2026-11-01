@@ -1,6 +1,6 @@
 # Native authentication adapter integration
 
-Status: adapters are being added on #50/#25. The application is not wired yet.
+Status: concrete adapters are available on #50/#25. The application is not wired yet.
 #24 owns OpenIddict/backend registration; #51 owns navigation/Fellowship wiring.
 No issuer, client registration or endpoint deployment is supplied by this code.
 
@@ -21,6 +21,39 @@ values to `OidcConfiguration.fromEnvironment()` with `--dart-define`:
 
 Missing configuration fails closed. Discovery uses the standard issuer-relative
 `/.well-known/openid-configuration` document, not guessed OpenIddict endpoint paths.
+
+## Native provider
+
+Construct `OpenIddictAuthProvider(configuration: config, storage: storage)` with
+**the same** `PlatformSecureTokenStorage` supplied to `AuthSessionManager`.
+The future navigation owner should call `provider.authorizeAndSignIn(manager)`:
+it binds the browser result to the manager lifecycle, then uses the existing
+code-exchange interface. The advanced split flow `authorize()` returns AppAuth's
+code/verifier/nonce result; its matching exchange is single-use and expires after
+five minutes. Do not reconstruct callbacks or discard the generated nonce.
+
+AppAuth owns browser authorization, PKCE/state/nonce generation and native token
+processing. Discovery requires an exact configured issuer, advertised S256 and
+HTTPS same-origin authorization/token/UserInfo/revocation endpoints. Redirects
+on adapter HTTP requests are rejected. Missing capabilities fail closed and need
+#24 contract resolution; cross-origin endpoints are not silently trusted.
+
+Initial identity comes from bearer-authenticated UserInfo, whose standard `sub`
+is bound to the native exchange's ID-token subject. Configured member/tenant
+claims must be nonempty strings and roles a string array. Claims are UI/session
+snapshots only; backend authorization remains authoritative on every request.
+Refresh retains that snapshot and the old refresh token if rotation omits one;
+it accepts a replacement refresh token when supplied. It deliberately performs
+no UserInfo HTTP call after rotation, so temporary UserInfo outages cannot lose
+the replacement credential. Future identity/profile updates must be coordinated
+with #24 rather than inventing an unconfirmed DTO. Only native OAuth
+`invalid_grant` becomes `TerminalAuthException`; transport/server/client-config
+errors remain retryable errors. The manager owns persistence/clearing, so stale
+provider work cannot write credentials. `close()` releases the HTTP client.
+
+Local sign-out clears credentials even if discovered token revocation fails; it
+does not imply the browser's SSO cookie was cleared. Native end-session/logout
+UI is a separate contract and is not guessed from a revocation URL.
 
 ## Storage
 
@@ -62,8 +95,8 @@ When those values are confirmed, the native/dependency owner must:
 Dependencies: `flutter_appauth` 12.0.0 is the maintained native AppAuth bridge
 compatible with the published Flutter 3.41/Dart 3.11 setup (13 requires a newer
 SDK); `flutter_secure_storage` 11.2.0 supplies the native credential plugin.
-The local environment has no Flutter SDK and its proxy is unreachable. Dependency
-resolution/lockfile regeneration must be verified separately; CI uses `pub get`.
+The local environment has no Flutter SDK and its proxy is unreachable. CI uses `pub get`; its resolved lockfile is captured and committed separately.
+Local validation against the published Flutter 3.41 toolchain remains blocked.
 
 Official references consulted:
 
