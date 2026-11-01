@@ -1,0 +1,30 @@
+name: Delivery coordinator regression tests
+on:
+  pull_request:
+    paths: [".github/delivery/**", ".github/workflows/delivery-coordinator*.yml"]
+  push:
+    branches: [main]
+    paths: [".github/delivery/**"]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --check .github/delivery/run.cjs
+      - run: node --test .github/delivery/*.test.cjs
+      - name: Validate adopted assignment plan
+        run: |
+          node - <<'NODE'
+          const {plan}=require('./.github/delivery/planner.cjs');
+          const c=require('./.github/delivery/plan.json');
+          const r=plan({...c,issues:c.tasks.map(t=>({number:t.issue,state:'open',labels:[]})),pulls:[]});
+          if(r.alerts.length||r.dispatch.length)throw Error(JSON.stringify(r));
+          console.log('Adopted live assignments held; blocked dependencies not dispatched');
+          NODE
