@@ -726,6 +726,544 @@ worshipGroup.MapDelete("/setlists/{id:guid}", [Authorize(Roles = "Admin,Pastor,W
     return Results.NoContent();
 });
 
+// ---------------- FELLOWSHIP MINISTRY SPACES ----------------
+var fellowshipGroup = app.MapGroup("/api/v1/fellowships")
+    .RequireAuthorization();
+
+// Helper to get authenticated user ID
+static Guid GetCurrentUserId(ClaimsPrincipal user)
+{
+    var userIdString = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
+    _ = Guid.TryParse(userIdString, out var userId);
+    return userId;
+}
+
+// Helper to get authenticated user name
+static string GetCurrentUserName(ClaimsPrincipal user)
+{
+    var name = user.FindFirst(ClaimTypes.Name)?.Value ??
+               user.FindFirst("name")?.Value ??
+               user.FindFirst(ClaimTypes.Role)?.Value ??
+               "Church Member";
+    return name;
+}
+
+// 1. List all fellowship groups (can filter by type)
+fellowshipGroup.MapGet("/", async (
+    FellowshipGroupType? groupType,
+    ApplicationDbContext db,
+    ClaimsPrincipal user) =>
+{
+    var userId = GetCurrentUserId(user);
+    var isPrivileged = user.IsInRole("Admin") || user.IsInRole("Pastor");
+
+    var query = db.FellowshipGroups.AsQueryable();
+
+    if (groupType.HasValue)
+    {
+        query = query.Where(g => g.GroupType == groupType.Value);
+    }
+
+    // Non-privileged users only see public groups or groups they are members of
+    if (!isPrivileged)
+    {
+        query = query.Where(g => !g.IsPrivate || g.Members.Any(m => m.MemberId == userId));
+    }
+
+    var groups = await query
+        .OrderBy(g => g.Name)
+        .Select(g => new FellowshipGroupResponse(
+            g.Id,
+            g.TenantId,
+            g.Name,
+            g.Description,
+            g.GroupType,
+            g.LeaderId,
+            g.LeaderName,
+            g.MeetingSchedule,
+            g.Location,
+            g.IsPrivate,
+            g.Members.Count,
+            g.CreatedAt
+        ))
+        .ToListAsync();
+
+    return Results.Ok(groups);
+});
+
+// 2. Get specific fellowship group detail
+fellowshipGroup.MapGet("/{id:guid}", async (
+    Guid id,
+    ApplicationDbContext db,
+    ClaimsPrincipal user) =>
+{
+    var userId = GetCurrentUserId(user);
+    var isPrivileged = user.IsInRole("Admin") || user.IsInRole("Pastor");
+
+    var group = await db.FellowshipGroups
+        .Where(g => g.Id == id)
+        .Include(g => g.Members)
+        .Include(g => g.Posts.OrderByDescending(p => p.CreatedAt).Take(20))
+        .FirstOrDefaultAsync();
+
+    if (group == null)
+    {
+        return Results.NotFound(new { error = "Fellowship group not found." });
+    }
+
+    if (group.IsPrivate && !isPrivileged && !group.Members.Any(m => m.MemberId == userId))
+    {
+        return Results.Forbid();
+    }
+
+    var memberResponses = group.Members
+        .OrderBy(m => m.Role == "Leader" ? 0 : 1)
+        .ThenBy(m => m.MemberName)
+        .Select(m => new FellowshipMemberResponse(
+            m.Id,
+            m.FellowshipGroupId,
+            m.MemberId,
+            m.MemberName,
+            m.Role,
+            m.JoinedAt
+        ))
+        .ToList();
+
+    var postResponses = group.Posts
+        .OrderByDescending(p => p.CreatedAt)
+        .Select(p => new FellowshipPostResponse(
+            p.Id,
+            p.FellowshipGroupId,
+            p.AuthorId,
+            p.AuthorName,
+            p.Title,
+            p.Content,
+            p.CreatedAt
+        ))
+        .ToList();
+
+    var response = new FellowshipGroupDetailResponse(
+        group.Id,
+        group.TenantId,
+        group.Name,
+        group.Description,
+        group.GroupType,
+        group.LeaderId,
+        group.LeaderName,
+        group.MeetingSchedule,
+        group.Location,
+        group.IsPrivate,
+        group.CreatedAt,
+        memberResponses,
+        postResponses
+    );
+
+    return Results.Ok(response);
+});
+
+// 3. Create fellowship group (Admin, Pastor, FellowshipLeader)
+fellowshipGroup.MapPost("/", [Authorize(Roles = "Admin,Pastor,FellowshipLeader")] async (
+    CreateFellowshipGroupRequest request,
+    ApplicationDbContext db,
+    ITenantService tenantService,
+    ClaimsPrincipal user) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Name))
+    {
+        return Results.BadRequest(new { error = "Group name is required." });
+    }
+
+    var churchId = ResolveTenantId(tenantService, user);
+    var currentUserId = GetCurrentUserId(user);
+
+    var group = new FellowshipGroup
+    {
+        Id = Guid.NewGuid(),
+        TenantId = churchId,
+        Name = request.Name.Trim(),
+        Description = request.Description?.Trim(),
+        GroupType = request.GroupType,
+        LeaderId = request.LeaderId ?? (currentUserId != Guid.Empty ? currentUserId : null),
+        LeaderName = request.LeaderName?.Trim() ?? GetCurrentUserName(user),
+        MeetingSchedule = request.MeetingSchedule?.Trim(),
+        Location = request.Location?.Trim(),
+        IsPrivate = request.IsPrivate,
+        CreatedAt = DateTime.UtcNow
+    };
+
+    // If a leader is specified, automatically add them as a leader member
+    if (group.LeaderId.HasValue && group.LeaderId != Guid.Empty)
+    {
+        group.Members.Add(new FellowshipMember
+        {
+            Id = Guid.NewGuid(),
+            TenantId = churchId,
+            FellowshipGroupId = group.Id,
+            MemberId = group.LeaderId.Value,
+            MemberName = group.LeaderName ?? "Leader",
+            Role = "Leader",
+            JoinedAt = DateTime.UtcNow
+        });
+    }
+
+    db.FellowshipGroups.Add(group);
+    await db.SaveChangesAsync();
+
+    var response = new FellowshipGroupResponse(
+        group.Id,
+        group.TenantId,
+        group.Name,
+        group.Description,
+        group.GroupType,
+        group.LeaderId,
+        group.LeaderName,
+        group.MeetingSchedule,
+        group.Location,
+        group.IsPrivate,
+        group.Members.Count,
+        group.CreatedAt
+    );
+
+    return Results.Created($"/api/v1/fellowships/{group.Id}", response);
+});
+
+// 4. Update fellowship group (Admin, Pastor, FellowshipLeader)
+fellowshipGroup.MapPut("/{id:guid}", [Authorize(Roles = "Admin,Pastor,FellowshipLeader")] async (
+    Guid id,
+    UpdateFellowshipGroupRequest request,
+    ApplicationDbContext db,
+    ClaimsPrincipal user) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Name))
+    {
+        return Results.BadRequest(new { error = "Group name is required." });
+    }
+
+    var group = await db.FellowshipGroups.FirstOrDefaultAsync(g => g.Id == id);
+    if (group == null)
+    {
+        return Results.NotFound(new { error = "Fellowship group not found." });
+    }
+
+    var userId = GetCurrentUserId(user);
+    var isPrivileged = user.IsInRole("Admin") || user.IsInRole("Pastor");
+    if (!isPrivileged && user.IsInRole("FellowshipLeader"))
+    {
+        // Finding (3): FellowshipLeader edits must require a non-null LeaderId equal to the authenticated user ID
+        if (!group.LeaderId.HasValue || group.LeaderId.Value != userId || userId == Guid.Empty)
+        {
+            return Results.Forbid();
+        }
+
+        // Leader cannot reassign ownership to someone else or set to null
+        if (request.LeaderId.HasValue && request.LeaderId.Value != userId)
+        {
+            return Results.Forbid();
+        }
+    }
+
+    group.Name = request.Name.Trim();
+    group.Description = request.Description?.Trim();
+    group.GroupType = request.GroupType;
+    if (isPrivileged)
+    {
+        group.LeaderId = request.LeaderId;
+        group.LeaderName = request.LeaderName?.Trim();
+    }
+    else
+    {
+        // Keep current leader ID intact if FellowshipLeader is updating
+        group.LeaderName = request.LeaderName?.Trim() ?? group.LeaderName;
+    }
+    group.MeetingSchedule = request.MeetingSchedule?.Trim();
+    group.Location = request.Location?.Trim();
+    group.IsPrivate = request.IsPrivate;
+
+    await db.SaveChangesAsync();
+
+    var memberCount = await db.FellowshipMembers.CountAsync(m => m.FellowshipGroupId == group.Id);
+
+    var response = new FellowshipGroupResponse(
+        group.Id,
+        group.TenantId,
+        group.Name,
+        group.Description,
+        group.GroupType,
+        group.LeaderId,
+        group.LeaderName,
+        group.MeetingSchedule,
+        group.Location,
+        group.IsPrivate,
+        memberCount,
+        group.CreatedAt
+    );
+
+    return Results.Ok(response);
+});
+
+// 5. Delete fellowship group (Admin, Pastor)
+fellowshipGroup.MapDelete("/{id:guid}", [Authorize(Roles = "Admin,Pastor")] async (
+    Guid id,
+    ApplicationDbContext db) =>
+{
+    var group = await db.FellowshipGroups.FirstOrDefaultAsync(g => g.Id == id);
+    if (group == null)
+    {
+        return Results.NotFound(new { error = "Fellowship group not found." });
+    }
+
+    db.FellowshipGroups.Remove(group);
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
+});
+
+// 6. Join fellowship group (Authenticated Member)
+fellowshipGroup.MapPost("/{id:guid}/join", async (
+    Guid id,
+    JoinFellowshipGroupRequest? request,
+    ApplicationDbContext db,
+    ITenantService tenantService,
+    ClaimsPrincipal user) =>
+{
+    var userId = GetCurrentUserId(user);
+    if (userId == Guid.Empty)
+    {
+        return Results.Unauthorized();
+    }
+
+    var group = await db.FellowshipGroups.FirstOrDefaultAsync(g => g.Id == id);
+    if (group == null)
+    {
+        return Results.NotFound(new { error = "Fellowship group not found." });
+    }
+
+    var isPrivileged = user.IsInRole("Admin") || user.IsInRole("Pastor");
+    // Finding (2): Deny unauthorized self-joining of private groups, including when the user knows the ID
+    if (group.IsPrivate && !isPrivileged)
+    {
+        return Results.Forbid();
+    }
+
+    var churchId = ResolveTenantId(tenantService, user);
+
+    var existingMember = await db.FellowshipMembers
+        .FirstOrDefaultAsync(m => m.FellowshipGroupId == id && m.MemberId == userId);
+
+    if (existingMember != null)
+    {
+        return Results.Ok(new FellowshipMemberResponse(
+            existingMember.Id,
+            existingMember.FellowshipGroupId,
+            existingMember.MemberId,
+            existingMember.MemberName,
+            existingMember.Role,
+            existingMember.JoinedAt
+        ));
+    }
+
+    var memberName = !string.IsNullOrWhiteSpace(request?.MemberName)
+        ? request.MemberName.Trim()
+        : GetCurrentUserName(user);
+
+    var member = new FellowshipMember
+    {
+        Id = Guid.NewGuid(),
+        TenantId = churchId,
+        FellowshipGroupId = id,
+        MemberId = userId,
+        MemberName = memberName,
+        Role = "Member",
+        JoinedAt = DateTime.UtcNow
+    };
+
+    db.FellowshipMembers.Add(member);
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/api/v1/fellowships/{id}/members/{member.Id}", new FellowshipMemberResponse(
+        member.Id,
+        member.FellowshipGroupId,
+        member.MemberId,
+        member.MemberName,
+        member.Role,
+        member.JoinedAt
+    ));
+});
+
+// 7. Leave fellowship group (Authenticated Member)
+fellowshipGroup.MapPost("/{id:guid}/leave", async (
+    Guid id,
+    ApplicationDbContext db,
+    ClaimsPrincipal user) =>
+{
+    var userId = GetCurrentUserId(user);
+    if (userId == Guid.Empty)
+    {
+        return Results.Unauthorized();
+    }
+
+    var member = await db.FellowshipMembers
+        .FirstOrDefaultAsync(m => m.FellowshipGroupId == id && m.MemberId == userId);
+
+    if (member == null)
+    {
+        return Results.NotFound(new { error = "Membership not found in this group." });
+    }
+
+    db.FellowshipMembers.Remove(member);
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
+});
+
+// 8. List members of fellowship group
+fellowshipGroup.MapGet("/{id:guid}/members", async (
+    Guid id,
+    ApplicationDbContext db,
+    ClaimsPrincipal user) =>
+{
+    var userId = GetCurrentUserId(user);
+    var isPrivileged = user.IsInRole("Admin") || user.IsInRole("Pastor");
+
+    var group = await db.FellowshipGroups.FirstOrDefaultAsync(g => g.Id == id);
+    if (group == null)
+    {
+        return Results.NotFound(new { error = "Fellowship group not found." });
+    }
+
+    if (group.IsPrivate && !isPrivileged)
+    {
+        var isMember = await db.FellowshipMembers.AnyAsync(m => m.FellowshipGroupId == id && m.MemberId == userId);
+        if (!isMember)
+        {
+            return Results.Forbid();
+        }
+    }
+
+    var members = await db.FellowshipMembers
+        .Where(m => m.FellowshipGroupId == id)
+        .OrderBy(m => m.Role == "Leader" ? 0 : 1)
+        .ThenBy(m => m.MemberName)
+        .Select(m => new FellowshipMemberResponse(
+            m.Id,
+            m.FellowshipGroupId,
+            m.MemberId,
+            m.MemberName,
+            m.Role,
+            m.JoinedAt
+        ))
+        .ToListAsync();
+
+    return Results.Ok(members);
+});
+
+// 9. List posts of fellowship group
+fellowshipGroup.MapGet("/{id:guid}/posts", async (
+    Guid id,
+    ApplicationDbContext db,
+    ClaimsPrincipal user) =>
+{
+    var userId = GetCurrentUserId(user);
+    var isPrivileged = user.IsInRole("Admin") || user.IsInRole("Pastor");
+
+    var group = await db.FellowshipGroups.FirstOrDefaultAsync(g => g.Id == id);
+    if (group == null)
+    {
+        return Results.NotFound(new { error = "Fellowship group not found." });
+    }
+
+    if (group.IsPrivate && !isPrivileged)
+    {
+        var isMember = await db.FellowshipMembers.AnyAsync(m => m.FellowshipGroupId == id && m.MemberId == userId);
+        if (!isMember)
+        {
+            return Results.Forbid();
+        }
+    }
+
+    var posts = await db.FellowshipPosts
+        .Where(p => p.FellowshipGroupId == id)
+        .OrderByDescending(p => p.CreatedAt)
+        .Select(p => new FellowshipPostResponse(
+            p.Id,
+            p.FellowshipGroupId,
+            p.AuthorId,
+            p.AuthorName,
+            p.Title,
+            p.Content,
+            p.CreatedAt
+        ))
+        .ToListAsync();
+
+    return Results.Ok(posts);
+});
+
+// 10. Create post in fellowship group
+fellowshipGroup.MapPost("/{id:guid}/posts", async (
+    Guid id,
+    CreateFellowshipPostRequest request,
+    ApplicationDbContext db,
+    ITenantService tenantService,
+    ClaimsPrincipal user) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.Content))
+    {
+        return Results.BadRequest(new { error = "Title and Content are required." });
+    }
+
+    var userId = GetCurrentUserId(user);
+    if (userId == Guid.Empty)
+    {
+        return Results.Unauthorized();
+    }
+
+    var group = await db.FellowshipGroups.FirstOrDefaultAsync(g => g.Id == id);
+    if (group == null)
+    {
+        return Results.NotFound(new { error = "Fellowship group not found." });
+    }
+
+    var isPrivileged = user.IsInRole("Admin") || user.IsInRole("Pastor");
+    var isMember = await db.FellowshipMembers.AnyAsync(m => m.FellowshipGroupId == id && m.MemberId == userId);
+
+    if (!isPrivileged && !isMember)
+    {
+        return Results.Forbid();
+    }
+
+    var churchId = ResolveTenantId(tenantService, user);
+    var authorName = !string.IsNullOrWhiteSpace(request.AuthorName)
+        ? request.AuthorName.Trim()
+        : GetCurrentUserName(user);
+
+    var post = new FellowshipPost
+    {
+        Id = Guid.NewGuid(),
+        TenantId = churchId,
+        FellowshipGroupId = id,
+        AuthorId = userId,
+        AuthorName = authorName,
+        Title = request.Title.Trim(),
+        Content = request.Content.Trim(),
+        CreatedAt = DateTime.UtcNow
+    };
+
+    db.FellowshipPosts.Add(post);
+    await db.SaveChangesAsync();
+
+    var response = new FellowshipPostResponse(
+        post.Id,
+        post.FellowshipGroupId,
+        post.AuthorId,
+        post.AuthorName,
+        post.Title,
+        post.Content,
+        post.CreatedAt
+    );
+
+    return Results.Created($"/api/v1/fellowships/{id}/posts/{post.Id}", response);
+});
+
 app.Run();
 
 // Export Program class for WebApplicationFactory in tests
