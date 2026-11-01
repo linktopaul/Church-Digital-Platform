@@ -95,7 +95,8 @@ When those values are confirmed, the native/dependency owner must:
 Dependencies: `flutter_appauth` 12.0.0 is the maintained native AppAuth bridge
 compatible with the published Flutter 3.41/Dart 3.11 setup (13 requires a newer
 SDK); `flutter_secure_storage` 11.2.0 supplies the native credential plugin.
-The local environment has no Flutter SDK and its proxy is unreachable. CI uses `pub get`; its resolved lockfile is captured and committed separately.
+The local environment has no Flutter SDK and its proxy is unreachable. CI uses `pub get`; `pubspec.lock` was captured from its successful resolver run
+41323429022, then committed unchanged. The temporary capture diagnostic is removed.
 Local validation against the published Flutter 3.41 toolchain remains blocked.
 
 Official references consulted:

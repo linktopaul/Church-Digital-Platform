@@ -169,6 +169,40 @@ void main() {
     expect(manager.currentSession, isNull);
   });
 
+  for (final replacementSucceeds in [false, true]) {
+    test('queued signout clear survives a replacement attempt that '
+        '${replacementSucceeds ? 'succeeds' : 'fails'}', () async {
+      final storage = DeferredStorage(null);
+      final provider = MockAuthProvider()..mockSessionToReturn = session('A');
+      final manager = AuthSessionManager(provider: provider, storage: storage);
+      addTearDown(manager.dispose);
+      await manager.setSession(session('A'));
+      storage.delaySave = true;
+      final refresh = manager.refresh();
+      final stale = expectLater(refresh, throwsA(isA<StateError>()));
+      await storage.saveEntered.future;
+      final logout = manager.signOut();
+      Future<void>? replacement;
+      if (replacementSucceeds) {
+        replacement = manager.setSession(session('B'));
+      } else {
+        provider.exchangeException = Exception('fixture exchange failure');
+        await expectLater(manager.signInWithAuthorizationCode(
+          code: 'code', codeVerifier: 'verifier', redirectUri: 'callback'), throwsException);
+      }
+      storage.delaySave = false;
+      storage.saved.complete();
+      await stale;
+      await logout;
+      if (replacement != null) await replacement;
+      expect(provider.revokeCount, 1);
+      expect((await storage.getSession())?.userId, replacementSucceeds ? 'B' : null);
+      final restored = AuthSessionManager(provider: provider, storage: storage);
+      addTearDown(restored.dispose);
+      expect((await restored.initialize())?.userId, replacementSucceeds ? 'B' : null);
+    });
+  }
+
   test('remote revocation finishing late cannot clear replacement', () async {
     final provider = DeferredProvider()..delayRevoke = true;
     final storage = InMemorySecureTokenStorage();

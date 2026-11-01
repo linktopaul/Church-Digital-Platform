@@ -82,9 +82,12 @@ class AuthSessionManager implements AuthService {
 
   // Serialize storage mutations, including writes already awaiting the platform.
   // Newer writes/clears run last; failures do not poison the queue.
-  Future<void> _persist(int generation, AuthSession? session) {
+  Future<void> _persist(int generation, AuthSession? session, {bool signOutClear = false}) {
     final operation = _storageTail.then((_) async {
-      _check(generation);
+      // A sign-out clear remains ordered before later writes even when a new
+      // sign-in merely starts. Otherwise a failed replacement could leave the
+      // signed-out user's in-flight save on disk and skip remote revocation.
+      if (!signOutClear) _check(generation);
       if (session == null) {
         await _storage.clearSession();
       } else {
@@ -200,7 +203,7 @@ class AuthSessionManager implements AuthService {
     _currentSession = null;
     _sessionController.add(null);
     // Clear before awaiting remote revocation; a later sign-in owns newer writes.
-    await _persist(generation, null);
+    await _persist(generation, null, signOutClear: true);
     if (token != null && token.isNotEmpty) {
       try {
         await _provider.revokeSession(token: token);
