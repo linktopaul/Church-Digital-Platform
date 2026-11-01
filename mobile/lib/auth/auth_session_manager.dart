@@ -11,10 +11,6 @@ abstract class AuthService {
   /// Retrieves the current active session.
   AuthSession? get currentSession;
 
-  /// Changes on sign-out/replacement, but remains stable during token refresh.
-  /// Implementations must invalidate this identity before awaiting external work.
-  Object? get sessionIdentity;
-
   /// Loads and restores any persisted session from secure storage.
   Future<AuthSession?> initialize();
 
@@ -38,186 +34,156 @@ abstract class AuthService {
   void dispose();
 }
 
-/// Coordinates provider work with a lifecycle generation and ordered storage
-/// writes. A superseded operation can neither emit nor overwrite newer state.
+/// Central manager orchestrating session persistence, background expiration,
+/// and reactive session state notifications.
 class AuthSessionManager implements AuthService {
   final AuthProvider _provider;
   final SecureTokenStorage _storage;
-  final _sessionController = StreamController<AuthSession?>.broadcast();
-  AuthSession? _currentSession;
-  Object _identity = Object();
-  int _generation = 0;
-  bool _disposed = false;
-  bool _isInitialized = false;
-  Future<AuthSession?>? _initializing;
-  Future<AuthSession>? _refreshing;
-  Future<void> _storageTail = Future<void>.value();
+  final StreamController<AuthSession?> _sessionController =
+      StreamController<AuthSession?>.broadcast();
 
-  AuthSessionManager({required AuthProvider provider, required SecureTokenStorage storage})
-      : _provider = provider, _storage = storage;
+  AuthSession? _currentSession;
+  Completer<AuthSession>? _activeRefreshCompleter;
+  bool _isInitialized = false;
+
+  AuthSessionManager({
+    required AuthProvider provider,
+    required SecureTokenStorage storage,
+  })  : _provider = provider,
+        _storage = storage;
 
   @override
   Stream<AuthSession?> get sessionStateStream => _sessionController.stream;
+
   @override
   AuthSession? get currentSession => _currentSession;
-  @override
-  Object get sessionIdentity => _identity;
+
   bool get isAuthenticated => _currentSession != null && !_currentSession!.isExpired;
 
-  void _check(int generation) {
-    if (_disposed || generation != _generation) {
-      throw StateError('Authentication operation was superseded');
-    }
-  }
-
-  int _invalidate() {
-    if (_disposed) throw StateError('Authentication service is disposed');
-    _identity = Object();
-    _currentSession = null;
-    _refreshing = null;
-    _initializing = null;
-    _isInitialized = true;
-    return ++_generation;
-  }
-
-  // Serialize storage mutations, including writes already awaiting the platform.
-  // Newer writes/clears run last; failures do not poison the queue.
-  Future<void> _persist(int generation, AuthSession? session, {bool signOutClear = false}) {
-    final operation = _storageTail.then((_) async {
-      // A sign-out clear remains ordered before later writes even when a new
-      // sign-in merely starts. Otherwise a failed replacement could leave the
-      // signed-out user's in-flight save on disk and skip remote revocation.
-      if (!signOutClear) _check(generation);
-      if (session == null) {
-        await _storage.clearSession();
-      } else {
-        await _storage.saveSession(session);
-      }
-    });
-    _storageTail = operation.then<void>((_) {}, onError: (Object _, StackTrace __) {});
-    return operation;
-  }
-
-  Future<void> _apply(int generation, AuthSession session) async {
-    _check(generation);
-    await _persist(generation, session);
-    _check(generation);
-    _currentSession = session;
-    _sessionController.add(session);
-  }
-
   @override
-  Future<AuthSession?> initialize() {
-    if (_isInitialized) return Future.value(_currentSession);
-    return _initializing ??= _initialize(_generation);
-  }
+  Future<AuthSession?> initialize() async {
+    if (_isInitialized) return _currentSession;
 
-  Future<AuthSession?> _initialize(int generation) async {
-    try {
-      await _storageTail;
-      final stored = await _storage.getSession();
-      _check(generation);
-      if (stored == null) {
-        _sessionController.add(null);
-      } else if (!stored.isExpired) {
+    final stored = await _storage.getSession();
+    if (stored != null) {
+      if (!stored.isExpired) {
         _currentSession = stored;
-        _sessionController.add(stored);
-      } else if (stored.refreshToken?.isNotEmpty == true) {
-        // Keep expired credentials available for an explicit retry when offline.
-        _currentSession = stored;
+        _sessionController.add(_currentSession);
+      } else if (stored.refreshToken != null && stored.refreshToken!.isNotEmpty) {
+        // Attempt automatic refresh on startup if refresh token is present
         try {
-          await refresh();
-        } on TerminalAuthException {
-          // refresh already cleared the rejected credentials.
+          final refreshed = await _provider.refreshSession(
+            refreshToken: stored.refreshToken!,
+          );
+          _currentSession = refreshed;
+          await _storage.saveSession(refreshed);
+          _sessionController.add(_currentSession);
         } catch (_) {
-          _check(generation);
-          // Transient failures retain credentials, but isAuthenticated stays false.
+          // Refresh failed - purge invalid credentials
+          await _storage.clearSession();
+          _currentSession = null;
+          _sessionController.add(null);
         }
       } else {
-        await _persist(generation, null);
-        _check(generation);
+        await _storage.clearSession();
         _currentSession = null;
         _sessionController.add(null);
       }
-      _check(generation);
-      _isInitialized = true;
-      return _currentSession;
-    } finally {
-      if (generation == _generation) _initializing = null;
+    } else {
+      _currentSession = null;
+      _sessionController.add(null);
     }
+
+    _isInitialized = true;
+    return _currentSession;
   }
 
   @override
   Future<AuthSession> signInWithAuthorizationCode({
-    required String code, required String codeVerifier, required String redirectUri,
+    required String code,
+    required String codeVerifier,
+    required String redirectUri,
   }) async {
-    final generation = _invalidate();
     final session = await _provider.exchangeAuthorizationCode(
-      code: code, codeVerifier: codeVerifier, redirectUri: redirectUri,
+      code: code,
+      codeVerifier: codeVerifier,
+      redirectUri: redirectUri,
     );
-    await _apply(generation, session);
+
+    _currentSession = session;
+    await _storage.saveSession(session);
+    _sessionController.add(session);
     return session;
   }
 
   @override
-  Future<void> setSession(AuthSession session) {
-    final generation = _invalidate();
-    return _apply(generation, session);
+  Future<void> setSession(AuthSession session) async {
+    _currentSession = session;
+    await _storage.saveSession(session);
+    _sessionController.add(session);
   }
 
   @override
-  Future<AuthSession> refresh() {
-    if (_disposed) return Future.error(StateError('Authentication service is disposed'));
-    final generation = _generation;
-    return _refreshing ??= Future.microtask(() => _refresh(generation));
-  }
+  Future<AuthSession> refresh() async {
+    // If a refresh is already in flight, reuse the same future to avoid thundering herd
+    if (_activeRefreshCompleter != null) {
+      return _activeRefreshCompleter!.future;
+    }
 
-  Future<AuthSession> _refresh(int generation) async {
+    final completer = Completer<AuthSession>();
+    // Prevent unhandled async errors on the internal completer when no concurrent caller is listening
+    completer.future.ignore();
+    _activeRefreshCompleter = completer;
+
     try {
-      _check(generation);
-      // Never reload storage here: sign-out must not resurrect persisted state.
-      final token = _currentSession?.refreshToken;
-      if (token == null || token.isEmpty) {
+      final session = _currentSession ?? await _storage.getSession();
+      final refreshToken = session?.refreshToken;
+
+      if (refreshToken == null || refreshToken.isEmpty) {
         throw StateError('Cannot refresh session: no refresh token available');
       }
-      final updated = await _provider.refreshSession(refreshToken: token);
-      await _apply(generation, updated);
-      return updated;
-    } on TerminalAuthException {
-      _check(generation);
-      await _persist(generation, null);
-      _check(generation);
+
+      final updatedSession = await _provider.refreshSession(
+        refreshToken: refreshToken,
+      );
+
+      _currentSession = updatedSession;
+      await _storage.saveSession(updatedSession);
+      _sessionController.add(updatedSession);
+
+      completer.complete(updatedSession);
+      return updatedSession;
+    } catch (e) {
+      // Expiration / refresh failure: clear invalid credentials and notify
+      await _storage.clearSession();
       _currentSession = null;
-      _identity = Object();
       _sessionController.add(null);
+
+      completer.completeError(e);
       rethrow;
     } finally {
-      if (generation == _generation) _refreshing = null;
+      _activeRefreshCompleter = null;
     }
   }
 
   @override
   Future<void> signOut() async {
-    final token = _currentSession?.refreshToken ?? _currentSession?.accessToken;
-    final generation = _invalidate();
-    _currentSession = null;
-    _sessionController.add(null);
-    // Clear before awaiting remote revocation; a later sign-in owns newer writes.
-    await _persist(generation, null, signOutClear: true);
-    if (token != null && token.isNotEmpty) {
+    final tokenToRevoke = _currentSession?.refreshToken ?? _currentSession?.accessToken;
+    if (tokenToRevoke != null && tokenToRevoke.isNotEmpty) {
       try {
-        await _provider.revokeSession(token: token);
+        await _provider.revokeSession(token: tokenToRevoke);
       } catch (_) {
-        // Local sign-out succeeds even when revocation is unreachable.
+        // Continue clearing local state even if remote revocation fails
       }
     }
+
+    await _storage.clearSession();
+    _currentSession = null;
+    _sessionController.add(null);
   }
 
   @override
   void dispose() {
-    _disposed = true;
-    ++_generation;
-    _identity = Object();
     _sessionController.close();
   }
 }

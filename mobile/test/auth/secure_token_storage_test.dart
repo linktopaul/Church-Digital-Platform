@@ -1,6 +1,6 @@
-import '../support/in_memory_secure_token_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:church_digital_platform_mobile/auth/auth_session.dart';
+import 'package:church_digital_platform_mobile/auth/secure_token_storage.dart';
 
 void main() {
   group('SecureTokenStorage Tests', () {
