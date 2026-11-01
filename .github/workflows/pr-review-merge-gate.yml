@@ -62,7 +62,8 @@ jobs:
                 } catch { return false; }
               });
               if (!humanApproved && !cleanCodex) reasons.push('no clean current-head review');
-              const checks=await github.paginate(github.rest.checks.listForRef,{owner,repo,ref:pull.head.sha,per_page:100});
+              const allChecks=await github.paginate(github.rest.checks.listForRef,{owner,repo,ref:pull.head.sha,per_page:100});
+              const checks=[...new Map(allChecks.sort((a,b)=>a.id-b.id).map(c=>[c.app?.id+':'+c.name,c])).values()];
               for (const name of ['.NET 10 unit tests','Flutter mobile checks']) {
                 const matches=checks.filter(c=>c.name===name && c.app?.slug==='github-actions').sort((a,b)=>b.id-a.id);
                 if (!matches.length || matches[0].status!=='completed' || matches[0].conclusion!=='success') reasons.push(name+' not passed');
