@@ -4,10 +4,18 @@ import '../services/fellowship_api_client.dart';
 
 class MessagesScreen extends StatefulWidget {
   final FellowshipApiClient? apiClient;
+  final String? apiBaseUrl;
+  final String Function()? getAuthToken;
+  final String? currentUserId;
+  final String? currentMemberName;
 
   const MessagesScreen({
     super.key,
     this.apiClient,
+    this.apiBaseUrl,
+    this.getAuthToken,
+    this.currentUserId,
+    this.currentMemberName,
   });
 
   @override
@@ -26,7 +34,13 @@ class _MessagesScreenState extends State<MessagesScreen> {
   @override
   void initState() {
     super.initState();
-    _apiClient = widget.apiClient ?? HttpFellowshipApiClient();
+    _apiClient = widget.apiClient ??
+        HttpFellowshipApiClient(
+          baseUrl: widget.apiBaseUrl,
+          getAuthToken: widget.getAuthToken,
+          currentUserId: widget.currentUserId,
+          currentMemberName: widget.currentMemberName,
+        );
     _loadGroups();
   }
 
@@ -503,11 +517,24 @@ class _FellowshipDetailScreenState extends State<_FellowshipDetailScreen>
   Future<void> _toggleMembership() async {
     final willJoin = !_currentGroup.isUserMember;
     try {
-      if (willJoin) {
-        await widget.apiClient.joinFellowshipGroup(_currentGroup.id);
-      } else {
-        await widget.apiClient.leaveFellowshipGroup(_currentGroup.id);
+      final success = willJoin
+          ? await widget.apiClient.joinFellowshipGroup(_currentGroup.id)
+          : await widget.apiClient.leaveFellowshipGroup(_currentGroup.id);
+
+      if (!success) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(willJoin
+                  ? 'Failed to join space. Please check permissions.'
+                  : 'Failed to leave space.'),
+            ),
+          );
+        }
+        return;
       }
+
+      // Update state tentatively and then reload canonical state from server
       setState(() {
         _currentGroup = _currentGroup.copyWith(
           isUserMember: willJoin,
@@ -517,10 +544,15 @@ class _FellowshipDetailScreenState extends State<_FellowshipDetailScreen>
         );
       });
       widget.onGroupUpdated(_currentGroup);
+
+      // Perform canonical reload after success
+      await _fetchDetail();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Action failed: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Action failed: $e')),
+        );
+      }
     }
   }
 

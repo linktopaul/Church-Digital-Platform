@@ -49,7 +49,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   static const _screens = [
     HomeScreen(),
-    MessagesScreen(),
+    MessagesScreen(
+      apiBaseUrl: String.fromEnvironment(
+        'CHURCH_API_BASE_URL',
+        defaultValue: 'http://10.0.2.2:5178',
+      ),
+    ),
     PrayerScreen(),
     WorshipScreen(),
     ProfileScreen(),

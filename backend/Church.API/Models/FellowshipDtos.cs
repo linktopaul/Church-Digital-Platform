@@ -39,7 +39,8 @@ namespace Church.API.Models
         string? Location,
         bool IsPrivate,
         int MemberCount,
-        DateTime CreatedAt
+        DateTime CreatedAt,
+        bool IsUserMember = false
     );
 
     public record FellowshipGroupDetailResponse(
@@ -55,7 +56,8 @@ namespace Church.API.Models
         bool IsPrivate,
         DateTime CreatedAt,
         List<FellowshipMemberResponse> Members,
-        List<FellowshipPostResponse> RecentPosts
+        List<FellowshipPostResponse> RecentPosts,
+        bool IsUserMember = false
     );
 
     // Fellowship Member DTOs
