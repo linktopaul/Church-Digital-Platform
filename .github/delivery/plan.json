@@ -1,0 +1,165 @@
+{
+  "version": 1,
+  "maxActive": 5,
+  "maxPerAgent": {
+    "jules": 4,
+    "codex": 1
+  },
+  "enabledAgents": [
+    "jules"
+  ],
+  "tasks": [
+    {
+      "issue": 24,
+      "agent": "jules",
+      "ready": false,
+      "dependencies": [],
+      "owns": [
+        "backend/Church.API/Endpoints/AuthEndpoints.cs",
+        "backend/Church.API/Program.cs",
+        "backend/Church.Core/AppUser.cs",
+        "backend/Church.Core/AppRole.cs",
+        "backend/Church.Infrastructure/ApplicationDbContext.cs",
+        "backend/Church.Infrastructure/Migrations/",
+        "backend/Church.Infrastructure/JwtTokenService.cs",
+        "backend/Church.Infrastructure/IJwtTokenService.cs",
+        "docs/architecture/backend-auth-contract.md"
+      ],
+      "branch": "jules-backend-identity-auth-task-24-12775419940443004481",
+      "session": "12775419940443004481",
+      "pullRequest": 52
+    },
+    {
+      "issue": 25,
+      "agent": "codex",
+      "ready": false,
+      "dependencies": [
+        24
+      ],
+      "owns": [
+        "mobile/lib/auth/",
+        "mobile/lib/network/",
+        "mobile/test/auth/",
+        "mobile/test/network/",
+        "mobile/pubspec.yaml",
+        "mobile/pubspec.lock",
+        "mobile/android/",
+        "mobile/ios/",
+        "mobile/docs/native-auth-adapters.md"
+      ],
+      "session": "01a197ad-7188-7636-b89d-582d36f5f068",
+      "pullRequest": 50
+    },
+    {
+      "issue": 49,
+      "agent": "jules",
+      "ready": false,
+      "dependencies": [
+        25
+      ],
+      "owns": [
+        "mobile/lib/main.dart",
+        "mobile/lib/screens/messages_screen.dart",
+        "mobile/lib/models/fellowship_models.dart",
+        "mobile/lib/services/fellowship_api_client.dart",
+        "mobile/test/fellowship_screen_test.dart"
+      ],
+      "session": "12998331589168563163",
+      "pullRequest": 51
+    },
+    {
+      "issue": 53,
+      "agent": "jules",
+      "ready": false,
+      "dependencies": [],
+      "owns": [
+        "mobile/lib/screens/prayer_screen.dart",
+        "mobile/lib/models/prayer_models.dart",
+        "mobile/lib/services/prayer_api_client.dart",
+        "mobile/lib/widgets/prayer/",
+        "mobile/test/prayer_api_client_test.dart",
+        "mobile/test/prayer_screen_test.dart"
+      ],
+      "session": "530152408721220434",
+      "pullRequest": 55
+    },
+    {
+      "issue": 54,
+      "agent": "jules",
+      "ready": false,
+      "dependencies": [],
+      "owns": [
+        "scripts/operations/",
+        "docs/operations/backup-restore-verification.md",
+        ".github/workflows/backup-restore-verification.yml"
+      ],
+      "session": "5444706487196640890",
+      "pullRequest": 56
+    },
+    {
+      "issue": 26,
+      "agent": "jules",
+      "ready": true,
+      "dependencies": [
+        24
+      ],
+      "owns": [
+        "backend/Church.Core/MemberProfile.cs",
+        "backend/Church.Core/Family.cs",
+        "backend/Church.API/Endpoints/MemberProfileEndpoints.cs",
+        "backend/Church.API/Models/MemberProfileDtos.cs",
+        "backend/Church.Tests/MemberProfileApiTests.cs"
+      ],
+      "branch": "delivery/jules/issue-26"
+    },
+    {
+      "issue": 27,
+      "agent": "codex",
+      "ready": true,
+      "dependencies": [
+        25,
+        26
+      ],
+      "owns": [
+        "mobile/lib/screens/profile_screen.dart",
+        "mobile/lib/models/profile_models.dart",
+        "mobile/lib/services/profile_api_client.dart",
+        "mobile/lib/widgets/profile/",
+        "mobile/test/profile_screen_test.dart"
+      ],
+      "branch": "delivery/codex/issue-27"
+    }
+  ],
+  "leases": [
+    {
+      "issue": 24,
+      "agent": "jules",
+      "status": "active",
+      "source": "owner-confirmed existing session; adoption is not acceptance"
+    },
+    {
+      "issue": 25,
+      "agent": "codex",
+      "status": "active",
+      "source": "owner-confirmed existing session; adoption is not acceptance"
+    },
+    {
+      "issue": 49,
+      "agent": "jules",
+      "status": "active",
+      "source": "owner-confirmed existing session; adoption is not acceptance"
+    },
+    {
+      "issue": 53,
+      "agent": "jules",
+      "status": "active",
+      "source": "owner-confirmed existing session; adoption is not acceptance"
+    },
+    {
+      "issue": 54,
+      "agent": "jules",
+      "status": "active",
+      "source": "owner-confirmed existing session; adoption is not acceptance"
+    }
+  ]
+}
