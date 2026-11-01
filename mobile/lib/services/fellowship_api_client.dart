@@ -26,12 +26,26 @@ class HttpFellowshipApiClient implements FellowshipApiClient {
   final http.Client _client;
   final String baseUrl;
   final String Function()? getAuthToken;
+  final String? currentUserId;
+  final String? currentMemberName;
 
   HttpFellowshipApiClient({
     http.Client? client,
-    this.baseUrl = 'http://localhost:5000/api/v1',
+    String? baseUrl,
     this.getAuthToken,
-  }) : _client = client ?? http.Client();
+    this.currentUserId,
+    this.currentMemberName,
+  })  : _client = client ?? http.Client(),
+        baseUrl = baseUrl ?? _defaultBaseUrl();
+
+  static String _defaultBaseUrl() {
+    const rawUrl = String.fromEnvironment(
+      'CHURCH_API_BASE_URL',
+      defaultValue: 'http://10.0.2.2:5178',
+    );
+    final trimmed = rawUrl.replaceAll(RegExp(r'/+$'), '');
+    return trimmed.endsWith('/api/v1') ? trimmed : '$trimmed/api/v1';
+  }
 
   Map<String, String> _buildHeaders() {
     final headers = <String, String>{
@@ -47,7 +61,20 @@ class HttpFellowshipApiClient implements FellowshipApiClient {
     return headers;
   }
 
-  String _mapCategoryToApi(FellowshipCategory category) {
+  int _mapCategoryToApiEnum(FellowshipCategory category) {
+    switch (category) {
+      case FellowshipCategory.mensFellowship:
+        return 1;
+      case FellowshipCategory.sundaySchool:
+        return 2;
+      case FellowshipCategory.housePrayer:
+        return 3;
+      case FellowshipCategory.all:
+        return 4;
+    }
+  }
+
+  String _mapCategoryToApiQuery(FellowshipCategory category) {
     switch (category) {
       case FellowshipCategory.mensFellowship:
         return 'MensFellowship';
@@ -68,11 +95,28 @@ class HttpFellowshipApiClient implements FellowshipApiClient {
     return FellowshipCategory.all;
   }
 
+  bool _isUserMemberFromRoster(List<dynamic> membersJson) {
+    if (currentUserId == null && currentMemberName == null) return false;
+    for (final m in membersJson) {
+      if (m is Map) {
+        final memberId = m['memberId']?.toString();
+        final memberName = m['memberName']?.toString();
+        if (currentUserId != null && memberId != null && memberId.toLowerCase() == currentUserId!.toLowerCase()) {
+          return true;
+        }
+        if (currentMemberName != null && memberName != null && memberName.trim() == currentMemberName!.trim()) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   @override
   Future<List<FellowshipGroupData>> getFellowshipGroups({FellowshipCategory? category}) async {
     var uri = Uri.parse('$baseUrl/fellowships');
     if (category != null && category != FellowshipCategory.all) {
-      uri = uri.replace(queryParameters: {'groupType': _mapCategoryToApi(category)});
+      uri = uri.replace(queryParameters: {'groupType': _mapCategoryToApiQuery(category)});
     }
 
     final response = await _client.get(uri, headers: _buildHeaders());
@@ -88,7 +132,7 @@ class HttpFellowshipApiClient implements FellowshipApiClient {
         location: json['location']?.toString(),
         isPrivate: json['isPrivate'] == true,
         memberCount: json['memberCount'] is int ? json['memberCount'] : 0,
-        isUserMember: false,
+        isUserMember: json['isUserMember'] == true,
       )).toList();
     } else {
       throw Exception('Failed to load fellowship groups: ${response.statusCode}');
@@ -115,6 +159,8 @@ class HttpFellowshipApiClient implements FellowshipApiClient {
         createdAt: DateTime.tryParse(p['createdAt']?.toString() ?? '') ?? DateTime.now(),
       )).toList();
 
+      final isUserMember = json['isUserMember'] == true || _isUserMemberFromRoster(rawMembers);
+
       return FellowshipGroupData(
         id: json['id']?.toString() ?? '',
         name: json['name']?.toString() ?? '',
@@ -124,8 +170,8 @@ class HttpFellowshipApiClient implements FellowshipApiClient {
         meetingSchedule: json['meetingSchedule']?.toString(),
         location: json['location']?.toString(),
         isPrivate: json['isPrivate'] == true,
-        memberCount: memberNames.length,
-        isUserMember: false,
+        memberCount: json['memberCount'] is int ? json['memberCount'] : memberNames.length,
+        isUserMember: isUserMember,
         members: memberNames,
         posts: posts,
       );
@@ -147,7 +193,7 @@ class HttpFellowshipApiClient implements FellowshipApiClient {
     final payload = {
       'name': name,
       'description': description,
-      'groupType': _mapCategoryToApi(category),
+      'groupType': _mapCategoryToApiEnum(category),
       'meetingSchedule': meetingSchedule,
       'location': location,
       'isPrivate': isPrivate,
@@ -171,7 +217,7 @@ class HttpFellowshipApiClient implements FellowshipApiClient {
         location: json['location']?.toString(),
         isPrivate: json['isPrivate'] == true,
         memberCount: json['memberCount'] is int ? json['memberCount'] : 1,
-        isUserMember: true,
+        isUserMember: json['isUserMember'] == true || true,
       );
     } else {
       throw Exception('Failed to create fellowship space: ${response.statusCode}');
@@ -182,21 +228,27 @@ class HttpFellowshipApiClient implements FellowshipApiClient {
   Future<bool> joinFellowshipGroup(String groupId, {String? memberName}) async {
     final uri = Uri.parse('$baseUrl/fellowships/$groupId/join');
     final payload = {
-      'memberName': memberName,
+      'memberName': memberName ?? currentMemberName,
     };
     final response = await _client.post(
       uri,
       headers: _buildHeaders(),
       body: jsonEncode(payload),
     );
-    return response.statusCode >= 200 && response.statusCode < 300;
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return true;
+    }
+    return false;
   }
 
   @override
   Future<bool> leaveFellowshipGroup(String groupId) async {
     final uri = Uri.parse('$baseUrl/fellowships/$groupId/leave');
     final response = await _client.post(uri, headers: _buildHeaders());
-    return response.statusCode >= 200 && response.statusCode < 300;
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return true;
+    }
+    return false;
   }
 
   @override
