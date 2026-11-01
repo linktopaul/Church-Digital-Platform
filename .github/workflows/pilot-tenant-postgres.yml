@@ -1,0 +1,51 @@
+name: Pilot tenant PostgreSQL verification
+on:
+  pull_request:
+    paths: ["scripts/**", ".github/workflows/pilot-tenant-postgres.yml", "backend/**"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  postgres:
+    name: Verify tenant provisioning on migrated PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pilot_test
+          POSTGRES_PASSWORD: disposable_ci_only
+          POSTGRES_DB: pilot_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pilot_test -d pilot_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGDATABASE: pilot_test
+      PGUSER: pilot_test
+      PGPASSWORD: disposable_ci_only
+      PILOT_DISPOSABLE_DB_TEST: "1"
+      ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=pilot_test;Username=pilot_test;Password=disposable_ci_only
+      ASPNETCORE_ENVIRONMENT: Testing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install disposable-database client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Install matching EF tool
+        run: dotnet tool install --tool-path "$RUNNER_TEMP/ef" dotnet-ef --version 10.0.14
+      - name: Apply actual repository migrations
+        run: >-
+          "$RUNNER_TEMP/ef/dotnet-ef" database update
+          --project backend/Church.Infrastructure
+          --startup-project backend/Church.API
+      - name: Run offline and real PostgreSQL regression tests
+        run: python3 -B -m unittest discover -s scripts/tests -v
