@@ -6,6 +6,8 @@ on:
   schedule:
     - cron: "4,19,34,49 * * * *"
   workflow_dispatch:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
   pull_request_review:
     types: [submitted, dismissed]
   workflow_run:
@@ -22,12 +24,14 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      checks: read
+      checks: write
     steps:
       - uses: actions/github-script@v7
         with:
           script: |
             const {owner,repo}=context.repo;
+            const branchRules=await github.request('GET /repos/{owner}/{repo}/rules/branches/{branch}',{owner,repo,branch:'main'});
+            const nativeGateRequired=branchRules.data.some(r=>r.type==='required_status_checks' && r.parameters.required_status_checks.some(c=>c.context==='Review acceptance'));
             const pulls=await github.paginate(github.rest.pulls.list,{owner,repo,state:'open',base:'main',per_page:100});
             for (const candidate of pulls) {
               if (candidate.head.repo?.full_name !== owner+'/'+repo) continue;
@@ -63,10 +67,17 @@ jobs:
                 const matches=checks.filter(c=>c.name===name && c.app?.slug==='github-actions').sort((a,b)=>b.id-a.id);
                 if (!matches.length || matches[0].status!=='completed' || matches[0].conclusion!=='success') reasons.push(name+' not passed');
               }
-              if (checks.some(c=>['failure','timed_out','action_required','cancelled'].includes(c.conclusion))) reasons.push('other unsuccessful checks');
+              if (checks.some(c=>c.name!=='Review acceptance' && ['failure','timed_out','action_required','cancelled'].includes(c.conclusion))) reasons.push('other unsuccessful checks');
               const fresh=(await github.rest.pulls.get({owner,repo,pull_number:pull.number})).data;
               if (fresh.head.sha!==pull.head.sha) reasons.push('head changed during inspection');
               if (fresh.state!=='open' || fresh.merged) continue;
+              const priorGate=checks.filter(c=>c.name==='Review acceptance' && c.app?.slug==='github-actions').sort((a,b)=>b.id-a.id)[0];
+              const gateResult={owner,repo,name:'Review acceptance',head_sha:pull.head.sha,status:'completed',conclusion:reasons.length?'action_required':'success',output:{title:reasons.length?'Review acceptance not met':'Current head review accepted',summary:reasons.length?reasons.join('; '):'Passing CI and clean current-head review with no unresolved findings.'}};
+              if (priorGate) {
+                const {head_sha,...update}=gateResult;
+                await github.rest.checks.update({...update,check_run_id:priorGate.id});
+              } else await github.rest.checks.create(gateResult);
+              if (!nativeGateRequired) reasons.push('main must require Review acceptance before auto-merge is enabled');
               if (reasons.length) {
                 if (fresh.auto_merge) await github.graphql('mutation($id:ID!){disablePullRequestAutoMerge(input:{pullRequestId:$id}){pullRequest{number}}}',{id:pull.node_id});
                 core.info('PR #'+pull.number+' held: '+reasons.join('; '));
