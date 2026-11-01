@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:http/http.dart' as http;
 import '../auth/auth_session_manager.dart';
-import '../auth/auth_provider.dart';
 import 'api_exceptions.dart';
 
 /// Headers that screens and feature code are strictly prohibited from forging
@@ -65,7 +64,6 @@ class AuthenticatedHttpClient extends http.BaseClient {
     final initialRequest = canRetry ? _cloneRequest(request) : request;
 
     // 3. Attach Bearer token from active session if present
-    final identity = _authService.sessionIdentity;
     final currentSession = _authService.currentSession;
     if (currentSession != null && currentSession.accessToken.isNotEmpty) {
       initialRequest.headers['Authorization'] = 'Bearer ${currentSession.accessToken}';
@@ -74,34 +72,22 @@ class AuthenticatedHttpClient extends http.BaseClient {
     // 4. Send request
     http.StreamedResponse response = await _inner.send(initialRequest);
 
-    // Only discard responses we cannot return or will replace. Cancellation
-    // releases streaming resources without waiting for an unbounded error body.
-    if (response.statusCode == 401 && canRetry && currentSession != null) {
-      if (!identical(identity, _authService.sessionIdentity)) {
-        await response.stream.listen(null).cancel();
-        throw const AuthExpiredException('Session changed during request');
-      }
-      if (currentSession.refreshToken?.isNotEmpty == true) {
-        await response.stream.listen(null).cancel();
-        if (!identical(identity, _authService.sessionIdentity)) {
-          throw const AuthExpiredException('Session changed during request');
+    // 5. If 401 Unauthorized received and we have a session with a refresh token, attempt refresh & retry once
+    if (response.statusCode == 401 && canRetry) {
+      final session = _authService.currentSession;
+      if (session != null && session.refreshToken != null && session.refreshToken!.isNotEmpty) {
+        try {
+          final refreshedSession = await _authService.refresh();
+
+          // Prepare retry request with fresh access token
+          final retryRequest = _cloneRequest(request);
+          retryRequest.headers['Authorization'] = 'Bearer ${refreshedSession.accessToken}';
+
+          response = await _inner.send(retryRequest);
+        } catch (e) {
+          // Token refresh failed or session was revoked; let 401 response pass or propagate AuthExpiredException
+          throw AuthExpiredException('Session refresh failed: $e');
         }
-        final refreshedSession = await (() async {
-          try {
-            return await _authService.refresh();
-          } on TerminalAuthException {
-            throw const AuthExpiredException();
-          }
-        })();
-        if (!identical(identity, _authService.sessionIdentity) ||
-            refreshedSession.userId != currentSession.userId ||
-            refreshedSession.tenantId != currentSession.tenantId) {
-          throw const AuthExpiredException('Session changed during refresh');
-        }
-        final retryRequest = _cloneRequest(request);
-        retryRequest.headers['Authorization'] = 'Bearer ${refreshedSession.accessToken}';
-        // Transport errors here remain transport errors, not authentication errors.
-        response = await _inner.send(retryRequest);
       }
     }
 
