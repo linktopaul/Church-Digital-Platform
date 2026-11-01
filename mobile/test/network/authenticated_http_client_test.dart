@@ -1,3 +1,5 @@
+import '../support/in_memory_secure_token_storage.dart';
+import '../support/mock_auth_provider.dart';
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -5,7 +7,6 @@ import 'package:http/testing.dart';
 import 'package:church_digital_platform_mobile/auth/auth_provider.dart';
 import 'package:church_digital_platform_mobile/auth/auth_session.dart';
 import 'package:church_digital_platform_mobile/auth/auth_session_manager.dart';
-import 'package:church_digital_platform_mobile/auth/secure_token_storage.dart';
 import 'package:church_digital_platform_mobile/network/api_exceptions.dart';
 import 'package:church_digital_platform_mobile/network/authenticated_http_client.dart';
 
@@ -130,6 +131,8 @@ void main() {
         ),
       );
 
+      mockAuthProvider.mockSessionToReturn = sessionManager.currentSession!.copyWith(
+        accessToken: 'refreshed_access_token_1');
       int requestCount = 0;
       final tokensReceived = <String?>[];
 
@@ -173,7 +176,7 @@ void main() {
         ),
       );
 
-      mockAuthProvider.refreshException = Exception('Refresh token expired or invalid');
+      mockAuthProvider.refreshException = const TerminalAuthException();
 
       final mockInner = MockClient((request) async {
         return http.Response(jsonEncode({'error': 'unauthorized'}), 401);
@@ -184,8 +187,8 @@ void main() {
         inner: mockInner,
       );
 
-      expect(
-        () => client.get(Uri.parse('https://church.api/v1/fellowships')),
+      await expectLater(
+        client.get(Uri.parse('https://church.api/v1/fellowships')),
         throwsA(isA<AuthExpiredException>()),
       );
 
