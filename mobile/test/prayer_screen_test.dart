@@ -553,5 +553,49 @@ void main() {
 
       manager.dispose();
     });
+
+    testWidgets('preserves prayer client and does not reset state across same-session token refresh', (tester) async {
+      final initialSession = AuthSession(
+        accessToken: 'pastor-token-1',
+        refreshToken: 'pastor-refresh-1',
+        userId: 'pastor-user-id',
+        tenantId: 'tenant-1',
+        roles: const ['Pastor'],
+        expiresAt: DateTime.now().add(const Duration(minutes: 5)),
+      );
+      final mockAuth = MockAuthProvider(mockSessionToReturn: initialSession);
+      final manager = AuthSessionManager(
+        provider: mockAuth,
+        storage: InMemorySecureTokenStorage(),
+      );
+      await manager.setSession(initialSession);
+
+      await tester.pumpWidget(ChurchMobileApp(
+        authService: manager,
+        apiBaseUrl: 'https://church.example.com',
+      ));
+      // Switch to Prayer tab (index 2)
+      await tester.tap(find.byIcon(Icons.favorite_border));
+      await tester.pump();
+
+      expect(find.text('Sign In Required'), findsNothing);
+      expect(find.text('My Requests'), findsOneWidget);
+      expect(find.text('All Pastoral Requests'), findsOneWidget);
+
+      // Trigger token refresh with same userId and tenantId
+      final refreshedSession = initialSession.copyWith(
+        accessToken: 'pastor-token-refreshed',
+        expiresAt: DateTime.now().add(const Duration(hours: 1)),
+      );
+      await manager.setSession(refreshedSession);
+      await tester.pump();
+
+      // State is preserved and pastoral feed remains displayed
+      expect(find.text('Sign In Required'), findsNothing);
+      expect(find.text('My Requests'), findsOneWidget);
+      expect(find.text('All Pastoral Requests'), findsOneWidget);
+
+      manager.dispose();
+    });
   });
 }

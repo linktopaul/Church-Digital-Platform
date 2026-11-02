@@ -305,4 +305,26 @@ void main() {
 
     expect(find.text('Joined'), findsOneWidget);
   });
+
+  testWidgets('MessagesScreen reloads groups when apiClient is updated via didUpdateWidget',
+      (tester) async {
+    final client1 = FakeFellowshipApiClient(initialGroups: []);
+    final client2 = FakeFellowshipApiClient(initialGroups: createSampleGroups());
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MessagesScreen(apiClient: client1),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text("Men's Fellowship Brotherhood"), findsNothing);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MessagesScreen(apiClient: client2),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text("Men's Fellowship Brotherhood"), findsOneWidget);
+  });
 }

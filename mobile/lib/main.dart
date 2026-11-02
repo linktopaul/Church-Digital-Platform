@@ -64,6 +64,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   StreamSubscription<AuthSession?>? _sessionSubscription;
   AuthSession? _currentSession;
 
+  HttpFellowshipApiClient? _cachedFellowshipClient;
+  HttpPrayerApiClient? _cachedPrayerClient;
+  String? _cachedSessionKey;
+  AuthService? _cachedAuthService;
+  String? _cachedBaseUrl;
+
   static const _tabNames = [
     'Home',
     'Messages',
@@ -76,10 +82,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   void initState() {
     super.initState();
     _currentSession = widget.authService?.currentSession;
+    _updateClients();
     _sessionSubscription = widget.authService?.sessionStateStream.listen((session) {
       if (mounted) {
         setState(() {
           _currentSession = session;
+          _updateClients();
         });
       }
     });
@@ -88,13 +96,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   @override
   void didUpdateWidget(covariant MainNavigationScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.authService != widget.authService) {
+    if (oldWidget.authService != widget.authService || oldWidget.apiBaseUrl != widget.apiBaseUrl) {
       _sessionSubscription?.cancel();
       _currentSession = widget.authService?.currentSession;
+      _updateClients();
       _sessionSubscription = widget.authService?.sessionStateStream.listen((session) {
         if (mounted) {
           setState(() {
             _currentSession = session;
+            _updateClients();
           });
         }
       });
@@ -130,33 +140,46 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     return session.roles.any((r) => r.toLowerCase() == 'pastor');
   }
 
-  Widget _buildMessagesScreen() {
+  void _updateClients() {
     final authService = widget.authService;
-    if (authService != null && _isAuthenticated) {
-      final authClient = AuthenticatedHttpClient(authService: authService);
-      final client = HttpFellowshipApiClient(
-        client: authClient,
-        baseUrl: '$_effectiveBaseUrl/api/v1',
-      );
-      return MessagesScreen(apiClient: client);
+    final sessionKey = _isAuthenticated && authService != null
+        ? '${_currentSession!.userId}:${_currentSession!.tenantId}'
+        : null;
+    final effectiveBase = _effectiveBaseUrl;
+
+    if (sessionKey != _cachedSessionKey ||
+        authService != _cachedAuthService ||
+        effectiveBase != _cachedBaseUrl) {
+      _cachedSessionKey = sessionKey;
+      _cachedAuthService = authService;
+      _cachedBaseUrl = effectiveBase;
+
+      if (sessionKey != null && authService != null) {
+        final authClient = AuthenticatedHttpClient(authService: authService);
+        _cachedFellowshipClient = HttpFellowshipApiClient(
+          client: authClient,
+          baseUrl: '$effectiveBase/api/v1',
+        );
+        _cachedPrayerClient = HttpPrayerApiClient(
+          client: authClient,
+          baseUrl: effectiveBase,
+        );
+      } else {
+        _cachedFellowshipClient = null;
+        _cachedPrayerClient = null;
+      }
     }
-    return const MessagesScreen();
+  }
+
+  Widget _buildMessagesScreen() {
+    return MessagesScreen(apiClient: _cachedFellowshipClient);
   }
 
   Widget _buildPrayerScreen() {
-    final authService = widget.authService;
-    if (authService != null && _isAuthenticated) {
-      final authClient = AuthenticatedHttpClient(authService: authService);
-      final prayerClient = HttpPrayerApiClient(
-        client: authClient,
-        baseUrl: _effectiveBaseUrl,
-      );
-      return PrayerScreen(
-        apiClient: prayerClient,
-        isPastor: _isPastor,
-      );
-    }
-    return const PrayerScreen();
+    return PrayerScreen(
+      apiClient: _cachedPrayerClient,
+      isPastor: _isPastor,
+    );
   }
 
   List<Widget> get _screens => [
@@ -169,6 +192,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    _updateClients();
     return Scaffold(
       appBar: AppBar(title: Text(_tabNames[_selectedIndex])),
       body: IndexedStack(

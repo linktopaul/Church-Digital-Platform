@@ -15,7 +15,7 @@ class MessagesScreen extends StatefulWidget {
 }
 
 class _MessagesScreenState extends State<MessagesScreen> {
-  late final FellowshipApiClient _apiClient;
+  late FellowshipApiClient _apiClient;
   List<FellowshipGroupData> _groups = [];
   bool _isLoading = false;
   String? _errorMessage;
@@ -28,6 +28,15 @@ class _MessagesScreenState extends State<MessagesScreen> {
     super.initState();
     _apiClient = widget.apiClient ?? HttpFellowshipApiClient();
     _loadGroups();
+  }
+
+  @override
+  void didUpdateWidget(covariant MessagesScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.apiClient != widget.apiClient) {
+      _apiClient = widget.apiClient ?? HttpFellowshipApiClient();
+      _loadGroups();
+    }
   }
 
   Future<void> _loadGroups() async {
