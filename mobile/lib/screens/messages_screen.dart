@@ -490,11 +490,13 @@ class _FellowshipDetailScreenState extends State<_FellowshipDetailScreen>
     setState(() => _isLoadingDetail = true);
     try {
       final detail = await widget.apiClient.getFellowshipGroupDetail(_currentGroup.id);
+      if (!mounted) return;
       setState(() {
         _currentGroup = _currentGroup.copyWith(
           members: detail.members,
           posts: detail.posts,
-          memberCount: detail.memberCount > 0 ? detail.memberCount : _currentGroup.memberCount,
+          memberCount: detail.memberCount,
+          isUserMember: detail.isUserMember,
           description: detail.description,
           leaderName: detail.leaderName ?? _currentGroup.leaderName,
           meetingSchedule: detail.meetingSchedule ?? _currentGroup.meetingSchedule,
@@ -504,6 +506,7 @@ class _FellowshipDetailScreenState extends State<_FellowshipDetailScreen>
       });
       widget.onGroupUpdated(_currentGroup);
     } catch (_) {
+      if (!mounted) return;
       setState(() => _isLoadingDetail = false);
     }
   }
