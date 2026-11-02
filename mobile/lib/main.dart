@@ -10,6 +10,7 @@ import 'screens/prayer_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/worship_screen.dart';
 import 'services/fellowship_api_client.dart';
+import 'services/member_api_client.dart';
 import 'services/prayer_api_client.dart';
 
 void main() {
@@ -66,6 +67,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   HttpFellowshipApiClient? _cachedFellowshipClient;
   HttpPrayerApiClient? _cachedPrayerClient;
+  HttpMemberApiClient? _cachedMemberClient;
   String? _cachedSessionKey;
   AuthService? _cachedAuthService;
   String? _cachedBaseUrl;
@@ -167,9 +169,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           client: authClient,
           baseUrl: effectiveBase,
         );
+        _cachedMemberClient = HttpMemberApiClient(
+          client: authClient,
+          baseUrl: effectiveBase,
+        );
       } else {
         _cachedFellowshipClient = null;
         _cachedPrayerClient = null;
+        _cachedMemberClient = null;
       }
     }
   }
@@ -185,12 +192,20 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     );
   }
 
+  Widget _buildProfileScreen() {
+    return ProfileScreen(
+      apiClient: _cachedMemberClient,
+      authService: widget.authService,
+      isPastor: _isPastor,
+    );
+  }
+
   List<Widget> get _screens => [
     const HomeScreen(),
     _buildMessagesScreen(),
     _buildPrayerScreen(),
     const WorshipScreen(),
-    const ProfileScreen(),
+    _buildProfileScreen(),
   ];
 
   @override
@@ -238,4 +253,3 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     );
   }
 }
-
