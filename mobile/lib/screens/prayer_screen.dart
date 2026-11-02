@@ -240,7 +240,12 @@ class _PrayerScreenState extends State<PrayerScreen> with TickerProviderStateMix
         return;
       }
 
+      // Invalidate any older in-flight GET started before this status mutation
+      // completed so a stale snapshot cannot overwrite the confirmed status.
+      final hadPendingLoad = _isLoading;
+      _loadGeneration++;
       setState(() {
+        _isLoading = false;
         _allRequests = _allRequests
             .map((r) => r.id == updated.id ? updated : r)
             .toList();
@@ -248,6 +253,9 @@ class _PrayerScreenState extends State<PrayerScreen> with TickerProviderStateMix
             .map((r) => r.id == updated.id ? updated : r)
             .toList();
       });
+      if (hadPendingLoad) {
+        _loadData();
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Prayer request status updated to ${newStatus.displayName}.'),
