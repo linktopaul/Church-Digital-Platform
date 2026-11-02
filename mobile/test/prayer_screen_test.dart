@@ -1,9 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:church_digital_platform_mobile/auth/auth_session.dart';
+import 'package:church_digital_platform_mobile/auth/auth_session_manager.dart';
+import 'package:church_digital_platform_mobile/main.dart';
 import 'package:church_digital_platform_mobile/models/prayer_models.dart';
 import 'package:church_digital_platform_mobile/screens/prayer_screen.dart';
 import 'package:church_digital_platform_mobile/services/prayer_api_client.dart';
+import 'support/in_memory_secure_token_storage.dart';
+import 'support/mock_auth_provider.dart';
 
 class FakePrayerApiClient implements PrayerApiClient {
   List<PrayerRequestData> myRequests;
@@ -504,5 +509,49 @@ void main() {
     await tester.tap(find.text('All Pastoral Requests'));
     await tester.pumpAndSettle();
     expect(find.text('Pastoral care needed'), findsOneWidget);
+  });
+
+  group('MainNavigationScreen prayer wiring', () {
+    testWidgets('shows unauthenticated state when no session is present', (tester) async {
+      await tester.pumpWidget(const ChurchMobileApp());
+      // Switch to Prayer tab (index 2)
+      await tester.tap(find.byIcon(Icons.favorite_border));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sign In Required'), findsOneWidget);
+    });
+
+    testWidgets('wires HttpPrayerApiClient and pastoral feed when pastor session is present', (tester) async {
+      final mockAuth = MockAuthProvider(
+        mockSessionToReturn: AuthSession(
+          accessToken: 'pastor-token',
+          refreshToken: 'pastor-refresh',
+          userId: 'pastor-user-id',
+          tenantId: 'tenant-1',
+          roles: const ['Pastor'],
+          expiresAt: DateTime.now().add(const Duration(hours: 1)),
+        ),
+      );
+      final manager = AuthSessionManager(
+        authProvider: mockAuth,
+        storage: InMemorySecureTokenStorage(),
+      );
+      await manager.setSession(mockAuth.mockSessionToReturn!);
+
+      await tester.pumpWidget(ChurchMobileApp(
+        authService: manager,
+        apiBaseUrl: 'https://church.example.com',
+      ));
+      // Switch to Prayer tab (index 2)
+      await tester.tap(find.byIcon(Icons.favorite_border));
+      await tester.pump();
+
+      // Expect pastoral tabs ("My Requests" and "All Requests (Pastor)") rather than "Sign In Required"
+      expect(find.text('Sign In Required'), findsNothing);
+      expect(find.text('My Requests'), findsOneWidget);
+      expect(find.text('All Requests (Pastor)'), findsOneWidget);
+
+      manager.dispose();
+    });
   });
 }
