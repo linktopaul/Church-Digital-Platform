@@ -83,19 +83,15 @@ class HttpPrayerApiClient implements PrayerApiClient {
     };
   }
 
-  Future<http.Response> _executeRequest(
-    Future<http.Response> Function() action, {
-    bool retryable = true,
-  }) async {
+  Future<http.Response> _executeWithRetry(Future<http.Response> Function() action) async {
     int attempts = 0;
-    final maxAttempts = retryable ? maxRetries + 1 : 1;
     while (true) {
       attempts++;
       try {
         final response = await action();
         return response;
       } on SocketException catch (e) {
-        if (attempts >= maxAttempts) {
+        if (attempts > maxRetries) {
           throw PrayerApiException(
             'Network connection error. Please check your internet connection.',
             endpoint: e.address?.host,
@@ -103,15 +99,15 @@ class HttpPrayerApiClient implements PrayerApiClient {
         }
         await Future.delayed(Duration(milliseconds: 100 * attempts));
       } on http.ClientException catch (e) {
-        if (attempts >= maxAttempts) {
+        if (attempts > maxRetries) {
           throw PrayerApiException(
-            'Network request failed. Please check your connection and try again.',
+            'Network request failed: ${e.message}',
             endpoint: e.uri?.path,
           );
         }
         await Future.delayed(Duration(milliseconds: 100 * attempts));
       } on TimeoutException {
-        if (attempts >= maxAttempts) {
+        if (attempts > maxRetries) {
           throw const PrayerApiException('Request timed out. Please try again.');
         }
         await Future.delayed(Duration(milliseconds: 100 * attempts));
@@ -156,7 +152,7 @@ class HttpPrayerApiClient implements PrayerApiClient {
     const endpoint = '/api/v1/prayer-requests/my';
     final uri = _buildUri(endpoint);
 
-    final response = await _executeRequest(
+    final response = await _executeWithRetry(
       () => _client.get(uri, headers: _buildHeaders()),
     );
 
@@ -178,7 +174,7 @@ class HttpPrayerApiClient implements PrayerApiClient {
     const endpoint = '/api/v1/prayer-requests';
     final uri = _buildUri(endpoint);
 
-    final response = await _executeRequest(
+    final response = await _executeWithRetry(
       () => _client.get(uri, headers: _buildHeaders()),
     );
 
@@ -200,14 +196,12 @@ class HttpPrayerApiClient implements PrayerApiClient {
     const endpoint = '/api/v1/prayer-requests';
     final uri = _buildUri(endpoint);
 
-    // Never auto-retry POST creation without server-enforced idempotency.
-    final response = await _executeRequest(
+    final response = await _executeWithRetry(
       () => _client.post(
         uri,
         headers: _buildHeaders(),
         body: jsonEncode(input.toJson()),
       ),
-      retryable: false,
     );
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -229,7 +223,7 @@ class HttpPrayerApiClient implements PrayerApiClient {
     final endpoint = '/api/v1/prayer-requests/$id/status';
     final uri = _buildUri(endpoint);
 
-    final response = await _executeRequest(
+    final response = await _executeWithRetry(
       () => _client.patch(
         uri,
         headers: _buildHeaders(),

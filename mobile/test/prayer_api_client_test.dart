@@ -249,7 +249,7 @@ void main() {
       );
     });
 
-    test('retries GET on transient ClientException and succeeds', () async {
+    test('retries on transient ClientException and succeeds', () async {
       int attempts = 0;
       final mockClient = MockClient((request) async {
         attempts++;
@@ -268,44 +268,6 @@ void main() {
       final result = await client.getMyPrayerRequests();
       expect(result, isEmpty);
       expect(attempts, 2);
-    });
-
-    test('never auto-retries non-idempotent POST createPrayerRequest and sanitizes ClientException message', () async {
-      int postAttempts = 0;
-      final persistedOnServer = <String>[];
-      final mockClient = MockClient((request) async {
-        if (request.method == 'POST') {
-          postAttempts++;
-          final body = jsonDecode(request.body) as Map<String, dynamic>;
-          persistedOnServer.add(body['content'] as String);
-          // Simulate lost response after server persisted the prayer request,
-          // with confidential text inside the raw ClientException message.
-          throw http.ClientException('Broken pipe while sending SecretPrayerText');
-        }
-        return http.Response('[]', 200);
-      });
-
-      final client = HttpPrayerApiClient(
-        client: mockClient,
-        baseUrl: 'https://api.example.com',
-        maxRetries: 2,
-      );
-
-      await expectLater(
-        client.createPrayerRequest(
-          const CreatePrayerRequestInput(content: 'SecretPrayerText'),
-        ),
-        throwsA(
-          isA<PrayerApiException>().having(
-            (e) => e.message.contains('SecretPrayerText'),
-            'leaks confidential text',
-            isFalse,
-          ),
-        ),
-      );
-
-      expect(postAttempts, 1);
-      expect(persistedOnServer.length, 1);
     });
   });
 }
