@@ -19,6 +19,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
   List<FellowshipGroupData> _groups = [];
   bool _isLoading = false;
   String? _errorMessage;
+  int _loadGeneration = 0;
 
   FellowshipCategory _selectedCategory = FellowshipCategory.all;
   String _searchQuery = '';
@@ -35,11 +36,16 @@ class _MessagesScreenState extends State<MessagesScreen> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.apiClient != widget.apiClient) {
       _apiClient = widget.apiClient ?? HttpFellowshipApiClient();
+      _loadGeneration++;
+      _groups = [];
+      _errorMessage = null;
+      _isLoading = false;
       _loadGroups();
     }
   }
 
   Future<void> _loadGroups() async {
+    final currentGen = ++_loadGeneration;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -49,11 +55,13 @@ class _MessagesScreenState extends State<MessagesScreen> {
       final fetched = await _apiClient.getFellowshipGroups(
         category: _selectedCategory != FellowshipCategory.all ? _selectedCategory : null,
       );
+      if (!mounted || currentGen != _loadGeneration) return;
       setState(() {
         _groups = fetched;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted || currentGen != _loadGeneration) return;
       setState(() {
         _errorMessage = e.toString();
         _isLoading = false;

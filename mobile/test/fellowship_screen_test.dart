@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:church_digital_platform_mobile/models/fellowship_models.dart';
@@ -96,6 +97,20 @@ class FakeFellowshipApiClient implements FellowshipApiClient {
       groups[index] = g.copyWith(posts: [post, ...g.posts]);
     }
     return post;
+  }
+}
+
+class ControllableFellowshipApiClient extends FakeFellowshipApiClient {
+  Completer<List<FellowshipGroupData>>? completer;
+
+  ControllableFellowshipApiClient({super.initialGroups, this.completer});
+
+  @override
+  Future<List<FellowshipGroupData>> getFellowshipGroups({FellowshipCategory? category}) async {
+    if (completer != null) {
+      return completer!.future;
+    }
+    return super.getFellowshipGroups(category: category);
   }
 }
 
@@ -326,5 +341,61 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text("Men's Fellowship Brotherhood"), findsOneWidget);
+  });
+
+  testWidgets('Account switch discards pending load from previous session and prevents data leak',
+      (tester) async {
+    final completerA = Completer<List<FellowshipGroupData>>();
+    final clientA = ControllableFellowshipApiClient(
+      completer: completerA,
+    );
+
+    const privateGroupA = FellowshipGroupData(
+      id: 'private_a',
+      name: "Member A Private Fellowship",
+      description: "Confidential fellowship",
+      category: FellowshipCategory.housePrayer,
+      isPrivate: true,
+      members: ['Member A'],
+    );
+
+    const publicGroupB = FellowshipGroupData(
+      id: 'public_b',
+      name: "Member B Open Group",
+      description: "Public group",
+      category: FellowshipCategory.mensFellowship,
+      isPrivate: false,
+      members: ['Member B'],
+    );
+
+    final clientB = FakeFellowshipApiClient(initialGroups: [publicGroupB]);
+
+    // Initial mount with client A: starts load that is slow/pending
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MessagesScreen(apiClient: clientA),
+      ),
+    );
+    await tester.pump();
+
+    // Switch account to client B: client B returns immediately
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MessagesScreen(apiClient: clientB),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Client B's group is shown
+    expect(find.text("Member B Open Group"), findsOneWidget);
+    expect(find.text("Member A Private Fellowship"), findsNothing);
+
+    // Client A's slow pending response finally completes
+    completerA.complete([privateGroupA]);
+    await tester.pumpAndSettle();
+
+    // Verify Member A's private data did NOT overwrite Member B's groups
+    expect(find.text("Member B Open Group"), findsOneWidget);
+    expect(find.text("Member A Private Fellowship"), findsNothing);
   });
 }
