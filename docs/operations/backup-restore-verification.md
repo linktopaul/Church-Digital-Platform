@@ -19,7 +19,7 @@ The rehearsal tooling and automated disposable CI verification were validated ag
   1. `20261031115204_InitialCreate` (`Tenants`)
   2. `20261031130521_AddAnnouncements` (`Announcements`)
   3. `20261031144505_AddPrayerRequests` (`PrayerRequests`)
-  4. `20261031165556_AddWorshipAndSetlists` (`Songs`, `Setlists`, `SetlistItem`)
+  4. `20261031165556_AddWorshipAndSetlists` (`Songs`, `Setlists`, `SetlistItems`)
   5. `20261031172108_AddFellowshipMinistrySpaces` (`FellowshipGroups`, `FellowshipMembers`, `FellowshipPosts`)
 
 ---
@@ -34,9 +34,10 @@ To avoid data loss, cross-tenant leaks, or production outages, `scripts/operatio
 2. **Explicit Target Requirement**:
    - No implicit or default database targets are permitted. The operator must specify exact database names.
 3. **Collision Refusal**:
-   - The tool strictly rejects operations where `--source-db` equals `--target-db`.
-4. **Refusal of Populated Target Databases**:
-   - The tool refuses to restore into an existing database that already contains user tables or sequences (`information_schema.tables`).
+   - The tool strictly rejects operations where `--source-db` (or `PGDATABASE`) equals `--target-db`.
+4. **Refusal of Populated Target Databases & Atomic Backup Staging**:
+   - The tool refuses to restore into an existing database that already contains user tables, views, or sequences (`information_schema.tables` and `information_schema.sequences`).
+   - Backup archives are written to a temporary staging file and atomically moved into place only upon verified non-empty `pg_dump` completion, preserving any pre-existing archive if a backup fails.
    - Overwrite flags like `--clean`, `DROP DATABASE`, or destructive script cascades are **forbidden**. Operators must create a clean, dedicated disposable database for each verification or restore drill.
 5. **No Production Database Overwrites**:
    - Restore automation is strictly designed for isolated disposable target verification.
@@ -106,15 +107,15 @@ Operators can also run the stages independently:
 
 ## 4. Verification Criteria
 
-The verification step verifies the following parity checks:
+The verification step verifies the following parity checks (rejecting any failed or malformed query immediately):
 1. **EF Migration Lineage**:
-   - Confirms `__EFMigrationsHistory` rows and order match between source and restored database.
+   - Confirms `__EFMigrationsHistory` rows (`MigrationId` and `ProductVersion`) and order match between source and restored database.
 2. **Table Record Counts**:
-   - Compares counts across all core tables: `Tenants`, `Announcements`, `PrayerRequests`, `Songs`, `Setlists`, `SetlistItem`, `FellowshipGroups`, `FellowshipMembers`, `FellowshipPosts`.
-3. **Primary & Foreign Key Relationships**:
-   - Ensures parent-child integrity (e.g. Setlists to SetlistItems, FellowshipGroups to FellowshipMembers).
+   - Compares counts across all core tables: `Tenants`, `Announcements`, `PrayerRequests`, `Songs`, `Setlists`, `SetlistItems`, `FellowshipGroups`, `FellowshipMembers`, `FellowshipPosts`.
+3. **Deterministic Full-Row & Foreign-Key Signatures**:
+   - Normalizes the session timezone to `UTC` and computes per-row digests in PostgreSQL (`pk::text || ':' || md5(row_to_json(t)::text)`) ordered by primary key across all 9 core tables, verifying every column, foreign key, privacy flag, and relationship without exposing confidential content in logs.
 4. **Unicode & Special Character Fidelity**:
-   - Ensures multi-lingual characters (Tamil, German, etc.) and emojis survive serialization and restoration intact.
+   - Ensures multi-lingual characters (Tamil, German, etc.) and emojis survive serialization and restoration intact via full-row digest parity.
 5. **Source Database Immutability**:
    - Ensures source database state before and after the rehearsal remains identical.
 
