@@ -1,6 +1,5 @@
 using Church.Core;
 using Church.Infrastructure;
-using Church.API.Endpoints;
 using Church.API.Models;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
@@ -12,7 +11,6 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddOpenApi();
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddScoped<ITenantService, TenantService>();
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -41,8 +39,6 @@ app.UseHttpsRedirection();
 
 app.UseAuthentication();
 app.UseAuthorization();
-
-app.MapAuthEndpoints();
 
 // Announcement Endpoints
 var announcementsGroup = app.MapGroup("/api/v1/announcements")
@@ -1276,17 +1272,10 @@ public partial class Program { }
 public class TenantService : ITenantService
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
-    private readonly IWebHostEnvironment _environment;
-    private readonly IConfiguration _configuration;
 
-    public TenantService(
-        IHttpContextAccessor httpContextAccessor,
-        IWebHostEnvironment environment,
-        IConfiguration configuration)
+    public TenantService(IHttpContextAccessor httpContextAccessor)
     {
         _httpContextAccessor = httpContextAccessor;
-        _environment = environment;
-        _configuration = configuration;
     }
 
     public Guid GetCurrentTenantId()
@@ -1294,32 +1283,16 @@ public class TenantService : ITenantService
         var httpContext = _httpContextAccessor.HttpContext;
         if (httpContext == null) return Guid.Empty;
 
-        // 1. Always prioritize validated user claims (tenant_id / church_id) over any client header.
-        if (httpContext.User.Identity?.IsAuthenticated == true)
+        var tenantIdString = httpContext.Request.Headers["X-Tenant-Id"].FirstOrDefault();
+        if (Guid.TryParse(tenantIdString, out var tenantId))
         {
-            var claimTenantStr = httpContext.User.FindFirst("tenant_id")?.Value ??
-                                 httpContext.User.FindFirst("church_id")?.Value;
-            if (Guid.TryParse(claimTenantStr, out var claimTenantId) && claimTenantId != Guid.Empty)
-            {
-                return claimTenantId;
-            }
-
-            if (string.Equals(httpContext.User.FindFirst("auth_mode")?.Value, "jwt", StringComparison.Ordinal))
-            {
-                return Guid.Empty;
-            }
+            return tenantId;
         }
 
-        // 2. Only allow X-Tenant-Id header fallback in Development or Testing when explicitly allowed.
-        var allowTestHeaderAuth = (_environment.IsDevelopment() || _environment.IsEnvironment("Testing")) &&
-                                  _configuration.GetValue<bool>("Authentication:AllowTestHeaderAuth", true);
-        if (allowTestHeaderAuth)
+        var churchClaim = httpContext.User.FindFirst("church_id")?.Value;
+        if (Guid.TryParse(churchClaim, out var churchId))
         {
-            var tenantIdString = httpContext.Request.Headers["X-Tenant-Id"].FirstOrDefault();
-            if (Guid.TryParse(tenantIdString, out var tenantId))
-            {
-                return tenantId;
-            }
+            return churchId;
         }
 
         return Guid.Empty;
@@ -1328,62 +1301,24 @@ public class TenantService : ITenantService
 
 public class CustomAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
-    private readonly JwtTokenService _jwtTokenService;
-    private readonly IWebHostEnvironment _environment;
-    private readonly IConfiguration _configuration;
-
     public CustomAuthHandler(
         Microsoft.Extensions.Options.IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory logger,
-        System.Text.Encodings.Web.UrlEncoder encoder,
-        JwtTokenService jwtTokenService,
-        IWebHostEnvironment environment,
-        IConfiguration configuration)
+        System.Text.Encodings.Web.UrlEncoder encoder)
         : base(options, logger, encoder)
     {
-        _jwtTokenService = jwtTokenService;
-        _environment = environment;
-        _configuration = configuration;
     }
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        var allowTestHeaderAuth = (_environment.IsDevelopment() || _environment.IsEnvironment("Testing")) &&
-                                  _configuration.GetValue<bool>("Authentication:AllowTestHeaderAuth", true);
-
-        var authHeader = Request.Headers.Authorization.FirstOrDefault();
-        if (!string.IsNullOrEmpty(authHeader) &&
-            authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-        {
-            var token = authHeader.Substring("Bearer ".Length).Trim();
-            var isMockRoleToken = allowTestHeaderAuth &&
-                                  (token.Equals("admin", StringComparison.OrdinalIgnoreCase) ||
-                                   token.Equals("pastor", StringComparison.OrdinalIgnoreCase) ||
-                                   token.Equals("member", StringComparison.OrdinalIgnoreCase));
-
-            if (!isMockRoleToken)
-            {
-                if (_jwtTokenService.TryValidateAccessToken(token, out var jwtPrincipal, out var jwtError) &&
-                    jwtPrincipal != null)
-                {
-                    var jwtTicket = new AuthenticationTicket(jwtPrincipal, Scheme.Name);
-                    return Task.FromResult(AuthenticateResult.Success(jwtTicket));
-                }
-
-                return Task.FromResult(AuthenticateResult.Fail(jwtError ?? "Invalid bearer token."));
-            }
-        }
-
-        if (!allowTestHeaderAuth)
-        {
-            return Task.FromResult(AuthenticateResult.Fail("Bearer JWT authentication is required."));
-        }
-
-        // Development/Testing fallback: support header-based user claims for direct integration testing
+        // Support header-based user claims for direct integration testing and gateway proxying
+        // e.g. Authorization header: "TestRole Admin" or "TestRole Member" or headers "X-User-Role", "X-User-Id"
         var role = Request.Headers["X-User-Role"].FirstOrDefault();
         var userId = Request.Headers["X-User-Id"].FirstOrDefault();
         var churchId = Request.Headers["X-Tenant-Id"].FirstOrDefault();
 
+        // Also check Authorization header Bearer token / Test token
+        var authHeader = Request.Headers.Authorization.FirstOrDefault();
         if (!string.IsNullOrEmpty(authHeader))
         {
             if (authHeader.StartsWith("TestRole ", StringComparison.OrdinalIgnoreCase))
@@ -1423,7 +1358,6 @@ public class CustomAuthHandler : AuthenticationHandler<AuthenticationSchemeOptio
         if (!string.IsNullOrEmpty(churchId))
         {
             claims.Add(new Claim("church_id", churchId));
-            claims.Add(new Claim("tenant_id", churchId));
         }
 
         var identity = new ClaimsIdentity(claims, Scheme.Name);
