@@ -48,7 +48,8 @@
         "mobile/docs/native-auth-adapters.md"
       ],
       "session": "01a197ad-7188-7636-b89d-582d36f5f068",
-      "pullRequest": 50
+      "pullRequest": 57,
+      "branch": "codex/mobile-auth-child25-isolated"
     },
     {
       "issue": 49,
