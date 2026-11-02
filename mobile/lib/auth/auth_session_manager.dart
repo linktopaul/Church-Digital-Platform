@@ -215,19 +215,26 @@ class AuthSessionManager implements AuthService {
       completer.complete(updatedSession);
       return updatedSession;
     } catch (e) {
-      // Check if session changed while awaiting provider
-      if (_sessionGeneration == originatingGeneration) {
-        if (_isTerminalAuthError(e)) {
-          // Terminal refresh failure: clear credentials and notify
-          await _storage.clearSession();
-          _currentSession = null;
-          _sessionGeneration++;
-          _sessionController.add(null);
+      try {
+        // Check if session changed while awaiting provider
+        if (_sessionGeneration == originatingGeneration) {
+          if (_isTerminalAuthError(e)) {
+            // Terminal refresh failure: clear credentials and notify
+            try {
+              await _storage.clearSession();
+            } catch (_) {
+              // Best effort clear; failure to clear storage must not prevent completing waiters
+            }
+            _currentSession = null;
+            _sessionGeneration++;
+            _sessionController.add(null);
+          }
         }
-        // If transient error, do not purge storage
+      } finally {
+        if (!completer.isCompleted) {
+          completer.completeError(e);
+        }
       }
-
-      completer.completeError(e);
       rethrow;
     } finally {
       _activeRefreshCompleter = null;
