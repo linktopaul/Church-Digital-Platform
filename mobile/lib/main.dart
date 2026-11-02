@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 
-import 'auth/auth_provider.dart';
 import 'auth/auth_session.dart';
 import 'auth/auth_session_manager.dart';
 import 'network/authenticated_http_client.dart';
