@@ -50,15 +50,20 @@ namespace Church.Tests
             client.DefaultRequestHeaders.Add("X-User-Id", memberId.ToString());
             client.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
 
-            // 1. Initial GET /api/v1/members/me auto-provisions profile
+            // 1. Initial GET /api/v1/members/me auto-provisions profile with fail-closed private defaults
             var getRes = await client.GetAsync("/api/v1/members/me");
             Assert.Equal(HttpStatusCode.OK, getRes.StatusCode);
             var initialProfile = await getRes.Content.ReadFromJsonAsync<FullMemberProfileResponse>();
             Assert.NotNull(initialProfile);
             Assert.Equal(memberId, initialProfile.Id);
             Assert.Equal(churchId, initialProfile.TenantId);
+            Assert.Equal(DirectoryVisibility.Private, initialProfile.DirectoryVisibility);
+            Assert.False(initialProfile.ShowPhoneNumber);
+            Assert.False(initialProfile.ShowEmail);
+            Assert.False(initialProfile.ShowAddress);
+            Assert.False(initialProfile.ShowBirthDayAndMonth);
 
-            // 2. PUT /api/v1/members/me updates fields
+            // 2. PUT /api/v1/members/me updates fields and opts into public visibility
             var updateReq = new UpdateMemberProfileRequest(
                 FirstName: "John",
                 LastName: "Wesley",
@@ -82,6 +87,7 @@ namespace Church.Tests
             Assert.Equal("Wesley", updatedProfile.LastName);
             Assert.Equal("+15551234567", updatedProfile.PhoneNumber);
             Assert.Equal("124 Grace Ave", updatedProfile.Address);
+            Assert.Equal(DirectoryVisibility.PublicToMembers, updatedProfile.DirectoryVisibility);
             Assert.False(updatedProfile.ShowAddress);
             Assert.True(updatedProfile.ShowPhoneNumber);
         }

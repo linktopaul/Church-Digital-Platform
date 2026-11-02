@@ -2,8 +2,8 @@ namespace Church.Core
 {
     public enum DirectoryVisibility
     {
-        PublicToMembers = 0, // Visible to verified church members
-        LeadersOnly = 1,     // Visible only to Pastors and Admins
-        Private = 2          // Hidden from directory listing
+        Private = 0,          // Default: Hidden from directory until member opts in
+        PublicToMembers = 1,  // Visible to verified church members
+        LeadersOnly = 2       // Visible only to Pastors and Admins
     }
 }

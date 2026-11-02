@@ -108,7 +108,7 @@ namespace Church.API.Endpoints
 
                 if (member == null)
                 {
-                    // Auto-provision initial member record from claims or AppUser
+                    // Auto-provision initial member record from claims or AppUser with fail-closed private defaults
                     var email = user.FindFirst(ClaimTypes.Email)?.Value
                              ?? user.FindFirst("email")?.Value
                              ?? "member@church.local";
@@ -128,11 +128,11 @@ namespace Church.API.Endpoints
                         FirstName = firstName,
                         LastName = lastName,
                         Email = email,
-                        DirectoryVisibility = DirectoryVisibility.PublicToMembers,
-                        ShowPhoneNumber = true,
-                        ShowEmail = true,
+                        DirectoryVisibility = DirectoryVisibility.Private, // Default private until member opts in
+                        ShowPhoneNumber = false,
+                        ShowEmail = false,
                         ShowAddress = false,
-                        ShowBirthDayAndMonth = true,
+                        ShowBirthDayAndMonth = false,
                         CreatedAt = DateTime.UtcNow,
                         UpdatedAt = DateTime.UtcNow
                     };
