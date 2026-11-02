@@ -116,7 +116,7 @@ void main() {
   late InMemorySecureTokenStorage inMemoryStorage;
   late AuthSessionManager authSessionManager;
 
-  setUp(() async {
+  setUp(() {
     fakeClient = FakeMemberApiClient(
       myProfile: const MemberProfile(
         id: 'mem-1',
@@ -156,20 +156,11 @@ void main() {
     );
 
     mockAuthProvider = MockAuthProvider();
-    inMemoryStorage = InMemorySecureTokenStorage(
-      AuthSession(
-        accessToken: 'access_1',
-        userId: 'mem-1',
-        tenantId: 'ten-1',
-        roles: const ['Member'],
-        expiresAt: DateTime.now().add(const Duration(hours: 1)),
-      ),
-    );
+    inMemoryStorage = InMemorySecureTokenStorage();
     authSessionManager = AuthSessionManager(
       provider: mockAuthProvider,
       storage: inMemoryStorage,
     );
-    await authSessionManager.initialize();
   });
 
   tearDown(() {
@@ -262,6 +253,17 @@ void main() {
   });
 
   testWidgets('sign out button triggers authService signOut', (tester) async {
+    await authSessionManager.setSession(
+      AuthSession(
+        accessToken: 'access_1',
+        refreshToken: 'refresh_1',
+        userId: 'mem-1',
+        tenantId: 'ten-1',
+        roles: const ['Member'],
+        expiresAt: DateTime.now().add(const Duration(hours: 1)),
+      ),
+    );
+
     await tester.pumpWidget(createSubject(
       client: fakeClient,
       authService: authSessionManager,

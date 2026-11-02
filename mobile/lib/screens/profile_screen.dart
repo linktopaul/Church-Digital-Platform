@@ -83,6 +83,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     if (client == null) return;
 
     final sessionGen = _sessionGeneration;
+    final profileGen = _profileMutationGeneration;
     final dirGen = ++_directoryLoadGeneration;
 
     setState(() {
@@ -108,7 +109,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       final fetchedDir = results[1] as List<DirectoryMember>;
 
       setState(() {
-        _myProfile = fetchedProfile;
+        if (profileGen == _profileMutationGeneration) {
+          _myProfile = fetchedProfile;
+        }
         if (dirGen == _directoryLoadGeneration) {
           _directory = fetchedDir;
           _hasMoreDirectory = fetchedDir.length >= _pageSize;
@@ -224,18 +227,26 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         _isSearchingOrRefreshingDirectory = true;
       });
 
-      final dir = await boundClient.getDirectory(
-        search: _searchQuery.isEmpty ? null : _searchQuery,
-        page: 1,
-        pageSize: _pageSize,
-      );
-      if (mounted && sessionGen == _sessionGeneration && dirGen == _directoryLoadGeneration && boundClient == widget.apiClient) {
-        setState(() {
-          _directory = dir;
-          _directoryPage = 1;
-          _hasMoreDirectory = dir.length >= _pageSize;
-          _isSearchingOrRefreshingDirectory = false;
-        });
+      try {
+        final dir = await boundClient.getDirectory(
+          search: _searchQuery.isEmpty ? null : _searchQuery,
+          page: 1,
+          pageSize: _pageSize,
+        );
+        if (mounted && sessionGen == _sessionGeneration && dirGen == _directoryLoadGeneration && boundClient == widget.apiClient) {
+          setState(() {
+            _directory = dir;
+            _directoryPage = 1;
+            _hasMoreDirectory = dir.length >= _pageSize;
+            _isSearchingOrRefreshingDirectory = false;
+          });
+        }
+      } catch (_) {
+        if (mounted && sessionGen == _sessionGeneration && dirGen == _directoryLoadGeneration && boundClient == widget.apiClient) {
+          setState(() {
+            _isSearchingOrRefreshingDirectory = false;
+          });
+        }
       }
     } catch (e) {
       if (!mounted || sessionGen != _sessionGeneration || profileMutationGen != _profileMutationGeneration || boundClient != widget.apiClient) return;
