@@ -116,7 +116,7 @@ void main() {
   late InMemorySecureTokenStorage inMemoryStorage;
   late AuthSessionManager authSessionManager;
 
-  setUp(() {
+  setUp(() async {
     fakeClient = FakeMemberApiClient(
       myProfile: const MemberProfile(
         id: 'mem-1',
@@ -169,6 +169,7 @@ void main() {
       provider: mockAuthProvider,
       storage: inMemoryStorage,
     );
+    await authSessionManager.initialize();
   });
 
   tearDown(() {

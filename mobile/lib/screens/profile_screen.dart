@@ -8,8 +8,8 @@ import '../services/member_api_client.dart';
 /// Guardrails:
 /// - Fails closed: If [apiClient] is null, displays an explicit unauthenticated state.
 /// - Privacy-first: Redacted fields are masked; updates strictly enforce server validation.
-/// - Session isolation: Guard all asynchronous load/save completions with client identity and load generation
-///   to prevent race conditions when switching tenants or signing in/out.
+/// - Session isolation: Guard all asynchronous load/save completions with client identity, session generation,
+///   and separate profile/directory generations to prevent cross-tenant and cross-tab race conditions.
 class ProfileScreen extends StatefulWidget {
   final MemberApiClient? apiClient;
   final AuthService? authService;
@@ -32,12 +32,16 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   List<DirectoryMember> _directory = [];
   bool _isLoading = false;
   bool _isLoadingMoreDirectory = false;
+  bool _isSearchingOrRefreshingDirectory = false;
   bool _hasMoreDirectory = true;
   int _directoryPage = 1;
   static const int _pageSize = 50;
   String? _errorMessage;
   String _searchQuery = '';
-  int _loadGeneration = 0;
+
+  int _sessionGeneration = 0;
+  int _profileMutationGeneration = 0;
+  int _directoryLoadGeneration = 0;
 
   @override
   void initState() {
@@ -52,12 +56,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   void didUpdateWidget(covariant ProfileScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.apiClient != widget.apiClient) {
-      _loadGeneration++;
+      _sessionGeneration++;
+      _directoryLoadGeneration++;
+      _profileMutationGeneration++;
       _myProfile = null;
       _directory = [];
       _directoryPage = 1;
       _hasMoreDirectory = true;
       _isLoadingMoreDirectory = false;
+      _isSearchingOrRefreshingDirectory = false;
       _errorMessage = null;
       if (widget.apiClient != null) {
         _loadData();
@@ -75,11 +82,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     final client = widget.apiClient;
     if (client == null) return;
 
-    final currentGen = ++_loadGeneration;
+    final sessionGen = _sessionGeneration;
+    final dirGen = ++_directoryLoadGeneration;
 
     setState(() {
       _isLoading = true;
       _isLoadingMoreDirectory = false;
+      _isSearchingOrRefreshingDirectory = true;
       _errorMessage = null;
       _directoryPage = 1;
     });
@@ -93,19 +102,26 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       );
 
       final results = await Future.wait([profileFuture, directoryFuture]);
-      if (!mounted || currentGen != _loadGeneration || client != widget.apiClient) return;
+      if (!mounted || sessionGen != _sessionGeneration || client != widget.apiClient) return;
 
+      final fetchedProfile = results[0] as MemberProfile;
       final fetchedDir = results[1] as List<DirectoryMember>;
+
       setState(() {
-        _myProfile = results[0] as MemberProfile;
-        _directory = fetchedDir;
-        _hasMoreDirectory = fetchedDir.length >= _pageSize;
+        _myProfile = fetchedProfile;
+        if (dirGen == _directoryLoadGeneration) {
+          _directory = fetchedDir;
+          _hasMoreDirectory = fetchedDir.length >= _pageSize;
+          _directoryPage = 1;
+          _isSearchingOrRefreshingDirectory = false;
+        }
         _isLoading = false;
       });
     } catch (e) {
-      if (!mounted || currentGen != _loadGeneration || client != widget.apiClient) return;
+      if (!mounted || sessionGen != _sessionGeneration || client != widget.apiClient) return;
       setState(() {
         _isLoading = false;
+        _isSearchingOrRefreshingDirectory = false;
         _errorMessage = e is MemberApiException ? e.message : 'Failed to load member profile.';
       });
     }
@@ -115,12 +131,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     final client = widget.apiClient;
     if (client == null) return;
 
-    final currentGen = ++_loadGeneration;
+    final sessionGen = _sessionGeneration;
+    final dirGen = ++_directoryLoadGeneration;
     _searchQuery = query.trim();
-    _directoryPage = 1;
 
     setState(() {
       _isLoadingMoreDirectory = false;
+      _isSearchingOrRefreshingDirectory = true;
     });
 
     try {
@@ -129,14 +146,17 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         page: 1,
         pageSize: _pageSize,
       );
-      if (!mounted || currentGen != _loadGeneration || client != widget.apiClient) return;
+      if (!mounted || sessionGen != _sessionGeneration || dirGen != _directoryLoadGeneration || client != widget.apiClient) return;
 
       setState(() {
         _directory = fetchedDir;
+        _directoryPage = 1;
         _hasMoreDirectory = fetchedDir.length >= _pageSize;
+        _isSearchingOrRefreshingDirectory = false;
       });
     } catch (e) {
-      if (!mounted || currentGen != _loadGeneration || client != widget.apiClient) return;
+      if (!mounted || sessionGen != _sessionGeneration || dirGen != _directoryLoadGeneration || client != widget.apiClient) return;
+      setState(() => _isSearchingOrRefreshingDirectory = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e is MemberApiException ? e.message : 'Directory search failed.')),
       );
@@ -145,9 +165,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
   Future<void> _loadMoreDirectory() async {
     final client = widget.apiClient;
-    if (client == null || _isLoadingMoreDirectory || !_hasMoreDirectory) return;
+    if (client == null || _isLoadingMoreDirectory || _isSearchingOrRefreshingDirectory || !_hasMoreDirectory) return;
 
-    final currentGen = _loadGeneration;
+    final sessionGen = _sessionGeneration;
+    final dirGen = _directoryLoadGeneration;
     setState(() => _isLoadingMoreDirectory = true);
 
     final nextPage = _directoryPage + 1;
@@ -157,7 +178,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         page: nextPage,
         pageSize: _pageSize,
       );
-      if (!mounted || currentGen != _loadGeneration || client != widget.apiClient) return;
+      if (!mounted || sessionGen != _sessionGeneration || dirGen != _directoryLoadGeneration || client != widget.apiClient) return;
 
       setState(() {
         _directory.addAll(moreMembers);
@@ -166,7 +187,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         _isLoadingMoreDirectory = false;
       });
     } catch (e) {
-      if (!mounted || currentGen != _loadGeneration || client != widget.apiClient) return;
+      if (!mounted || sessionGen != _sessionGeneration || dirGen != _directoryLoadGeneration || client != widget.apiClient) return;
       setState(() => _isLoadingMoreDirectory = false);
     }
   }
@@ -179,15 +200,14 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       return;
     }
 
-    final currentGen = ++_loadGeneration;
-    setState(() {
-      _isLoading = true;
-      _isLoadingMoreDirectory = false;
-    });
+    final sessionGen = _sessionGeneration;
+    final profileMutationGen = ++_profileMutationGeneration;
+
+    setState(() => _isLoading = true);
 
     try {
       final updated = await boundClient.updateMyProfile(input);
-      if (!mounted || currentGen != _loadGeneration || boundClient != widget.apiClient) return;
+      if (!mounted || sessionGen != _sessionGeneration || profileMutationGen != _profileMutationGeneration || boundClient != widget.apiClient) return;
 
       setState(() {
         _myProfile = updated;
@@ -197,21 +217,28 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         const SnackBar(content: Text('Profile updated successfully.')),
       );
 
-      // Reload directory to reflect updated privacy/names under the same generation guard
+      // Trigger directory reload under directory generation guard
+      final dirGen = ++_directoryLoadGeneration;
+      setState(() {
+        _isLoadingMoreDirectory = false;
+        _isSearchingOrRefreshingDirectory = true;
+      });
+
       final dir = await boundClient.getDirectory(
         search: _searchQuery.isEmpty ? null : _searchQuery,
         page: 1,
         pageSize: _pageSize,
       );
-      if (mounted && currentGen == _loadGeneration && boundClient == widget.apiClient) {
+      if (mounted && sessionGen == _sessionGeneration && dirGen == _directoryLoadGeneration && boundClient == widget.apiClient) {
         setState(() {
           _directory = dir;
           _directoryPage = 1;
           _hasMoreDirectory = dir.length >= _pageSize;
+          _isSearchingOrRefreshingDirectory = false;
         });
       }
     } catch (e) {
-      if (!mounted || currentGen != _loadGeneration || boundClient != widget.apiClient) return;
+      if (!mounted || sessionGen != _sessionGeneration || profileMutationGen != _profileMutationGeneration || boundClient != widget.apiClient) return;
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -225,7 +252,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   void _showEditProfileDialog() {
     final profile = _myProfile;
     final dialogClient = widget.apiClient;
-    final dialogGen = _loadGeneration;
+    final dialogSessionGen = _sessionGeneration;
     if (profile == null || dialogClient == null) return;
 
     final firstNameController = TextEditingController(text: profile.firstName);
@@ -331,7 +358,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 FilledButton(
                   onPressed: () {
                     // Check dialog was opened for the current session
-                    if (widget.apiClient != dialogClient || _loadGeneration != dialogGen) {
+                    if (widget.apiClient != dialogClient || _sessionGeneration != dialogSessionGen) {
                       Navigator.of(ctx).pop();
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Session changed. Profile changes discarded.')),
@@ -604,6 +631,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             onNotification: (scrollInfo) {
               if (scrollInfo.metrics.pixels >= scrollInfo.metrics.maxScrollExtent - 200 &&
                   !_isLoadingMoreDirectory &&
+                  !_isSearchingOrRefreshingDirectory &&
                   _hasMoreDirectory) {
                 _loadMoreDirectory();
               }
