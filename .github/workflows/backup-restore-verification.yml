@@ -1,0 +1,70 @@
+name: Backup and restore rehearsal on disposable PostgreSQL
+on:
+  pull_request:
+    paths:
+      - "scripts/operations/**"
+      - ".github/workflows/backup-restore-verification.yml"
+      - "backend/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-backup-restore:
+    name: Verify backup, restore, and integrity on disposable PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pilot_test
+          POSTGRES_PASSWORD: disposable_ci_only
+          POSTGRES_DB: postgres
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U pilot_test -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGMAINTENANCEDATABASE: postgres
+      PGUSER: pilot_test
+      PGPASSWORD: disposable_ci_only
+      BACKUP_RESTORE_DISPOSABLE_DB_TEST: "1"
+      ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=postgres;Username=pilot_test;Password=disposable_ci_only
+      ASPNETCORE_ENVIRONMENT: Testing
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PostgreSQL client utilities
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Install matching EF Core tool
+        run: dotnet tool install --tool-path "$RUNNER_TEMP/ef" dotnet-ef --version 10.0.14
+
+      - name: Restore migration project dependencies
+        run: dotnet restore backend/Church.API/Church.API.csproj
+
+      - name: Run offline safeguard tests
+        run: python3 -B -m unittest discover -s scripts/operations/tests -p "test_*_offline.py" -v
+
+      - name: Run disposable PostgreSQL backup and restore verification rehearsal
+        run: |
+          export PATH="$RUNNER_TEMP/ef:$PATH"
+          python3 -B -m unittest discover -s scripts/operations/tests -p "test_*_postgres.py" -v
