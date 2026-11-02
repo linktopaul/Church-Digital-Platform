@@ -1329,6 +1329,7 @@ public class TenantService : ITenantService
 public class CustomAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
     private readonly JwtTokenService _jwtTokenService;
+    private readonly ApplicationDbContext _dbContext;
     private readonly IWebHostEnvironment _environment;
     private readonly IConfiguration _configuration;
 
@@ -1337,16 +1338,18 @@ public class CustomAuthHandler : AuthenticationHandler<AuthenticationSchemeOptio
         ILoggerFactory logger,
         System.Text.Encodings.Web.UrlEncoder encoder,
         JwtTokenService jwtTokenService,
+        ApplicationDbContext dbContext,
         IWebHostEnvironment environment,
         IConfiguration configuration)
         : base(options, logger, encoder)
     {
         _jwtTokenService = jwtTokenService;
+        _dbContext = dbContext;
         _environment = environment;
         _configuration = configuration;
     }
 
-    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+    protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         var allowTestHeaderAuth = (_environment.IsDevelopment() || _environment.IsEnvironment("Testing")) &&
                                   _configuration.GetValue<bool>("Authentication:AllowTestHeaderAuth", true);
@@ -1367,17 +1370,22 @@ public class CustomAuthHandler : AuthenticationHandler<AuthenticationSchemeOptio
                 if (_jwtTokenService.TryValidateAccessToken(token, out var jwtPrincipal, out var jwtError, expectedIssuer) &&
                     jwtPrincipal != null)
                 {
+                    if (await _jwtTokenService.IsPrincipalRevokedInStoreAsync(_dbContext, jwtPrincipal, Context.RequestAborted))
+                    {
+                        return AuthenticateResult.Fail("Access token has been revoked.");
+                    }
+
                     var jwtTicket = new AuthenticationTicket(jwtPrincipal, Scheme.Name);
-                    return Task.FromResult(AuthenticateResult.Success(jwtTicket));
+                    return AuthenticateResult.Success(jwtTicket);
                 }
 
-                return Task.FromResult(AuthenticateResult.Fail(jwtError ?? "Invalid bearer token."));
+                return AuthenticateResult.Fail(jwtError ?? "Invalid bearer token.");
             }
         }
 
         if (!allowTestHeaderAuth)
         {
-            return Task.FromResult(AuthenticateResult.Fail("Bearer JWT authentication is required."));
+            return AuthenticateResult.Fail("Bearer JWT authentication is required.");
         }
 
         // Development/Testing fallback: support header-based user claims for direct integration testing
@@ -1402,7 +1410,7 @@ public class CustomAuthHandler : AuthenticationHandler<AuthenticationSchemeOptio
 
         if (string.IsNullOrEmpty(role))
         {
-            return Task.FromResult(AuthenticateResult.Fail("No authentication provided"));
+            return AuthenticateResult.Fail("No authentication provided");
         }
 
         if (!string.Equals(role, "Member", StringComparison.OrdinalIgnoreCase) &&
@@ -1431,6 +1439,6 @@ public class CustomAuthHandler : AuthenticationHandler<AuthenticationSchemeOptio
         var principal = new ClaimsPrincipal(identity);
         var ticket = new AuthenticationTicket(principal, Scheme.Name);
 
-        return Task.FromResult(AuthenticateResult.Success(ticket));
+        return AuthenticateResult.Success(ticket);
     }
 }

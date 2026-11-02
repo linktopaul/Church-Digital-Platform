@@ -171,6 +171,8 @@ public class AuthApiTests : IClassFixture<ProductionWebApplicationFactory>
         Assert.EndsWith("/connect/token", discovery.TokenEndpoint);
         Assert.EndsWith("/connect/userinfo", discovery.UserInfoEndpoint);
         Assert.EndsWith("/connect/revoke", discovery.RevocationEndpoint);
+        Assert.Contains("public", discovery.SubjectTypesSupported);
+        Assert.Contains("RS256", discovery.IdTokenSigningAlgValuesSupported);
         Assert.Contains("S256", discovery.CodeChallengeMethodsSupported);
         Assert.Contains("authorization_code", discovery.GrantTypesSupported);
         Assert.Contains("refresh_token", discovery.GrantTypesSupported);
@@ -541,6 +543,23 @@ public class AuthApiTests : IClassFixture<ProductionWebApplicationFactory>
         secondTokenAfterSignOutReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", memberASecondSession.AccessToken);
         var secondTokenAfterSignOutRes = await client.SendAsync(secondTokenAfterSignOutReq);
         Assert.Equal(HttpStatusCode.Unauthorized, secondTokenAfterSignOutRes.StatusCode);
+
+        // Simulate API process restart by clearing in-memory revocation caches; durable DB revocation still rejects both tokens
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var jwtService = scope.ServiceProvider.GetRequiredService<JwtTokenService>();
+            jwtService.ClearInMemoryRevocationCacheForTesting();
+        }
+
+        var meAfterRestartReq = new HttpRequestMessage(HttpMethod.Get, "/api/v1/auth/me");
+        meAfterRestartReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", memberATokens.AccessToken);
+        var meAfterRestartRes = await client.SendAsync(meAfterRestartReq);
+        Assert.Equal(HttpStatusCode.Unauthorized, meAfterRestartRes.StatusCode);
+
+        var secondAfterRestartReq = new HttpRequestMessage(HttpMethod.Get, "/api/v1/auth/me");
+        secondAfterRestartReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", memberASecondSession.AccessToken);
+        var secondAfterRestartRes = await client.SendAsync(secondAfterRestartReq);
+        Assert.Equal(HttpStatusCode.Unauthorized, secondAfterRestartRes.StatusCode);
 
         var refreshAfterSignOutRes = await client.PostAsync("/connect/token", new FormUrlEncodedContent(new Dictionary<string, string>
         {

@@ -157,13 +157,14 @@ public sealed class JwtTokenService : IDisposable
         var exp = nowOffset.AddSeconds(AccessTokenLifetimeSeconds).ToUnixTimeSeconds();
         var normalizedIssuer = issuer.TrimEnd('/');
         _issuedIssuers[normalizedIssuer] = 1;
+        var jti = Guid.NewGuid().ToString("N");
 
         var payload = new Dictionary<string, object?>
         {
             ["iss"] = normalizedIssuer,
             ["aud"] = Audience,
             ["sub"] = user.Id.ToString(),
-            ["jti"] = Guid.NewGuid().ToString("N"),
+            ["jti"] = jti,
             ["iat"] = iat,
             ["iat_ms"] = iatMs,
             ["nbf"] = iat,
@@ -394,23 +395,21 @@ public sealed class JwtTokenService : IDisposable
                 return false;
             }
 
-            if (_revokedUsersBeforeUnixMs.TryGetValue(memberId, out var revokedBeforeMs))
+            long tokenIssuedAtMs = 0;
+            if (root.TryGetProperty("iat_ms", out var iatMsProp) && iatMsProp.TryGetInt64(out var parsedIatMs))
             {
-                long tokenIssuedAtMs = 0;
-                if (root.TryGetProperty("iat_ms", out var iatMsProp) && iatMsProp.TryGetInt64(out var parsedIatMs))
-                {
-                    tokenIssuedAtMs = parsedIatMs;
-                }
-                else if (root.TryGetProperty("iat", out var iatProp) && iatProp.TryGetInt64(out var parsedIatSec))
-                {
-                    tokenIssuedAtMs = parsedIatSec * 1000L;
-                }
+                tokenIssuedAtMs = parsedIatMs;
+            }
+            else if (root.TryGetProperty("iat", out var iatProp) && iatProp.TryGetInt64(out var parsedIatSec))
+            {
+                tokenIssuedAtMs = parsedIatSec * 1000L;
+            }
 
-                if (tokenIssuedAtMs <= revokedBeforeMs)
-                {
-                    error = "User session has been revoked.";
-                    return false;
-                }
+            if (_revokedUsersBeforeUnixMs.TryGetValue(memberId, out var revokedBeforeMs) &&
+                tokenIssuedAtMs <= revokedBeforeMs)
+            {
+                error = "User session has been revoked.";
+                return false;
             }
 
             var tenantIdStr = root.TryGetProperty("tenant_id", out var tenantProp)
@@ -430,6 +429,7 @@ public sealed class JwtTokenService : IDisposable
             {
                 new("auth_mode", "jwt"),
                 new("jti", jti),
+                new("iat_ms", tokenIssuedAtMs.ToString()),
                 new(ClaimTypes.NameIdentifier, memberId.ToString()),
                 new("sub", memberId.ToString()),
                 new("member_id", memberId.ToString()),
@@ -483,6 +483,83 @@ public sealed class JwtTokenService : IDisposable
     {
         var bytes = RandomNumberGenerator.GetBytes(byteLength);
         return WebEncoders.Base64UrlEncode(bytes);
+    }
+
+    public async Task<bool> IsPrincipalRevokedInStoreAsync(
+        ApplicationDbContext db,
+        ClaimsPrincipal principal,
+        CancellationToken cancellationToken = default)
+    {
+        var jti = principal.FindFirst("jti")?.Value;
+        var memberIdStr = principal.FindFirst("member_id")?.Value ??
+                          principal.FindFirst("sub")?.Value ??
+                          principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(memberIdStr, out var memberId) || memberId == Guid.Empty)
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(jti))
+        {
+            if (_revokedAccessTokenJtis.ContainsKey(jti))
+            {
+                return true;
+            }
+
+            var jtiMarkerHash = ComputeSha256Base64Url($"revoked-jti:{jti}");
+            var jtiRevokedInDb = await db.OidcRefreshTokens
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .AnyAsync(t => t.TokenHash == jtiMarkerHash && t.RevokedAt != null, cancellationToken);
+            if (jtiRevokedInDb)
+            {
+                _revokedAccessTokenJtis[jti] = DateTime.UtcNow.AddHours(1);
+                return true;
+            }
+        }
+
+        long tokenIssuedAtMs = 0;
+        var iatMsClaim = principal.FindFirst("iat_ms")?.Value;
+        _ = long.TryParse(iatMsClaim, out tokenIssuedAtMs);
+
+        if (_revokedUsersBeforeUnixMs.TryGetValue(memberId, out var memWatermark) &&
+            tokenIssuedAtMs <= memWatermark)
+        {
+            return true;
+        }
+
+        var userCutoffMarkers = await db.OidcRefreshTokens
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(t => t.UserId == memberId && t.Scope == "revoked_user" && t.ReplacedByTokenHash != null)
+            .Select(t => t.ReplacedByTokenHash!)
+            .ToListAsync(cancellationToken);
+
+        long maxPersistedCutoffMs = 0;
+        foreach (var marker in userCutoffMarkers)
+        {
+            if (long.TryParse(marker, out var parsedCutoff) && parsedCutoff > maxPersistedCutoffMs)
+            {
+                maxPersistedCutoffMs = parsedCutoff;
+            }
+        }
+
+        if (maxPersistedCutoffMs > 0)
+        {
+            _revokedUsersBeforeUnixMs[memberId] = maxPersistedCutoffMs;
+            if (tokenIssuedAtMs <= maxPersistedCutoffMs)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public void ClearInMemoryRevocationCacheForTesting()
+    {
+        _revokedAccessTokenJtis.Clear();
+        _revokedUsersBeforeUnixMs.Clear();
     }
 
     public void Dispose()
@@ -621,6 +698,8 @@ public static class AuthEndpoints
                 RevocationEndpoint: $"{issuer}/connect/revoke",
                 JwksUri: $"{issuer}/.well-known/jwks.json",
                 ResponseTypesSupported: new[] { "code" },
+                SubjectTypesSupported: new[] { "public" },
+                IdTokenSigningAlgValuesSupported: new[] { "RS256" },
                 GrantTypesSupported: new[] { "authorization_code", "refresh_token" },
                 CodeChallengeMethodsSupported: new[] { "S256" },
                 ScopesSupported: SupportedScopes,
@@ -1075,9 +1154,36 @@ public static class AuthEndpoints
                     storedRefresh.RevokedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync();
                 }
-                else
+                else if (jwtService.TryValidateAccessToken(rawToken, out var revokedPrincipal, out _) &&
+                         revokedPrincipal != null &&
+                         TryExtractAuthenticatedIdentity(revokedPrincipal, out var revokedUserId, out var revokedTenantId, out _, out _, out _))
                 {
-                    jwtService.TryRevokeAccessToken(rawToken);
+                    var revokedJti = revokedPrincipal.FindFirst("jti")?.Value;
+                    if (!string.IsNullOrWhiteSpace(revokedJti))
+                    {
+                        jwtService.RevokeAccessTokenJti(revokedJti, DateTime.UtcNow.AddHours(1));
+                        var jtiMarkerHash = JwtTokenService.ComputeSha256Base64Url($"revoked-jti:{revokedJti}");
+                        var existingJtiMarker = await db.OidcRefreshTokens
+                            .IgnoreQueryFilters()
+                            .FirstOrDefaultAsync(t => t.TokenHash == jtiMarkerHash);
+                        if (existingJtiMarker == null)
+                        {
+                            var nowUtc = DateTime.UtcNow;
+                            db.OidcRefreshTokens.Add(new OidcRefreshToken
+                            {
+                                Id = Guid.NewGuid(),
+                                TenantId = revokedTenantId,
+                                UserId = revokedUserId,
+                                TokenHash = jtiMarkerHash,
+                                ClientId = req.ClientId!.Trim(),
+                                Scope = "revoked_jti",
+                                CreatedAt = nowUtc,
+                                ExpiresAt = nowUtc.AddHours(1),
+                                RevokedAt = nowUtc
+                            });
+                            await db.SaveChangesAsync();
+                        }
+                    }
                 }
             }
             finally
@@ -1122,10 +1228,31 @@ public static class AuthEndpoints
             await jwtService.GrantSynchronizationLock.WaitAsync(httpContext.RequestAborted);
             try
             {
+                var nowUtc = DateTime.UtcNow;
+                var nowUnixMs = new DateTimeOffset(nowUtc).ToUnixTimeMilliseconds();
                 var jti = user.FindFirst("jti")?.Value;
                 if (!string.IsNullOrWhiteSpace(jti))
                 {
-                    jwtService.RevokeAccessTokenJti(jti, DateTime.UtcNow.AddHours(1));
+                    jwtService.RevokeAccessTokenJti(jti, nowUtc.AddHours(1));
+                    var jtiMarkerHash = JwtTokenService.ComputeSha256Base64Url($"revoked-jti:{jti}");
+                    var existingJtiMarker = await db.OidcRefreshTokens
+                        .IgnoreQueryFilters()
+                        .FirstOrDefaultAsync(t => t.TokenHash == jtiMarkerHash);
+                    if (existingJtiMarker == null)
+                    {
+                        db.OidcRefreshTokens.Add(new OidcRefreshToken
+                        {
+                            Id = Guid.NewGuid(),
+                            TenantId = tenantId,
+                            UserId = memberId,
+                            TokenHash = jtiMarkerHash,
+                            ClientId = "sign_out",
+                            Scope = "revoked_jti",
+                            CreatedAt = nowUtc,
+                            ExpiresAt = nowUtc.AddHours(1),
+                            RevokedAt = nowUtc
+                        });
+                    }
                 }
                 jwtService.RevokeAllUserTokens(memberId);
 
@@ -1136,8 +1263,24 @@ public static class AuthEndpoints
 
                 foreach (var token in activeTokens)
                 {
-                    token.RevokedAt = DateTime.UtcNow;
+                    token.RevokedAt = nowUtc;
                 }
+
+                // Persist durable session-wide revocation watermark in the database so API restarts preserve sign-out revocation
+                var userCutOffHash = JwtTokenService.ComputeSha256Base64Url($"revoked-user:{memberId:N}:{nowUnixMs}:{Guid.NewGuid():N}");
+                db.OidcRefreshTokens.Add(new OidcRefreshToken
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = tenantId,
+                    UserId = memberId,
+                    TokenHash = userCutOffHash,
+                    ClientId = "sign_out",
+                    Scope = "revoked_user",
+                    CreatedAt = nowUtc,
+                    ExpiresAt = nowUtc.AddDays(jwtService.RefreshTokenLifetimeDays),
+                    RevokedAt = nowUtc,
+                    ReplacedByTokenHash = nowUnixMs.ToString()
+                });
 
                 await db.SaveChangesAsync();
                 return Results.NoContent();
