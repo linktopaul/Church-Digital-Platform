@@ -26,6 +26,13 @@ namespace Church.Tests;
 public class ProductionWebApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly string _dbName = "ProdAuthTestDb_" + Guid.NewGuid();
+    private static readonly string TestRsaPrivateKeyPem = CreateTestRsaPrivateKeyPem();
+
+    private static string CreateTestRsaPrivateKeyPem()
+    {
+        using var rsa = RSA.Create(2048);
+        return rsa.ExportRSAPrivateKeyPem();
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -36,7 +43,8 @@ public class ProductionWebApplicationFactory : WebApplicationFactory<Program>
             {
                 ["Authentication:AllowTestHeaderAuth"] = "false",
                 ["Authentication:Issuer"] = "https://localhost",
-                ["Authentication:Audience"] = "church_api"
+                ["Authentication:Audience"] = "church_api",
+                ["Authentication:RsaPrivateKeyPem"] = TestRsaPrivateKeyPem
             });
         });
 
@@ -447,6 +455,11 @@ public class AuthApiTests : IClassFixture<ProductionWebApplicationFactory>
         rogueReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", rogueToken);
         var rogueRes = await client.SendAsync(rogueReq);
         Assert.Equal(HttpStatusCode.Unauthorized, rogueRes.StatusCode);
+
+        // 6. Outside Development/Testing, constructing JwtTokenService without a persistent RSA key fails closed
+        var emptyProdConfig = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var prodEnv = _factory.Services.GetRequiredService<IWebHostEnvironment>();
+        Assert.Throws<InvalidOperationException>(() => new JwtTokenService(emptyProdConfig, prodEnv));
     }
 
     [Fact]

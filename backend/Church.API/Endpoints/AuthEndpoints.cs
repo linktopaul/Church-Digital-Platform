@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -13,12 +14,14 @@ using Church.API.Models;
 using Church.Core;
 using Church.Infrastructure;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 
 namespace Church.API.Endpoints;
 
@@ -33,15 +36,29 @@ public sealed class JwtTokenService : IDisposable
 
     public string KeyId { get; } = "church-oidc-rs256-key-1";
 
-    public JwtTokenService(IConfiguration configuration)
+    public JwtTokenService(IConfiguration configuration, IHostEnvironment? environment = null)
     {
         _configuration = configuration;
         _rsa = RSA.Create(2048);
 
         var pem = _configuration["Authentication:RsaPrivateKeyPem"];
+        if (string.IsNullOrWhiteSpace(pem))
+        {
+            var keyFilePath = _configuration["Authentication:RsaPrivateKeyPath"];
+            if (!string.IsNullOrWhiteSpace(keyFilePath) && File.Exists(keyFilePath))
+            {
+                pem = File.ReadAllText(keyFilePath);
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(pem))
         {
             _rsa.ImportFromPem(pem);
+        }
+        else if (environment != null && !environment.IsDevelopment() && !environment.IsEnvironment("Testing"))
+        {
+            throw new InvalidOperationException(
+                "A persistent RSA signing key must be configured via Authentication:RsaPrivateKeyPem or Authentication:RsaPrivateKeyPath outside Development and Testing environments.");
         }
     }
 
@@ -1045,19 +1062,27 @@ public static class AuthEndpoints
             }
 
             var rawToken = req.Token.Trim();
-            var tokenHash = JwtTokenService.ComputeSha256Base64Url(rawToken);
-            var storedRefresh = await db.OidcRefreshTokens
-                .IgnoreQueryFilters()
-                .FirstOrDefaultAsync(t => t.TokenHash == tokenHash && t.ClientId == req.ClientId!.Trim());
+            await jwtService.GrantSynchronizationLock.WaitAsync(httpContext.RequestAborted);
+            try
+            {
+                var tokenHash = JwtTokenService.ComputeSha256Base64Url(rawToken);
+                var storedRefresh = await db.OidcRefreshTokens
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(t => t.TokenHash == tokenHash && t.ClientId == req.ClientId!.Trim());
 
-            if (storedRefresh != null && !storedRefresh.RevokedAt.HasValue)
-            {
-                storedRefresh.RevokedAt = DateTime.UtcNow;
-                await db.SaveChangesAsync();
+                if (storedRefresh != null && !storedRefresh.RevokedAt.HasValue)
+                {
+                    storedRefresh.RevokedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                }
+                else
+                {
+                    jwtService.TryRevokeAccessToken(rawToken);
+                }
             }
-            else
+            finally
             {
-                jwtService.TryRevokeAccessToken(rawToken);
+                jwtService.GrantSynchronizationLock.Release();
             }
 
             return Results.Ok();
@@ -1084,6 +1109,7 @@ public static class AuthEndpoints
         });
 
         authApiGroup.MapPost("/sign-out", async (
+            HttpContext httpContext,
             ClaimsPrincipal user,
             ApplicationDbContext db,
             JwtTokenService jwtService) =>
@@ -1093,25 +1119,33 @@ public static class AuthEndpoints
                 return Results.Unauthorized();
             }
 
-            var jti = user.FindFirst("jti")?.Value;
-            if (!string.IsNullOrWhiteSpace(jti))
+            await jwtService.GrantSynchronizationLock.WaitAsync(httpContext.RequestAborted);
+            try
             {
-                jwtService.RevokeAccessTokenJti(jti, DateTime.UtcNow.AddHours(1));
+                var jti = user.FindFirst("jti")?.Value;
+                if (!string.IsNullOrWhiteSpace(jti))
+                {
+                    jwtService.RevokeAccessTokenJti(jti, DateTime.UtcNow.AddHours(1));
+                }
+                jwtService.RevokeAllUserTokens(memberId);
+
+                var activeTokens = await db.OidcRefreshTokens
+                    .IgnoreQueryFilters()
+                    .Where(t => t.UserId == memberId && t.TenantId == tenantId && t.RevokedAt == null)
+                    .ToListAsync();
+
+                foreach (var token in activeTokens)
+                {
+                    token.RevokedAt = DateTime.UtcNow;
+                }
+
+                await db.SaveChangesAsync();
+                return Results.NoContent();
             }
-            jwtService.RevokeAllUserTokens(memberId);
-
-            var activeTokens = await db.OidcRefreshTokens
-                .IgnoreQueryFilters()
-                .Where(t => t.UserId == memberId && t.TenantId == tenantId && t.RevokedAt == null)
-                .ToListAsync();
-
-            foreach (var token in activeTokens)
+            finally
             {
-                token.RevokedAt = DateTime.UtcNow;
+                jwtService.GrantSynchronizationLock.Release();
             }
-
-            await db.SaveChangesAsync();
-            return Results.NoContent();
         });
     }
 
