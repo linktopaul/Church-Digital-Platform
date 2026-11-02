@@ -486,6 +486,7 @@ void main() {
     const publicGroupB = FellowshipGroupData(
       id: 'public_b',
       name: "Member B Open Group",
+      description: "Public group for all members",
       category: FellowshipCategory.mensFellowship,
       members: ['Member B'],
     );
@@ -523,6 +524,7 @@ void main() {
     createCompleterA.complete(const FellowshipGroupData(
       id: 'group_a_new',
       name: "Member A Secret Group",
+      description: "Secret group description",
       category: FellowshipCategory.mensFellowship,
       members: ['Member A'],
     ));
