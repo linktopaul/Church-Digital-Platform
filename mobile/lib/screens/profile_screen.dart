@@ -128,7 +128,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       if (!mounted || sessionGen != _sessionGeneration || client != widget.apiClient) return;
       setState(() {
         _isLoading = false;
-        _isSearchingOrRefreshingDirectory = false;
+        if (dirGen == _directoryLoadGeneration) {
+          _isSearchingOrRefreshingDirectory = false;
+        }
         _errorMessage = e is MemberApiException ? e.message : 'Failed to load member profile.';
       });
     }
@@ -240,14 +242,16 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         _isSearchingOrRefreshingDirectory = true;
       });
 
+      final queryToFetch = _lastInputQuery;
       try {
         final dir = await boundClient.getDirectory(
-          search: _searchQuery.isEmpty ? null : _searchQuery,
+          search: queryToFetch.isEmpty ? null : queryToFetch,
           page: 1,
           pageSize: _pageSize,
         );
         if (mounted && sessionGen == _sessionGeneration && dirGen == _directoryLoadGeneration && boundClient == widget.apiClient) {
           setState(() {
+            _searchQuery = queryToFetch;
             _directory = dir;
             _directoryPage = 1;
             _hasMoreDirectory = dir.length >= _pageSize;
