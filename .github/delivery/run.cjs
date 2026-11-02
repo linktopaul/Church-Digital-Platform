@@ -65,7 +65,8 @@ async function run({github,context,core,dryRun=false}){
    if(!pr||pr.draft||(task.branch&&pr.head.ref!==task.branch))continue;
    const checks=await github.paginate(github.rest.checks.listForRef,{owner,repo,ref:pr.head.sha,per_page:100});
    const latest=new Map();for(const check of checks)if(!latest.has(check.name)||check.id>latest.get(check.name).id)latest.set(check.name,check);
-   const failures=[...latest.values()].filter(c=>['failure','timed_out','action_required'].includes(c.conclusion));
+   // Review acceptance and aggregate gate are reviewer/operator work, not coding failures.
+   const failures=[...latest.values()].filter(c=>!['Review acceptance','gate'].includes(c.name)&&['failure','timed_out','action_required'].includes(c.conclusion));
    if(!failures.length)continue;
    const comments=await github.paginate(github.rest.issues.listComments,{owner,repo,issue_number:pr.number,per_page:100});
    const marker='<!-- delivery-feedback:'+pr.head.sha+' -->';
