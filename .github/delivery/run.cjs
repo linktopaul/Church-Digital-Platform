@@ -61,19 +61,23 @@ async function run({github,context,core,dryRun=false}){
   for(const task of config.tasks){
    const lease=leaseMap.get(task.issue);
    if(task.agent!=='jules'||!lease||!['active','dispatched','blocked'].includes(lease.status)||!task.pullRequest)continue;
-   const pr=pulls.find(p=>p.number===task.pullRequest);
-   if(!pr||pr.draft||(task.branch&&pr.head.ref!==task.branch))continue;
+   const prSummary=pulls.find(p=>p.number===task.pullRequest);
+   if(!prSummary||prSummary.draft||(task.branch&&prSummary.head.ref!==task.branch))continue;
+   const pr=github.rest.pulls?.get?(await github.rest.pulls.get({owner,repo,pull_number:prSummary.number})).data:prSummary;
+   if(pr.draft||(task.branch&&pr.head?.ref!==task.branch))continue;
+   const hasConflict=pr.mergeable===false||pr.mergeable_state==='dirty';
    const checks=await github.paginate(github.rest.checks.listForRef,{owner,repo,ref:pr.head.sha,per_page:100});
    const latest=new Map();for(const check of checks)if(!latest.has(check.name)||check.id>latest.get(check.name).id)latest.set(check.name,check);
    // Review acceptance and aggregate gate are reviewer/operator work, not coding failures.
    const failures=[...latest.values()].filter(c=>!['Review acceptance','gate'].includes(c.name)&&['failure','timed_out','action_required'].includes(c.conclusion));
-   if(!failures.length)continue;
+   if(!hasConflict&&!failures.length)continue;
    const comments=await github.paginate(github.rest.issues.listComments,{owner,repo,issue_number:pr.number,per_page:100});
    const marker='<!-- delivery-feedback:'+pr.head.sha+' -->';
    if(comments.some(c=>(c.body||'').includes(marker)))continue;
    // Respect existing human/supervisor reminders within 24h; do not spam unchanged work.
    if(comments.some(c=>c.user?.login?.toLowerCase()===owner.toLowerCase()&&(c.body||'').includes('@jules')&&Date.now()-Date.parse(c.created_at)<86400000))continue;
-   await github.rest.issues.createComment({owner,repo,issue_number:pr.number,body:marker+'\n@jules Continue the EXISTING session for child #'+task.issue+'; do not start a duplicate. Current head '+pr.head.sha+' has unresolved checks: '+failures.map(c=>c.name+' ('+c.conclusion+') '+c.html_url).join('; ')+'. Inspect current logs/review threads, fix within assigned files, add regression evidence, and push to this branch. Report exact blockers. No parent closure, paid service, credentials, deployment or weakened protections.'});
+   const reasons=[...(hasConflict?['merge conflict with main']:[]),...failures.map(c=>c.name+' ('+c.conclusion+') '+c.html_url)];
+   await github.rest.issues.createComment({owner,repo,issue_number:pr.number,body:marker+'\n@jules Continue the EXISTING session for child #'+task.issue+'; do not start a duplicate. Current head '+pr.head.sha+' has unresolved checks: '+reasons.join('; ')+'. '+(hasConflict?'Resolve merge conflicts with main without discarding either feature. ':'')+'Inspect current logs/review threads, fix within assigned files, add regression evidence, and push to this branch. Report exact blockers. No parent closure, paid service, credentials, deployment or weakened protections.'});
    actions.push({issue:task.issue,pullRequest:pr.number,status:'one bounded existing-session follow-up'});
   }
  }
