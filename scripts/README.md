@@ -63,3 +63,14 @@ with different details and confirm failure with the original row unchanged,
 then create a second church and confirm its UUID differs. No live database or
 deployment is needed for development. Parent #1 remains open for runtime
 tenant authorization/isolation and profile management; #21 remains incomplete.
+
+
+## Automated disposable-database verification
+
+The `Pilot tenant PostgreSQL verification` workflow starts a fresh PostgreSQL 16
+service, applies the repository EF migrations, and runs offline plus real database
+regressions. The integration test is skipped unless `PILOT_DISPOSABLE_DB_TEST=1`;
+set that flag only for a disposable database. It checks exact Unicode/quoted
+field persistence, UUID and timestamp creation, duplicate-slug rejection with
+original data unchanged, and a second distinct tenant UUID. No live database
+or runtime tenant authorization is exercised by this check.
