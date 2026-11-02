@@ -39,10 +39,7 @@ jobs:
               const commits=await github.paginate(github.rest.pulls.listCommits,{owner,repo,pull_number:pr.number,per_page:100});
               const latest=commits[commits.length-1];
               const recentlyAsked=comments.some(c=>c.body.includes('@codex review') && Date.now()-Date.parse(c.created_at)<3600000);
-              if ((pr.mergeable===false || failures.length) && !comments.some(c=>c.body.includes(marker))) {
-                const details=failures.map(c=>'- '+c.name+': '+c.conclusion+' '+c.html_url).join('\n');
-                actions.push({number:pr.number,body:marker+'\n@jules Please inspect and fix the current head '+pr.head.sha+'. '+(pr.mergeable===false?'Resolve merge conflicts with main without discarding either feature. ':'')+'\n'+details+'\nUse the linked logs, add focused regression coverage, run relevant tests, and push fixes to this existing PR. Address outstanding Codex findings, not only CI. If blocked by credentials, provider choice, or an owner decision, explain the exact blocker. Do not choose paid services, deploy, or weaken required checks.'});
-              }
+              // Implementation feedback is owned by delivery-coordinator.yml.
               const reviewMarker='<!-- mvp-supervisor-review:'+pr.head.sha+' -->';
               if (latest?.parents?.length===1 && !recentlyAsked && !comments.some(c=>c.body.includes(reviewMarker))) {
                 actions.push({number:pr.number,body:reviewMarker+'\n@codex review\nPlease inspect correctness, tenant/privacy boundaries, acceptance criteria, and remaining findings on the current feature changes. Documentation-only deliverables must not close implementation parent PBIs.'});
