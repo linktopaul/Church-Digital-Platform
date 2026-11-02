@@ -510,7 +510,9 @@ public class AuthApiTests : IClassFixture<ProductionWebApplicationFactory>
         var memberPrayerQueueRes = await client.SendAsync(memberPrayerQueueReq);
         Assert.Equal(HttpStatusCode.Forbidden, memberPrayerQueueRes.StatusCode);
 
-        // Sign-out immediately revokes Member A's access token and refresh token
+        // Sign-out immediately revokes ALL of Member A's access tokens and refresh tokens
+        var memberASecondSession = await AuthenticateWithPkceAsync(client, tenantA, "member.a@church.org", "MemberAPass!111");
+
         var signOutReq = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/sign-out");
         signOutReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", memberATokens.AccessToken);
         var signOutRes = await client.SendAsync(signOutReq);
@@ -521,6 +523,12 @@ public class AuthApiTests : IClassFixture<ProductionWebApplicationFactory>
         var meAfterSignOutRes = await client.SendAsync(meAfterSignOutReq);
         Assert.Equal(HttpStatusCode.Unauthorized, meAfterSignOutRes.StatusCode);
 
+        // Even another valid access token issued earlier for Member A is rejected after sign-out
+        var secondTokenAfterSignOutReq = new HttpRequestMessage(HttpMethod.Get, "/api/v1/auth/me");
+        secondTokenAfterSignOutReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", memberASecondSession.AccessToken);
+        var secondTokenAfterSignOutRes = await client.SendAsync(secondTokenAfterSignOutReq);
+        Assert.Equal(HttpStatusCode.Unauthorized, secondTokenAfterSignOutRes.StatusCode);
+
         var refreshAfterSignOutRes = await client.PostAsync("/connect/token", new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["grant_type"] = "refresh_token",
@@ -528,5 +536,79 @@ public class AuthApiTests : IClassFixture<ProductionWebApplicationFactory>
             ["refresh_token"] = memberATokens.RefreshToken
         }));
         Assert.Equal(HttpStatusCode.BadRequest, refreshAfterSignOutRes.StatusCode);
+    }
+
+    [Fact]
+    public async Task InteractiveBrowserAuthorizeFlow_RendersHtmlLoginFormAndRedirectsWithCode()
+    {
+        var tenantId = Guid.NewGuid();
+        await SeedUserAsync(
+            tenantId,
+            "interactive.user@church.org",
+            "InteractivePass!123",
+            "Interactive User",
+            ChurchRoleNames.Member);
+
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false
+        });
+
+        var (verifier, challenge) = CreatePkcePair();
+        var authorizeUrl = QueryHelpers.AddQueryString("/connect/authorize", new Dictionary<string, string?>
+        {
+            ["client_id"] = ClientId,
+            ["redirect_uri"] = RedirectUri,
+            ["response_type"] = "code",
+            ["scope"] = "openid profile email offline_access roles church_api",
+            ["code_challenge"] = challenge,
+            ["code_challenge_method"] = "S256",
+            ["state"] = "interactive-state-1"
+        });
+
+        // 1. Browser GET without credentials returns HTML login form preserving PKCE parameters
+        var getLoginRes = await client.GetAsync(authorizeUrl);
+        Assert.Equal(HttpStatusCode.OK, getLoginRes.StatusCode);
+        Assert.Equal("text/html", getLoginRes.Content.Headers.ContentType?.MediaType);
+        var loginHtml = await getLoginRes.Content.ReadAsStringAsync();
+        Assert.Contains(challenge, loginHtml);
+        Assert.Contains("interactive-state-1", loginHtml);
+
+        // 2. Submitting the HTML form with response_mode=redirect returns 302 Redirect to redirect_uri with code and state
+        var postFormRes = await client.PostAsync("/connect/authorize", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["client_id"] = ClientId,
+            ["redirect_uri"] = RedirectUri,
+            ["response_type"] = "code",
+            ["scope"] = "openid profile email offline_access roles church_api",
+            ["code_challenge"] = challenge,
+            ["code_challenge_method"] = "S256",
+            ["state"] = "interactive-state-1",
+            ["response_mode"] = "redirect",
+            ["email"] = "interactive.user@church.org",
+            ["password"] = "InteractivePass!123",
+            ["tenant_id"] = tenantId.ToString()
+        }));
+
+        Assert.Equal(HttpStatusCode.Redirect, postFormRes.StatusCode);
+        var location = postFormRes.Headers.Location?.ToString();
+        Assert.NotNull(location);
+        Assert.StartsWith(RedirectUri, location!);
+
+        var parsedQuery = QueryHelpers.ParseQuery(new Uri(location!).Query);
+        var code = parsedQuery["code"].FirstOrDefault();
+        Assert.False(string.IsNullOrWhiteSpace(code));
+        Assert.Equal("interactive-state-1", parsedQuery["state"].FirstOrDefault());
+
+        // 3. Exchange redirected code with PKCE verifier
+        var tokenRes = await client.PostAsync("/connect/token", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "authorization_code",
+            ["client_id"] = ClientId,
+            ["code"] = code!,
+            ["redirect_uri"] = RedirectUri,
+            ["code_verifier"] = verifier
+        }));
+        Assert.Equal(HttpStatusCode.OK, tokenRes.StatusCode);
     }
 }

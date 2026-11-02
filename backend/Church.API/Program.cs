@@ -1363,7 +1363,8 @@ public class CustomAuthHandler : AuthenticationHandler<AuthenticationSchemeOptio
 
             if (!isMockRoleToken)
             {
-                if (_jwtTokenService.TryValidateAccessToken(token, out var jwtPrincipal, out var jwtError) &&
+                var expectedIssuer = _jwtTokenService.GetIssuer(Context);
+                if (_jwtTokenService.TryValidateAccessToken(token, out var jwtPrincipal, out var jwtError, expectedIssuer) &&
                     jwtPrincipal != null)
                 {
                     var jwtTicket = new AuthenticationTicket(jwtPrincipal, Scheme.Name);

@@ -6,7 +6,9 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
+using System.Net;
 using Church.API.Models;
 using Church.Core;
 using Church.Infrastructure;
@@ -25,7 +27,9 @@ public sealed class JwtTokenService : IDisposable
     private readonly RSA _rsa;
     private readonly IConfiguration _configuration;
     private readonly ConcurrentDictionary<string, DateTime> _revokedAccessTokenJtis = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<Guid, DateTime> _revokedUsersBeforeUtc = new();
+    private readonly ConcurrentDictionary<Guid, long> _revokedUsersBeforeUnixMs = new();
+    private readonly ConcurrentDictionary<string, byte> _issuedIssuers = new(StringComparer.OrdinalIgnoreCase);
+    public SemaphoreSlim GrantSynchronizationLock { get; } = new(1, 1);
 
     public string KeyId { get; } = "church-oidc-rs256-key-1";
 
@@ -130,16 +134,21 @@ public sealed class JwtTokenService : IDisposable
         DateTime? nowUtcOverride = null)
     {
         var now = nowUtcOverride ?? DateTime.UtcNow;
-        var iat = new DateTimeOffset(now).ToUnixTimeSeconds();
-        var exp = new DateTimeOffset(now.AddSeconds(AccessTokenLifetimeSeconds)).ToUnixTimeSeconds();
+        var nowOffset = new DateTimeOffset(now);
+        var iat = nowOffset.ToUnixTimeSeconds();
+        var iatMs = nowOffset.ToUnixTimeMilliseconds();
+        var exp = nowOffset.AddSeconds(AccessTokenLifetimeSeconds).ToUnixTimeSeconds();
+        var normalizedIssuer = issuer.TrimEnd('/');
+        _issuedIssuers[normalizedIssuer] = 1;
 
         var payload = new Dictionary<string, object?>
         {
-            ["iss"] = issuer,
+            ["iss"] = normalizedIssuer,
             ["aud"] = Audience,
             ["sub"] = user.Id.ToString(),
             ["jti"] = Guid.NewGuid().ToString("N"),
             ["iat"] = iat,
+            ["iat_ms"] = iatMs,
             ["nbf"] = iat,
             ["exp"] = exp,
             ["member_id"] = user.Id.ToString(),
@@ -223,7 +232,7 @@ public sealed class JwtTokenService : IDisposable
     {
         if (userId != Guid.Empty)
         {
-            _revokedUsersBeforeUtc[userId] = DateTime.UtcNow;
+            _revokedUsersBeforeUnixMs[userId] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         }
     }
 
@@ -247,7 +256,8 @@ public sealed class JwtTokenService : IDisposable
     public bool TryValidateAccessToken(
         string token,
         out ClaimsPrincipal? principal,
-        out string? error)
+        out string? error,
+        string? expectedIssuer = null)
     {
         principal = null;
         error = null;
@@ -312,7 +322,7 @@ public sealed class JwtTokenService : IDisposable
 
             var issuer = root.TryGetProperty("iss", out var issProp) ? issProp.GetString() : null;
             var configuredIssuer = _configuration["Authentication:Issuer"]?.TrimEnd('/');
-            var validIssuers = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            var validIssuers = new HashSet<string>(_issuedIssuers.Keys, StringComparer.OrdinalIgnoreCase)
             {
                 "https://localhost",
                 "http://localhost"
@@ -320,6 +330,10 @@ public sealed class JwtTokenService : IDisposable
             if (!string.IsNullOrWhiteSpace(configuredIssuer))
             {
                 validIssuers.Add(configuredIssuer);
+            }
+            if (!string.IsNullOrWhiteSpace(expectedIssuer))
+            {
+                validIssuers.Add(expectedIssuer.TrimEnd('/'));
             }
 
             if (string.IsNullOrWhiteSpace(issuer) || !validIssuers.Contains(issuer.TrimEnd('/')))
@@ -363,11 +377,23 @@ public sealed class JwtTokenService : IDisposable
                 return false;
             }
 
-            if (_revokedUsersBeforeUtc.TryGetValue(memberId, out _) &&
-                _revokedAccessTokenJtis.ContainsKey(jti))
+            if (_revokedUsersBeforeUnixMs.TryGetValue(memberId, out var revokedBeforeMs))
             {
-                error = "User session has been revoked.";
-                return false;
+                long tokenIssuedAtMs = 0;
+                if (root.TryGetProperty("iat_ms", out var iatMsProp) && iatMsProp.TryGetInt64(out var parsedIatMs))
+                {
+                    tokenIssuedAtMs = parsedIatMs;
+                }
+                else if (root.TryGetProperty("iat", out var iatProp) && iatProp.TryGetInt64(out var parsedIatSec))
+                {
+                    tokenIssuedAtMs = parsedIatSec * 1000L;
+                }
+
+                if (tokenIssuedAtMs <= revokedBeforeMs)
+                {
+                    error = "User session has been revoked.";
+                    return false;
+                }
             }
 
             var tenantIdStr = root.TryGetProperty("tenant_id", out var tenantProp)
@@ -676,6 +702,13 @@ public static class AuthEndpoints
 
             if (authenticatedUser == null)
             {
+                if (HttpMethods.IsGet(httpContext.Request.Method) &&
+                    !string.Equals(req.ResponseMode, "json", StringComparison.OrdinalIgnoreCase))
+                {
+                    var loginHtml = BuildInteractiveAuthorizeLoginHtml(req);
+                    return Results.Content(loginHtml, "text/html; charset=utf-8");
+                }
+
                 return Results.Json(
                     new OidcErrorResponse("access_denied", "User authentication is required."),
                     statusCode: StatusCodes.Status401Unauthorized);
@@ -762,99 +795,107 @@ public static class AuthEndpoints
                         "code, redirect_uri, and code_verifier are required for authorization_code grant."));
                 }
 
-                var codeHash = JwtTokenService.ComputeSha256Base64Url(req.Code.Trim());
-                var authCode = await db.OidcAuthorizationCodes
-                    .IgnoreQueryFilters()
-                    .FirstOrDefaultAsync(c => c.CodeHash == codeHash);
-
-                if (authCode == null)
+                await jwtService.GrantSynchronizationLock.WaitAsync(httpContext.RequestAborted);
+                try
                 {
-                    return Results.BadRequest(new OidcErrorResponse(
-                        "invalid_grant",
-                        "Authorization code is invalid."));
-                }
-
-                if (authCode.ConsumedAt.HasValue)
-                {
-                    // Replay of a consumed authorization code: revoke all tokens issued from this code
-                    var tokensToRevoke = await db.OidcRefreshTokens
+                    var codeHash = JwtTokenService.ComputeSha256Base64Url(req.Code.Trim());
+                    var authCode = await db.OidcAuthorizationCodes
                         .IgnoreQueryFilters()
-                        .Where(t => t.AuthorizationCodeId == authCode.Id && t.RevokedAt == null)
-                        .ToListAsync();
-                    foreach (var token in tokensToRevoke)
+                        .FirstOrDefaultAsync(c => c.CodeHash == codeHash);
+
+                    if (authCode == null)
                     {
-                        token.RevokedAt = DateTime.UtcNow;
+                        return Results.BadRequest(new OidcErrorResponse(
+                            "invalid_grant",
+                            "Authorization code is invalid."));
                     }
+
+                    if (authCode.ConsumedAt.HasValue)
+                    {
+                        // Replay of a consumed authorization code: revoke all tokens issued from this code
+                        var tokensToRevoke = await db.OidcRefreshTokens
+                            .IgnoreQueryFilters()
+                            .Where(t => t.AuthorizationCodeId == authCode.Id && t.RevokedAt == null)
+                            .ToListAsync();
+                        foreach (var token in tokensToRevoke)
+                        {
+                            token.RevokedAt = DateTime.UtcNow;
+                        }
+                        await db.SaveChangesAsync();
+
+                        return Results.BadRequest(new OidcErrorResponse(
+                            "invalid_grant",
+                            "Authorization code has already been used."));
+                    }
+
+                    if (authCode.ExpiresAt <= DateTime.UtcNow ||
+                        !string.Equals(authCode.ClientId, clientId, StringComparison.Ordinal) ||
+                        !string.Equals(authCode.RedirectUri, req.RedirectUri.Trim(), StringComparison.Ordinal))
+                    {
+                        return Results.BadRequest(new OidcErrorResponse(
+                            "invalid_grant",
+                            "Authorization code is expired or mismatched."));
+                    }
+
+                    // Verify PKCE S256 code_verifier
+                    var computedChallenge = JwtTokenService.ComputeSha256Base64Url(req.CodeVerifier.Trim());
+                    var expectedBytes = Encoding.ASCII.GetBytes(authCode.CodeChallenge);
+                    var computedBytes = Encoding.ASCII.GetBytes(computedChallenge);
+                    if (!CryptographicOperations.FixedTimeEquals(expectedBytes, computedBytes))
+                    {
+                        return Results.BadRequest(new OidcErrorResponse(
+                            "invalid_grant",
+                            "PKCE code_verifier verification failed."));
+                    }
+
+                    var user = await db.AppUsers
+                        .IgnoreQueryFilters()
+                        .FirstOrDefaultAsync(u => u.Id == authCode.UserId && u.TenantId == authCode.TenantId && u.IsActive);
+
+                    if (user == null)
+                    {
+                        return Results.BadRequest(new OidcErrorResponse(
+                            "invalid_grant",
+                            "User account is inactive or no longer exists."));
+                    }
+
+                    authCode.ConsumedAt = DateTime.UtcNow;
+
+                    var roles = await LoadUserRolesAsync(db, user.Id, user.TenantId);
+                    var rawRefreshToken = JwtTokenService.GenerateSecureRandomToken(32);
+                    var refreshTokenHash = JwtTokenService.ComputeSha256Base64Url(rawRefreshToken);
+
+                    db.OidcRefreshTokens.Add(new OidcRefreshToken
+                    {
+                        Id = Guid.NewGuid(),
+                        TenantId = user.TenantId,
+                        UserId = user.Id,
+                        AuthorizationCodeId = authCode.Id,
+                        TokenHash = refreshTokenHash,
+                        ClientId = clientId,
+                        Scope = authCode.Scope,
+                        CreatedAt = DateTime.UtcNow,
+                        ExpiresAt = DateTime.UtcNow.AddDays(jwtService.RefreshTokenLifetimeDays)
+                    });
+
                     await db.SaveChangesAsync();
 
-                    return Results.BadRequest(new OidcErrorResponse(
-                        "invalid_grant",
-                        "Authorization code has already been used."));
+                    var accessToken = jwtService.CreateAccessToken(user, roles, clientId, authCode.Scope, issuer);
+                    var idToken = jwtService.CreateIdToken(user, roles, clientId, authCode.Nonce, issuer);
+
+                    return Results.Ok(new OidcTokenResponse(
+                        AccessToken: accessToken,
+                        IdToken: idToken,
+                        RefreshToken: rawRefreshToken,
+                        TokenType: "Bearer",
+                        ExpiresIn: jwtService.AccessTokenLifetimeSeconds,
+                        Scope: authCode.Scope
+                    ));
                 }
-
-                if (authCode.ExpiresAt <= DateTime.UtcNow ||
-                    !string.Equals(authCode.ClientId, clientId, StringComparison.Ordinal) ||
-                    !string.Equals(authCode.RedirectUri, req.RedirectUri.Trim(), StringComparison.Ordinal))
+                finally
                 {
-                    return Results.BadRequest(new OidcErrorResponse(
-                        "invalid_grant",
-                        "Authorization code is expired or mismatched."));
+                    jwtService.GrantSynchronizationLock.Release();
                 }
-
-                // Verify PKCE S256 code_verifier
-                var computedChallenge = JwtTokenService.ComputeSha256Base64Url(req.CodeVerifier.Trim());
-                var expectedBytes = Encoding.ASCII.GetBytes(authCode.CodeChallenge);
-                var computedBytes = Encoding.ASCII.GetBytes(computedChallenge);
-                if (!CryptographicOperations.FixedTimeEquals(expectedBytes, computedBytes))
-                {
-                    return Results.BadRequest(new OidcErrorResponse(
-                        "invalid_grant",
-                        "PKCE code_verifier verification failed."));
-                }
-
-                var user = await db.AppUsers
-                    .IgnoreQueryFilters()
-                    .FirstOrDefaultAsync(u => u.Id == authCode.UserId && u.TenantId == authCode.TenantId && u.IsActive);
-
-                if (user == null)
-                {
-                    return Results.BadRequest(new OidcErrorResponse(
-                        "invalid_grant",
-                        "User account is inactive or no longer exists."));
-                }
-
-                authCode.ConsumedAt = DateTime.UtcNow;
-
-                var roles = await LoadUserRolesAsync(db, user.Id, user.TenantId);
-                var rawRefreshToken = JwtTokenService.GenerateSecureRandomToken(32);
-                var refreshTokenHash = JwtTokenService.ComputeSha256Base64Url(rawRefreshToken);
-
-                db.OidcRefreshTokens.Add(new OidcRefreshToken
-                {
-                    Id = Guid.NewGuid(),
-                    TenantId = user.TenantId,
-                    UserId = user.Id,
-                    AuthorizationCodeId = authCode.Id,
-                    TokenHash = refreshTokenHash,
-                    ClientId = clientId,
-                    Scope = authCode.Scope,
-                    CreatedAt = DateTime.UtcNow,
-                    ExpiresAt = DateTime.UtcNow.AddDays(jwtService.RefreshTokenLifetimeDays)
-                });
-
-                await db.SaveChangesAsync();
-
-                var accessToken = jwtService.CreateAccessToken(user, roles, clientId, authCode.Scope, issuer);
-                var idToken = jwtService.CreateIdToken(user, roles, clientId, authCode.Nonce, issuer);
-
-                return Results.Ok(new OidcTokenResponse(
-                    AccessToken: accessToken,
-                    IdToken: idToken,
-                    RefreshToken: rawRefreshToken,
-                    TokenType: "Bearer",
-                    ExpiresIn: jwtService.AccessTokenLifetimeSeconds,
-                    Scope: authCode.Scope
-                ));
             }
 
             if (string.Equals(req.GrantType, "refresh_token", StringComparison.Ordinal))
@@ -866,90 +907,98 @@ public static class AuthEndpoints
                         "refresh_token is required."));
                 }
 
-                var tokenHash = JwtTokenService.ComputeSha256Base64Url(req.RefreshToken.Trim());
-                var storedToken = await db.OidcRefreshTokens
-                    .IgnoreQueryFilters()
-                    .FirstOrDefaultAsync(t => t.TokenHash == tokenHash);
-
-                if (storedToken == null || !string.Equals(storedToken.ClientId, clientId, StringComparison.Ordinal))
+                await jwtService.GrantSynchronizationLock.WaitAsync(httpContext.RequestAborted);
+                try
                 {
-                    return Results.BadRequest(new OidcErrorResponse(
-                        "invalid_grant",
-                        "Refresh token is invalid."));
-                }
-
-                if (storedToken.ConsumedAt.HasValue)
-                {
-                    // Replay of a rotated refresh token: revoke all active tokens for this user + client
-                    var activeUserTokens = await db.OidcRefreshTokens
+                    var tokenHash = JwtTokenService.ComputeSha256Base64Url(req.RefreshToken.Trim());
+                    var storedToken = await db.OidcRefreshTokens
                         .IgnoreQueryFilters()
-                        .Where(t => t.UserId == storedToken.UserId &&
-                                    t.TenantId == storedToken.TenantId &&
-                                    t.ClientId == clientId &&
-                                    t.RevokedAt == null)
-                        .ToListAsync();
-                    foreach (var activeToken in activeUserTokens)
+                        .FirstOrDefaultAsync(t => t.TokenHash == tokenHash);
+
+                    if (storedToken == null || !string.Equals(storedToken.ClientId, clientId, StringComparison.Ordinal))
                     {
-                        activeToken.RevokedAt = DateTime.UtcNow;
+                        return Results.BadRequest(new OidcErrorResponse(
+                            "invalid_grant",
+                            "Refresh token is invalid."));
                     }
+
+                    if (storedToken.ConsumedAt.HasValue)
+                    {
+                        // Replay of a rotated refresh token: revoke all active tokens for this user + client
+                        var activeUserTokens = await db.OidcRefreshTokens
+                            .IgnoreQueryFilters()
+                            .Where(t => t.UserId == storedToken.UserId &&
+                                        t.TenantId == storedToken.TenantId &&
+                                        t.ClientId == clientId &&
+                                        t.RevokedAt == null)
+                            .ToListAsync();
+                        foreach (var activeToken in activeUserTokens)
+                        {
+                            activeToken.RevokedAt = DateTime.UtcNow;
+                        }
+                        await db.SaveChangesAsync();
+
+                        return Results.BadRequest(new OidcErrorResponse(
+                            "invalid_grant",
+                            "Refresh token has already been rotated."));
+                    }
+
+                    if (storedToken.RevokedAt.HasValue || storedToken.ExpiresAt <= DateTime.UtcNow)
+                    {
+                        return Results.BadRequest(new OidcErrorResponse(
+                            "invalid_grant",
+                            "Refresh token is expired or revoked."));
+                    }
+
+                    var user = await db.AppUsers
+                        .IgnoreQueryFilters()
+                        .FirstOrDefaultAsync(u => u.Id == storedToken.UserId && u.TenantId == storedToken.TenantId && u.IsActive);
+
+                    if (user == null)
+                    {
+                        return Results.BadRequest(new OidcErrorResponse(
+                            "invalid_grant",
+                            "User account is inactive or no longer exists."));
+                    }
+
+                    var newRawRefreshToken = JwtTokenService.GenerateSecureRandomToken(32);
+                    var newRefreshTokenHash = JwtTokenService.ComputeSha256Base64Url(newRawRefreshToken);
+
+                    storedToken.ConsumedAt = DateTime.UtcNow;
+                    storedToken.ReplacedByTokenHash = newRefreshTokenHash;
+
+                    db.OidcRefreshTokens.Add(new OidcRefreshToken
+                    {
+                        Id = Guid.NewGuid(),
+                        TenantId = user.TenantId,
+                        UserId = user.Id,
+                        AuthorizationCodeId = storedToken.AuthorizationCodeId,
+                        TokenHash = newRefreshTokenHash,
+                        ClientId = clientId,
+                        Scope = storedToken.Scope,
+                        CreatedAt = DateTime.UtcNow,
+                        ExpiresAt = DateTime.UtcNow.AddDays(jwtService.RefreshTokenLifetimeDays)
+                    });
+
                     await db.SaveChangesAsync();
 
-                    return Results.BadRequest(new OidcErrorResponse(
-                        "invalid_grant",
-                        "Refresh token has already been rotated."));
+                    var roles = await LoadUserRolesAsync(db, user.Id, user.TenantId);
+                    var accessToken = jwtService.CreateAccessToken(user, roles, clientId, storedToken.Scope, issuer);
+                    var idToken = jwtService.CreateIdToken(user, roles, clientId, null, issuer);
+
+                    return Results.Ok(new OidcTokenResponse(
+                        AccessToken: accessToken,
+                        IdToken: idToken,
+                        RefreshToken: newRawRefreshToken,
+                        TokenType: "Bearer",
+                        ExpiresIn: jwtService.AccessTokenLifetimeSeconds,
+                        Scope: storedToken.Scope
+                    ));
                 }
-
-                if (storedToken.RevokedAt.HasValue || storedToken.ExpiresAt <= DateTime.UtcNow)
+                finally
                 {
-                    return Results.BadRequest(new OidcErrorResponse(
-                        "invalid_grant",
-                        "Refresh token is expired or revoked."));
+                    jwtService.GrantSynchronizationLock.Release();
                 }
-
-                var user = await db.AppUsers
-                    .IgnoreQueryFilters()
-                    .FirstOrDefaultAsync(u => u.Id == storedToken.UserId && u.TenantId == storedToken.TenantId && u.IsActive);
-
-                if (user == null)
-                {
-                    return Results.BadRequest(new OidcErrorResponse(
-                        "invalid_grant",
-                        "User account is inactive or no longer exists."));
-                }
-
-                var newRawRefreshToken = JwtTokenService.GenerateSecureRandomToken(32);
-                var newRefreshTokenHash = JwtTokenService.ComputeSha256Base64Url(newRawRefreshToken);
-
-                storedToken.ConsumedAt = DateTime.UtcNow;
-                storedToken.ReplacedByTokenHash = newRefreshTokenHash;
-
-                db.OidcRefreshTokens.Add(new OidcRefreshToken
-                {
-                    Id = Guid.NewGuid(),
-                    TenantId = user.TenantId,
-                    UserId = user.Id,
-                    AuthorizationCodeId = storedToken.AuthorizationCodeId,
-                    TokenHash = newRefreshTokenHash,
-                    ClientId = clientId,
-                    Scope = storedToken.Scope,
-                    CreatedAt = DateTime.UtcNow,
-                    ExpiresAt = DateTime.UtcNow.AddDays(jwtService.RefreshTokenLifetimeDays)
-                });
-
-                await db.SaveChangesAsync();
-
-                var roles = await LoadUserRolesAsync(db, user.Id, user.TenantId);
-                var accessToken = jwtService.CreateAccessToken(user, roles, clientId, storedToken.Scope, issuer);
-                var idToken = jwtService.CreateIdToken(user, roles, clientId, null, issuer);
-
-                return Results.Ok(new OidcTokenResponse(
-                    AccessToken: accessToken,
-                    IdToken: idToken,
-                    RefreshToken: newRawRefreshToken,
-                    TokenType: "Bearer",
-                    ExpiresIn: jwtService.AccessTokenLifetimeSeconds,
-                    Scope: storedToken.Scope
-                ));
             }
 
             return Results.BadRequest(new OidcErrorResponse(
@@ -1245,5 +1294,53 @@ public static class AuthEndpoints
         }
 
         return new OidcRevokeRequest(null, null, null);
+    }
+
+    private static string BuildInteractiveAuthorizeLoginHtml(OidcAuthorizeRequest req)
+    {
+        static string Encode(string? val) => WebUtility.HtmlEncode(val ?? string.Empty);
+
+        var responseMode = string.IsNullOrWhiteSpace(req.ResponseMode) ? "redirect" : req.ResponseMode;
+        var tenantIdVal = req.TenantId.HasValue && req.TenantId.Value != Guid.Empty
+            ? req.TenantId.Value.ToString()
+            : string.Empty;
+
+        return $@"<!DOCTYPE html>
+<html lang=""en"">
+<head>
+  <meta charset=""utf-8"" />
+  <meta name=""viewport"" content=""width=device-width, initial-scale=1"" />
+  <title>Church Sign In</title>
+</head>
+<body>
+  <main>
+    <h1>Sign in to your Church Account</h1>
+    <form method=""post"" action=""/connect/authorize"">
+      <input type=""hidden"" name=""client_id"" value=""{Encode(req.ClientId)}"" />
+      <input type=""hidden"" name=""redirect_uri"" value=""{Encode(req.RedirectUri)}"" />
+      <input type=""hidden"" name=""response_type"" value=""{Encode(req.ResponseType)}"" />
+      <input type=""hidden"" name=""scope"" value=""{Encode(req.Scope)}"" />
+      <input type=""hidden"" name=""code_challenge"" value=""{Encode(req.CodeChallenge)}"" />
+      <input type=""hidden"" name=""code_challenge_method"" value=""{Encode(req.CodeChallengeMethod)}"" />
+      <input type=""hidden"" name=""state"" value=""{Encode(req.State)}"" />
+      <input type=""hidden"" name=""nonce"" value=""{Encode(req.Nonce)}"" />
+      <input type=""hidden"" name=""response_mode"" value=""{Encode(responseMode)}"" />
+      <div>
+        <label for=""email"">Email</label>
+        <input id=""email"" type=""email"" name=""email"" required autocomplete=""username"" />
+      </div>
+      <div>
+        <label for=""password"">Password</label>
+        <input id=""password"" type=""password"" name=""password"" required autocomplete=""current-password"" />
+      </div>
+      <div>
+        <label for=""tenant_id"">Church Tenant ID (optional)</label>
+        <input id=""tenant_id"" type=""text"" name=""tenant_id"" value=""{Encode(tenantIdVal)}"" />
+      </div>
+      <button type=""submit"">Sign In</button>
+    </form>
+  </main>
+</body>
+</html>";
     }
 }
