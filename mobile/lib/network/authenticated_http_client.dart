@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:http/http.dart' as http;
+import '../auth/auth_session.dart';
 import '../auth/auth_session_manager.dart';
 import 'api_exceptions.dart';
 
@@ -63,31 +64,65 @@ class AuthenticatedHttpClient extends http.BaseClient {
     final canRetry = request is http.Request;
     final initialRequest = canRetry ? _cloneRequest(request) : request;
 
-    // 3. Attach Bearer token from active session if present
-    final currentSession = _authService.currentSession;
-    if (currentSession != null && currentSession.accessToken.isNotEmpty) {
-      initialRequest.headers['Authorization'] = 'Bearer ${currentSession.accessToken}';
+    // 3. Attach Bearer token from active session if present and capture originating session context
+    final originatingSession = _authService.currentSession;
+    final originatingGeneration = _authService.sessionGeneration;
+    if (originatingSession != null && originatingSession.accessToken.isNotEmpty) {
+      initialRequest.headers['Authorization'] = 'Bearer ${originatingSession.accessToken}';
     }
 
     // 4. Send request
     http.StreamedResponse response = await _inner.send(initialRequest);
 
-    // 5. If 401 Unauthorized received and we have a session with a refresh token, attempt refresh & retry once
+    // 5. If 401 Unauthorized received and eligible for retry
     if (response.statusCode == 401 && canRetry) {
-      final session = _authService.currentSession;
-      if (session != null && session.refreshToken != null && session.refreshToken!.isNotEmpty) {
+      // Finding: Consume the unauthorized response stream before retrying or exiting to release resources
+      await response.stream.drain().catchError((_) {});
+
+      // Finding: Bind retry to originating session context
+      // If user signed out or switched account while initial request was in flight, abort retry
+      final currentSession = _authService.currentSession;
+      final preRefreshGeneration = _authService.sessionGeneration;
+
+      final isSameSession = originatingSession != null &&
+          currentSession != null &&
+          originatingGeneration == preRefreshGeneration &&
+          originatingSession.userId == currentSession.userId &&
+          originatingSession.tenantId == currentSession.tenantId;
+
+      if (isSameSession &&
+          currentSession.refreshToken != null &&
+          currentSession.refreshToken!.isNotEmpty) {
+        final AuthSession refreshedSession;
         try {
-          final refreshedSession = await _authService.refresh();
-
-          // Prepare retry request with fresh access token
-          final retryRequest = _cloneRequest(request);
-          retryRequest.headers['Authorization'] = 'Bearer ${refreshedSession.accessToken}';
-
-          response = await _inner.send(retryRequest);
+          refreshedSession = await _authService.refresh();
         } catch (e) {
-          // Token refresh failed or session was revoked; let 401 response pass or propagate AuthExpiredException
+          // Token refresh failed or session expired
           throw AuthExpiredException('Session refresh failed: $e');
         }
+
+        // Verify again before sending retry that session has not switched during refresh
+        final postRefreshCurrent = _authService.currentSession;
+        if (postRefreshCurrent == null) {
+          throw AuthExpiredException('Session changed during token refresh; aborting retry.');
+        }
+        if (originatingSession.userId.isNotEmpty &&
+            postRefreshCurrent.userId.isNotEmpty &&
+            postRefreshCurrent.userId != originatingSession.userId) {
+          throw AuthExpiredException(
+              'User account changed during token refresh (orig: ${originatingSession.userId}, current: ${postRefreshCurrent.userId}); aborting retry.');
+        }
+        if (originatingSession.tenantId.isNotEmpty &&
+            postRefreshCurrent.tenantId.isNotEmpty &&
+            postRefreshCurrent.tenantId != originatingSession.tenantId) {
+          throw AuthExpiredException(
+              'Tenant changed during token refresh (orig: ${originatingSession.tenantId}, current: ${postRefreshCurrent.tenantId}); aborting retry.');
+        }
+
+        // Finding: Preserve transport errors from the retried request (do NOT catch and convert to AuthExpiredException)
+        final retryRequest = _cloneRequest(request);
+        retryRequest.headers['Authorization'] = 'Bearer ${refreshedSession.accessToken}';
+        response = await _inner.send(retryRequest);
       }
     }
 

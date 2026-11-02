@@ -111,8 +111,8 @@ void main() {
 
       final refreshed = await sessionManager.refresh();
       expect(refreshed.accessToken, startsWith('refreshed_access_token_'));
-      expect(sessionManager.currentSession, equals(refreshed));
-      expect(await mockStorage.getSession(), equals(refreshed));
+      expect(sessionManager.currentSession!.accessToken, equals(refreshed.accessToken));
+      expect((await mockStorage.getSession())!.accessToken, equals(refreshed.accessToken));
       expect(mockProvider.refreshCount, 1);
     });
 

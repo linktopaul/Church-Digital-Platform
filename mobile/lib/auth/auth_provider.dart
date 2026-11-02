@@ -34,13 +34,19 @@ abstract class AuthProvider {
 /// while backend endpoints are being finalized in Child Task #24.
 class MockAuthProvider implements AuthProvider {
   AuthSession? mockSessionToReturn;
+  String? defaultUserId;
+  String? defaultTenantId;
   Exception? exchangeException;
   Exception? refreshException;
   int exchangeCount = 0;
   int refreshCount = 0;
   int revokeCount = 0;
 
-  MockAuthProvider({this.mockSessionToReturn});
+  MockAuthProvider({
+    this.mockSessionToReturn,
+    this.defaultUserId,
+    this.defaultTenantId,
+  });
 
   @override
   Future<AuthSession> exchangeAuthorizationCode({
@@ -75,8 +81,8 @@ class MockAuthProvider implements AuthProvider {
         AuthSession(
           accessToken: 'refreshed_access_token_$refreshCount',
           refreshToken: 'refreshed_refresh_token_$refreshCount',
-          userId: '00000000-0000-0000-0000-000000000001',
-          tenantId: '11111111-1111-1111-1111-111111111111',
+          userId: defaultUserId ?? '',
+          tenantId: defaultTenantId ?? '',
           roles: const ['Member'],
           expiresAt: DateTime.now().add(const Duration(hours: 1)),
           email: 'member@church.local',
