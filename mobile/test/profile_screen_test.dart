@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:church_digital_platform_mobile/auth/auth_session.dart';
@@ -205,7 +206,7 @@ void main() {
     );
 
     mockAuthService = MockAuthService(
-      const AuthSession(
+      AuthSession(
         accessToken: 'access_1',
         refreshToken: 'refresh_1',
         userId: 'mem-1',
