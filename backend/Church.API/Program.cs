@@ -43,6 +43,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapAuthEndpoints();
+app.MapMemberEndpoints();
 
 // Announcement Endpoints
 var announcementsGroup = app.MapGroup("/api/v1/announcements")

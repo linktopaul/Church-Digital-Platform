@@ -28,6 +28,8 @@ namespace Church.Infrastructure
         public DbSet<FellowshipGroup> FellowshipGroups { get; set; }
         public DbSet<FellowshipMember> FellowshipMembers { get; set; }
         public DbSet<FellowshipPost> FellowshipPosts { get; set; }
+        public DbSet<Family> Families { get; set; }
+        public DbSet<Member> Members { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -317,6 +319,57 @@ namespace Church.Infrastructure
                 entity.HasIndex(e => e.TenantId);
                 entity.HasIndex(e => e.FellowshipGroupId);
                 entity.HasIndex(e => e.CreatedAt);
+            });
+
+
+            // Configure Family entity
+            modelBuilder.Entity<Family>(entity =>
+            {
+                entity.ToTable("Families");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("church_id").IsRequired();
+                entity.Ignore(e => e.ChurchId);
+                entity.Property(e => e.FamilyName).HasColumnName("family_name").IsRequired().HasMaxLength(255);
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+
+                entity.HasIndex(e => e.TenantId);
+
+                entity.HasMany(f => f.Members)
+                    .WithOne(m => m.Family)
+                    .HasForeignKey(m => m.FamilyId)
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            // Configure Member entity
+            modelBuilder.Entity<Member>(entity =>
+            {
+                entity.ToTable("Members");
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.TenantId).HasColumnName("church_id").IsRequired();
+                entity.Ignore(e => e.ChurchId);
+                entity.Property(e => e.FirstName).HasColumnName("first_name").IsRequired().HasMaxLength(100);
+                entity.Property(e => e.LastName).HasColumnName("last_name").IsRequired().HasMaxLength(100);
+                entity.Property(e => e.Email).HasColumnName("email").IsRequired().HasMaxLength(255);
+                entity.Property(e => e.PhoneNumber).HasColumnName("phone_number").HasMaxLength(50);
+                entity.Property(e => e.AvatarUrl).HasColumnName("avatar_url").HasMaxLength(500);
+                entity.Property(e => e.DateOfBirth).HasColumnName("date_of_birth");
+                entity.Property(e => e.AnniversaryDate).HasColumnName("anniversary_date");
+                entity.Property(e => e.Address).HasColumnName("address").HasMaxLength(500);
+                entity.Property(e => e.FamilyId).HasColumnName("family_id");
+                entity.Property(e => e.FamilyRole).HasColumnName("family_role").HasConversion<string>().IsRequired();
+                entity.Property(e => e.DirectoryVisibility).HasColumnName("directory_visibility").HasConversion<string>().IsRequired();
+                entity.Property(e => e.ShowPhoneNumber).HasColumnName("show_phone_number").IsRequired();
+                entity.Property(e => e.ShowEmail).HasColumnName("show_email").IsRequired();
+                entity.Property(e => e.ShowAddress).HasColumnName("show_address").IsRequired();
+                entity.Property(e => e.ShowBirthDayAndMonth).HasColumnName("show_birthday_and_month").IsRequired();
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+                entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
+
+                entity.HasIndex(e => e.TenantId);
+                entity.HasIndex(e => e.FamilyId);
+                entity.HasIndex(e => new { e.TenantId, e.Email });
             });
 
             // Apply multi-tenancy filter to all entities implementing IMultiTenantEntity
