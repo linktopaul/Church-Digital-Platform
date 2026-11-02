@@ -718,4 +718,76 @@ public class AuthApiTests : IClassFixture<ProductionWebApplicationFactory>
         var errorJson = await redeemRes.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("invalid_grant", errorJson.GetProperty("error").GetString());
     }
+
+    [Fact]
+    public async Task RevokeEndpoint_WithRefreshToken_InvalidatesOutstandingAuthorizationCodesAndUserSession()
+    {
+        var tenantId = Guid.NewGuid();
+        await SeedUserAsync(
+            tenantId,
+            "revoke.refresh.user@church.org",
+            "RevokePass!123",
+            "Revoke Refresh User",
+            ChurchRoleNames.Member);
+
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false
+        });
+
+        // 1. Authenticate to establish an active session
+        var tokens = await AuthenticateWithPkceAsync(
+            client,
+            tenantId,
+            "revoke.refresh.user@church.org",
+            "RevokePass!123");
+
+        // 2. Obtain an authorization code in a separate pending PKCE flow
+        var (pendingVerifier, pendingChallenge) = CreatePkcePair();
+        var pendingAuthRes = await client.PostAsync("/connect/authorize", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["client_id"] = ClientId,
+            ["redirect_uri"] = RedirectUri,
+            ["response_type"] = "code",
+            ["scope"] = "openid profile email offline_access roles church_api",
+            ["code_challenge"] = pendingChallenge,
+            ["code_challenge_method"] = "S256",
+            ["state"] = "pending-revoke-flow-state",
+            ["email"] = "revoke.refresh.user@church.org",
+            ["password"] = "RevokePass!123",
+            ["tenant_id"] = tenantId.ToString()
+        }));
+
+        Assert.Equal(HttpStatusCode.OK, pendingAuthRes.StatusCode);
+        var authJson = await pendingAuthRes.Content.ReadFromJsonAsync<JsonElement>();
+        var pendingCode = authJson.GetProperty("code").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(pendingCode));
+
+        // 3. Client revokes session via /connect/revoke using refresh_token (mobile sign-out flow)
+        var revokeRes = await client.PostAsync("/connect/revoke", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["client_id"] = ClientId,
+            ["token"] = tokens.RefreshToken
+        }));
+        Assert.Equal(HttpStatusCode.OK, revokeRes.StatusCode);
+
+        // 4. Redeeming the unconsumed pending authorization code must be rejected
+        var redeemRes = await client.PostAsync("/connect/token", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "authorization_code",
+            ["client_id"] = ClientId,
+            ["code"] = pendingCode!,
+            ["redirect_uri"] = RedirectUri,
+            ["code_verifier"] = pendingVerifier
+        }));
+        Assert.Equal(HttpStatusCode.BadRequest, redeemRes.StatusCode);
+        var errorJson = await redeemRes.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("invalid_grant", errorJson.GetProperty("error").GetString());
+
+        // 5. Existing access token should be rejected as user session is revoked
+        var meReq = new HttpRequestMessage(HttpMethod.Get, "/api/v1/auth/me");
+        meReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
+        var meRes = await client.SendAsync(meReq);
+        Assert.Equal(HttpStatusCode.Unauthorized, meRes.StatusCode);
+    }
 }

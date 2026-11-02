@@ -1175,7 +1175,38 @@ public static class AuthEndpoints
 
                 if (storedRefresh != null && !storedRefresh.RevokedAt.HasValue)
                 {
-                    storedRefresh.RevokedAt = DateTime.UtcNow;
+                    var nowUtc = DateTime.UtcNow;
+                    var nowUnixMs = new DateTimeOffset(nowUtc).ToUnixTimeMilliseconds();
+                    storedRefresh.RevokedAt = nowUtc;
+
+                    // Invalidate outstanding unconsumed authorization codes for this user
+                    var outstandingCodes = await db.OidcAuthorizationCodes
+                        .IgnoreQueryFilters()
+                        .Where(c => c.UserId == storedRefresh.UserId && c.TenantId == storedRefresh.TenantId && c.ConsumedAt == null)
+                        .ToListAsync();
+
+                    foreach (var code in outstandingCodes)
+                    {
+                        code.ConsumedAt = nowUtc;
+                    }
+
+                    // Record user revocation watermark so active access tokens and pending codes cannot be redeemed
+                    jwtService.RevokeAllUserTokens(storedRefresh.UserId);
+                    var userCutOffHash = JwtTokenService.ComputeSha256Base64Url($"revoked-user:{storedRefresh.UserId:N}:{nowUnixMs}:{Guid.NewGuid():N}");
+                    db.OidcRefreshTokens.Add(new OidcRefreshToken
+                    {
+                        Id = Guid.NewGuid(),
+                        TenantId = storedRefresh.TenantId,
+                        UserId = storedRefresh.UserId,
+                        TokenHash = userCutOffHash,
+                        ClientId = req.ClientId!.Trim(),
+                        Scope = "revoked_user",
+                        CreatedAt = nowUtc,
+                        ExpiresAt = nowUtc.AddDays(jwtService.RefreshTokenLifetimeDays),
+                        RevokedAt = nowUtc,
+                        ReplacedByTokenHash = nowUnixMs.ToString()
+                    });
+
                     await db.SaveChangesAsync();
                 }
                 else if (jwtService.TryValidateAccessToken(rawToken, out var revokedPrincipal, out _) &&
