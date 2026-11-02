@@ -509,6 +509,16 @@ public class AuthApiTests : IClassFixture<ProductionWebApplicationFactory>
         var postBResponse = await client.SendAsync(postTenantB);
         Assert.Equal(HttpStatusCode.Created, postBResponse.StatusCode);
 
+        // Pastor B can read back their own Tenant B announcement via real JWT (verifying tenant query filter resolves after authentication)
+        var readTenantBReq = new HttpRequestMessage(HttpMethod.Get, "/api/v1/announcements");
+        readTenantBReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", pastorBTokens.AccessToken);
+        var readTenantBRes = await client.SendAsync(readTenantBReq);
+        Assert.Equal(HttpStatusCode.OK, readTenantBRes.StatusCode);
+        var announcementsForB = await readTenantBRes.Content.ReadFromJsonAsync<List<AnnouncementResponse>>();
+        Assert.NotNull(announcementsForB);
+        Assert.Single(announcementsForB!);
+        Assert.Equal("Tenant B Secret Notice", announcementsForB![0].Title);
+
         // Pastor A sends a valid Tenant A JWT but attempts to spoof X-Tenant-Id: TenantB
         var spoofReadReq = new HttpRequestMessage(HttpMethod.Get, "/api/v1/announcements");
         spoofReadReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", pastorATokens.AccessToken);

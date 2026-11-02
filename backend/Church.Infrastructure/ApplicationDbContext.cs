@@ -6,11 +6,12 @@ namespace Church.Infrastructure
 {
     public class ApplicationDbContext : DbContext
     {
-        private readonly Guid _tenantId;
+        private readonly ITenantService _tenantService;
+        private Guid CurrentTenantId => _tenantService.GetCurrentTenantId();
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, ITenantService tenantService) : base(options)
         {
-            _tenantId = tenantService.GetCurrentTenantId();
+            _tenantService = tenantService;
         }
 
         public DbSet<Tenant> Tenants { get; set; }
@@ -324,7 +325,7 @@ namespace Church.Infrastructure
                 if (typeof(IMultiTenantEntity).IsAssignableFrom(entityType.ClrType))
                 {
                     modelBuilder.Entity(entityType.ClrType).HasQueryFilter(
-                        ConvertFilterExpression<IMultiTenantEntity>(e => e.TenantId == _tenantId, entityType.ClrType)
+                        ConvertFilterExpression<IMultiTenantEntity>(e => e.TenantId == CurrentTenantId, entityType.ClrType)
                     );
                 }
             }

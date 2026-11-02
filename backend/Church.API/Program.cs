@@ -1329,7 +1329,7 @@ public class TenantService : ITenantService
 public class CustomAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
     private readonly JwtTokenService _jwtTokenService;
-    private readonly ApplicationDbContext _dbContext;
+    private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly IWebHostEnvironment _environment;
     private readonly IConfiguration _configuration;
 
@@ -1338,13 +1338,13 @@ public class CustomAuthHandler : AuthenticationHandler<AuthenticationSchemeOptio
         ILoggerFactory logger,
         System.Text.Encodings.Web.UrlEncoder encoder,
         JwtTokenService jwtTokenService,
-        ApplicationDbContext dbContext,
+        IServiceScopeFactory serviceScopeFactory,
         IWebHostEnvironment environment,
         IConfiguration configuration)
         : base(options, logger, encoder)
     {
         _jwtTokenService = jwtTokenService;
-        _dbContext = dbContext;
+        _serviceScopeFactory = serviceScopeFactory;
         _environment = environment;
         _configuration = configuration;
     }
@@ -1370,7 +1370,9 @@ public class CustomAuthHandler : AuthenticationHandler<AuthenticationSchemeOptio
                 if (_jwtTokenService.TryValidateAccessToken(token, out var jwtPrincipal, out var jwtError, expectedIssuer) &&
                     jwtPrincipal != null)
                 {
-                    if (await _jwtTokenService.IsPrincipalRevokedInStoreAsync(_dbContext, jwtPrincipal, Context.RequestAborted))
+                    using var scope = _serviceScopeFactory.CreateScope();
+                    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                    if (await _jwtTokenService.IsPrincipalRevokedInStoreAsync(dbContext, jwtPrincipal, Context.RequestAborted))
                     {
                         return AuthenticateResult.Fail("Access token has been revoked.");
                     }
