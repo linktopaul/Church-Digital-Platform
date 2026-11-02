@@ -546,10 +546,10 @@ void main() {
       await tester.tap(find.byIcon(Icons.favorite_border));
       await tester.pump();
 
-      // Expect pastoral tabs ("My Requests" and "All Requests (Pastor)") rather than "Sign In Required"
+      // Expect pastoral tabs ("My Requests" and "All Pastoral Requests") rather than "Sign In Required"
       expect(find.text('Sign In Required'), findsNothing);
       expect(find.text('My Requests'), findsOneWidget);
-      expect(find.text('All Requests (Pastor)'), findsOneWidget);
+      expect(find.text('All Pastoral Requests'), findsOneWidget);
 
       manager.dispose();
     });
