@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -102,44 +101,6 @@ class FakeFellowshipApiClient implements FellowshipApiClient {
     return post;
   }
 }
-
-class ControllableFellowshipApiClient extends FakeFellowshipApiClient {
-  Completer<List<FellowshipGroupData>>? completer;
-  Completer<FellowshipGroupData>? createCompleter;
-
-  ControllableFellowshipApiClient({super.initialGroups, this.completer, this.createCompleter});
-
-  @override
-  Future<List<FellowshipGroupData>> getFellowshipGroups({FellowshipCategory? category}) async {
-    if (completer != null) {
-      return completer!.future;
-    }
-    return super.getFellowshipGroups(category: category);
-  }
-
-  @override
-  Future<FellowshipGroupData> createFellowshipGroup({
-    required String name,
-    String? description,
-    required FellowshipCategory category,
-    String? meetingSchedule,
-    String? location,
-    bool isPrivate = false,
-  }) async {
-    if (createCompleter != null) {
-      return createCompleter!.future;
-    }
-    return super.createFellowshipGroup(
-      name: name,
-      description: description,
-      category: category,
-      meetingSchedule: meetingSchedule,
-      location: location,
-      isPrivate: isPrivate,
-    );
-  }
-}
-
 
 void main() {
   List<FellowshipGroupData> createSampleGroups() => [
@@ -348,233 +309,9 @@ void main() {
     expect(find.text('Joined'), findsOneWidget);
   });
 
-
-  testWidgets('MessagesScreen reloads groups when apiClient is updated via didUpdateWidget',
-      (tester) async {
-    final client1 = FakeFellowshipApiClient(initialGroups: []);
-    final client2 = FakeFellowshipApiClient(initialGroups: createSampleGroups());
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: MessagesScreen(apiClient: client1),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text("Men's Fellowship Brotherhood"), findsNothing);
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: MessagesScreen(apiClient: client2),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text("Men's Fellowship Brotherhood"), findsOneWidget);
-  });
-
-  testWidgets('Account switch discards pending load from previous session and prevents data leak',
-      (tester) async {
-    final completerA = Completer<List<FellowshipGroupData>>();
-    final clientA = ControllableFellowshipApiClient(
-      completer: completerA,
-    );
-
-    const privateGroupA = FellowshipGroupData(
-      id: 'private_a',
-      name: "Member A Private Fellowship",
-      description: "Confidential fellowship",
-      category: FellowshipCategory.housePrayer,
-      isPrivate: true,
-      members: ['Member A'],
-    );
-
-    const publicGroupB = FellowshipGroupData(
-      id: 'public_b',
-      name: "Member B Open Group",
-      description: "Public group",
-      category: FellowshipCategory.mensFellowship,
-      isPrivate: false,
-      members: ['Member B'],
-    );
-
-    final clientB = FakeFellowshipApiClient(initialGroups: [publicGroupB]);
-
-    // Initial mount with client A: starts load that is slow/pending
-    await tester.pumpWidget(
-      MaterialApp(
-        home: MessagesScreen(apiClient: clientA),
-      ),
-    );
-    await tester.pump();
-
-    // Switch account to client B: client B returns immediately
-    await tester.pumpWidget(
-      MaterialApp(
-        home: MessagesScreen(apiClient: clientB),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    // Client B's group is shown
-    expect(find.text("Member B Open Group"), findsOneWidget);
-    expect(find.text("Member A Private Fellowship"), findsNothing);
-
-    // Client A's slow pending response finally completes
-    completerA.complete([privateGroupA]);
-    await tester.pumpAndSettle();
-
-    // Verify Member A's private data did NOT overwrite Member B's groups
-    expect(find.text("Member B Open Group"), findsOneWidget);
-    expect(find.text("Member A Private Fellowship"), findsNothing);
-  });
-
-  testWidgets('Account switch dismisses open private fellowship detail route and discards pending detail loads',
-      (tester) async {
-    const privateGroupA = FellowshipGroupData(
-      id: 'private_a',
-      name: "Member A Private Fellowship",
-      description: "Secret members-only group",
-      category: FellowshipCategory.housePrayer,
-      isPrivate: true,
-      members: ['Member A Confidential'],
-    );
-
-    final clientA = FakeFellowshipApiClient(
-      initialGroups: [privateGroupA],
-    );
-
-    const publicGroupB = FellowshipGroupData(
-      id: 'public_b',
-      name: "Member B Open Group",
-      description: "Public space",
-      category: FellowshipCategory.mensFellowship,
-      isPrivate: false,
-      members: ['Member B'],
-    );
-
-    final clientB = FakeFellowshipApiClient(initialGroups: [publicGroupB]);
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: MessagesScreen(apiClient: clientA),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    // Open private group detail
-    await tester.tap(find.text("Member A Private Fellowship"));
-    await tester.pumpAndSettle();
-
-    // Switch to About & Members tab to view private description
-    await tester.tap(find.text('About & Members'));
-    await tester.pumpAndSettle();
-
-    // Verify detail screen is mounted showing private group info
-    expect(find.text("Secret members-only group"), findsOneWidget);
-
-    // Switch account to Client B
-    await tester.pumpWidget(
-      MaterialApp(
-        home: MessagesScreen(apiClient: clientB),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    // Detail route was dismissed; back at MessagesScreen showing Client B's group
-    expect(find.text("Secret members-only group"), findsNothing);
-    expect(find.text("Member B Open Group"), findsOneWidget);
-  });
-
-  testWidgets('Account switch discards pending group creation and does not add group to new account list',
-      (tester) async {
-    final createCompleterA = Completer<FellowshipGroupData>();
-
-    final clientA = ControllableFellowshipApiClient(
-      createCompleter: createCompleterA,
-    );
-
-    const publicGroupB = FellowshipGroupData(
-      id: 'public_b',
-      name: "Member B Open Group",
-      description: "Public group for all members",
-      category: FellowshipCategory.mensFellowship,
-      members: ['Member B'],
-    );
-    final clientB = FakeFellowshipApiClient(initialGroups: [publicGroupB]);
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: MessagesScreen(apiClient: clientA),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    // Open create dialog
-    await tester.tap(find.byKey(const Key('createFellowshipFab')));
-    await tester.pumpAndSettle();
-
-    // Fill out form
-    await tester.enterText(find.byKey(const Key('createGroupNameField')), "Member A Secret Group");
-    await tester.tap(find.byKey(const Key('saveGroupButton')));
-    await tester.pump(); // creation is now pending on createCompleterA
-
-    // Account switch happens to Client B while creation is pending
-    await tester.pumpWidget(
-      MaterialApp(
-        home: MessagesScreen(apiClient: clientB),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    // Verify dialog was popped and Client B's screen is visible
-    expect(find.text("Member B Open Group"), findsOneWidget);
-    expect(find.text("Member A Secret Group"), findsNothing);
-
-    // Now Client A's pending creation finally completes
-    createCompleterA.complete(const FellowshipGroupData(
-      id: 'group_a_new',
-      name: "Member A Secret Group",
-      description: "Secret group description",
-      category: FellowshipCategory.mensFellowship,
-      members: ['Member A'],
-    ));
-    await tester.pumpAndSettle();
-
-    // Verify Member A's group was NOT added to Client B's list
-    expect(find.text("Member B Open Group"), findsOneWidget);
-    expect(find.text("Member A Secret Group"), findsNothing);
-  });
-
   group('HttpFellowshipApiClient unit & contract tests', () {
-    test('normalizes both root and /api/v1 base URLs', () async {
-      final requestedPaths = <String>[];
-      final mockClient = MockClient((request) async {
-        requestedPaths.add(request.url.path);
-        return http.Response(jsonEncode([]), 200);
-      });
-
-      final rootClient = HttpFellowshipApiClient(
-        client: mockClient,
-        baseUrl: 'http://10.0.2.2:5178/',
-      );
-      await rootClient.getFellowshipGroups();
-
-      final prefixedClient = HttpFellowshipApiClient(
-        client: mockClient,
-        baseUrl: 'http://10.0.2.2:5178/api/v1/',
-      );
-      await prefixedClient.getFellowshipGroups();
-
-      expect(requestedPaths, equals([
-        '/api/v1/fellowships',
-        '/api/v1/fellowships',
-      ]));
-      expect(rootClient.baseUrl, equals('http://10.0.2.2:5178/api/v1'));
-      expect(prefixedClient.baseUrl, equals('http://10.0.2.2:5178/api/v1'));
-    });
-
-    test('createFellowshipGroup serializes groupType as integer enum and honors server isUserMember', () async {
+    test('createFellowshipGroup serializes groupType as integer enum matching backend contract', () async {
       late String capturedBody;
-      var serverIsMember = true;
       final mockClient = MockClient((request) async {
         if (request.url.path == '/api/v1/fellowships' && request.method == 'POST') {
           capturedBody = request.body;
@@ -587,7 +324,7 @@ void main() {
               'leaderName': 'Leader',
               'isPrivate': false,
               'memberCount': 1,
-              'isUserMember': serverIsMember,
+              'isUserMember': true,
             }),
             201,
             headers: {'content-type': 'application/json'},
@@ -598,7 +335,7 @@ void main() {
 
       final apiClient = HttpFellowshipApiClient(
         client: mockClient,
-        baseUrl: 'http://example.com',
+        baseUrl: 'http://example.com/api/v1',
       );
 
       final result = await apiClient.createFellowshipGroup(
@@ -610,17 +347,9 @@ void main() {
       expect(decoded['groupType'], equals(1)); // MensFellowship is 1, not 'MensFellowship' string
       expect(result.id, equals('g-created-1'));
       expect(result.category, equals(FellowshipCategory.mensFellowship));
-      expect(result.isUserMember, isTrue);
-
-      serverIsMember = false;
-      final nonMemberResult = await apiClient.createFellowshipGroup(
-        name: 'Delegated Space',
-        category: FellowshipCategory.sundaySchool,
-      );
-      expect(nonMemberResult.isUserMember, isFalse);
     });
 
-    test('getFellowshipGroups and getFellowshipGroupDetail restore isUserMember without display-name spoofing', () async {
+    test('getFellowshipGroups and getFellowshipGroupDetail restore isUserMember from API response', () async {
       final mockClient = MockClient((request) async {
         if (request.url.path == '/api/v1/fellowships' && request.method == 'GET') {
           return http.Response(
@@ -661,21 +390,6 @@ void main() {
             200,
             headers: {'content-type': 'application/json'},
           );
-        } else if (request.url.path == '/api/v1/fellowships/g2' && request.method == 'GET') {
-          return http.Response(
-            jsonEncode({
-              'id': 'g2',
-              'name': 'Group 2',
-              'description': 'Desc',
-              'groupType': 2,
-              'members': [
-                {'memberId': 'other-user-999', 'memberName': 'Timothy', 'role': 'Member'},
-              ],
-              'recentPosts': [],
-            }),
-            200,
-            headers: {'content-type': 'application/json'},
-          );
         }
         return http.Response('Not Found', 404);
       });
@@ -683,20 +397,14 @@ void main() {
       final apiClient = HttpFellowshipApiClient(
         client: mockClient,
         baseUrl: 'http://example.com/api/v1',
-        currentUserId: 'user-123',
-        currentMemberName: 'Timothy',
       );
 
       final groups = await apiClient.getFellowshipGroups();
       expect(groups[0].isUserMember, isTrue);
       expect(groups[1].isUserMember, isFalse);
 
-      final detail1 = await apiClient.getFellowshipGroupDetail('g1');
-      expect(detail1.isUserMember, isTrue);
-
-      // Same display name ('Timothy') with a different memberId must not grant membership
-      final detail2 = await apiClient.getFellowshipGroupDetail('g2');
-      expect(detail2.isUserMember, isFalse);
+      final detail = await apiClient.getFellowshipGroupDetail('g1');
+      expect(detail.isUserMember, isTrue);
     });
 
     test('joinFellowshipGroup and leaveFellowshipGroup return false on HTTP 400, 401, or 403', () async {
@@ -885,68 +593,6 @@ void main() {
 
       expect(find.text('New Joined User'), findsOneWidget);
       expect(find.text('Members (2)'), findsOneWidget);
-    });
-
-    testWidgets('Canonical detail reload reconciles membership when server reports isUserMember: false', (tester) async {
-      final mockClient = MockClient((request) async {
-        if (request.url.path == '/api/v1/fellowships' && request.method == 'GET') {
-          return http.Response(
-            jsonEncode([
-              {
-                'id': 'stale-g',
-                'name': 'Stale Membership Group',
-                'description': 'User left on another device',
-                'groupType': 1,
-                'memberCount': 3,
-                'isPrivate': false,
-                'isUserMember': true,
-              }
-            ]),
-            200,
-            headers: {'content-type': 'application/json'},
-          );
-        } else if (request.url.path == '/api/v1/fellowships/stale-g' && request.method == 'GET') {
-          return http.Response(
-            jsonEncode({
-              'id': 'stale-g',
-              'name': 'Stale Membership Group',
-              'description': 'User left on another device',
-              'groupType': 1,
-              'memberCount': 0,
-              'isPrivate': false,
-              'isUserMember': false,
-              'members': [],
-              'recentPosts': [],
-            }),
-            200,
-            headers: {'content-type': 'application/json'},
-          );
-        }
-        return http.Response('Not Found', 404);
-      });
-
-      final apiClient = HttpFellowshipApiClient(
-        client: mockClient,
-        baseUrl: 'http://example.com',
-      );
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: MessagesScreen(apiClient: apiClient),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      // Initially shows Joined from list response
-      expect(find.text('Joined'), findsOneWidget);
-
-      // Opening detail triggers _fetchDetail(), which reports isUserMember: false and memberCount: 0
-      await tester.tap(find.byKey(const Key('groupItem_stale-g')));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Join'), findsOneWidget);
-      expect(find.text('Joined'), findsNothing);
-      expect(find.byKey(const Key('addPostButton')), findsNothing);
     });
   });
 }

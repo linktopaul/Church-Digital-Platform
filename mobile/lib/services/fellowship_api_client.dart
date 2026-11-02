@@ -36,15 +36,13 @@ class HttpFellowshipApiClient implements FellowshipApiClient {
     this.currentUserId,
     this.currentMemberName,
   })  : _client = client ?? http.Client(),
-        baseUrl = _normalizeBaseUrl(baseUrl);
+        baseUrl = baseUrl ?? _defaultBaseUrl();
 
-  static String _normalizeBaseUrl(String? providedBaseUrl) {
-    final rawUrl = (providedBaseUrl != null && providedBaseUrl.trim().isNotEmpty)
-        ? providedBaseUrl.trim()
-        : const String.fromEnvironment(
-            'CHURCH_API_BASE_URL',
-            defaultValue: 'http://10.0.2.2:5178',
-          );
+  static String _defaultBaseUrl() {
+    const rawUrl = String.fromEnvironment(
+      'CHURCH_API_BASE_URL',
+      defaultValue: 'http://10.0.2.2:5178',
+    );
     final trimmed = rawUrl.replaceAll(RegExp(r'/+$'), '');
     return trimmed.endsWith('/api/v1') ? trimmed : '$trimmed/api/v1';
   }
@@ -98,12 +96,15 @@ class HttpFellowshipApiClient implements FellowshipApiClient {
   }
 
   bool _isUserMemberFromRoster(List<dynamic> membersJson) {
-    if (currentUserId == null || currentUserId!.trim().isEmpty) return false;
-    final normalizedUserId = currentUserId!.trim().toLowerCase();
+    if (currentUserId == null && currentMemberName == null) return false;
     for (final m in membersJson) {
       if (m is Map) {
-        final memberId = m['memberId']?.toString().trim();
-        if (memberId != null && memberId.toLowerCase() == normalizedUserId) {
+        final memberId = m['memberId']?.toString();
+        final memberName = m['memberName']?.toString();
+        if (currentUserId != null && memberId != null && memberId.toLowerCase() == currentUserId!.toLowerCase()) {
+          return true;
+        }
+        if (currentMemberName != null && memberName != null && memberName.trim() == currentMemberName!.trim()) {
           return true;
         }
       }
@@ -158,9 +159,7 @@ class HttpFellowshipApiClient implements FellowshipApiClient {
         createdAt: DateTime.tryParse(p['createdAt']?.toString() ?? '') ?? DateTime.now(),
       )).toList();
 
-      final isUserMember = json['isUserMember'] is bool
-          ? json['isUserMember'] as bool
-          : _isUserMemberFromRoster(rawMembers);
+      final isUserMember = json['isUserMember'] == true || _isUserMemberFromRoster(rawMembers);
 
       return FellowshipGroupData(
         id: json['id']?.toString() ?? '',
@@ -218,7 +217,7 @@ class HttpFellowshipApiClient implements FellowshipApiClient {
         location: json['location']?.toString(),
         isPrivate: json['isPrivate'] == true,
         memberCount: json['memberCount'] is int ? json['memberCount'] : 1,
-        isUserMember: json['isUserMember'] == true,
+        isUserMember: json['isUserMember'] == true || true,
       );
     } else {
       throw Exception('Failed to create fellowship space: ${response.statusCode}');

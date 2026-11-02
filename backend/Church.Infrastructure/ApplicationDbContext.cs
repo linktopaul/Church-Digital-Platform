@@ -6,20 +6,14 @@ namespace Church.Infrastructure
 {
     public class ApplicationDbContext : DbContext
     {
-        private readonly ITenantService _tenantService;
-        private Guid CurrentTenantId => _tenantService.GetCurrentTenantId();
+        private readonly Guid _tenantId;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, ITenantService tenantService) : base(options)
         {
-            _tenantService = tenantService;
+            _tenantId = tenantService.GetCurrentTenantId();
         }
 
         public DbSet<Tenant> Tenants { get; set; }
-        public DbSet<AppUser> AppUsers { get; set; }
-        public DbSet<AppRole> AppRoles { get; set; }
-        public DbSet<AppUserRole> AppUserRoles { get; set; }
-        public DbSet<OidcAuthorizationCode> OidcAuthorizationCodes { get; set; }
-        public DbSet<OidcRefreshToken> OidcRefreshTokens { get; set; }
         public DbSet<Announcement> Announcements { get; set; }
         public DbSet<PrayerRequest> PrayerRequests { get; set; }
         public DbSet<Song> Songs { get; set; }
@@ -41,109 +35,6 @@ namespace Church.Infrastructure
                 entity.Property(e => e.Slug).IsRequired().HasMaxLength(100);
                 entity.HasIndex(e => e.Slug).IsUnique();
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
-            });
-
-            // Configure AppUser entity
-            modelBuilder.Entity<AppUser>(entity =>
-            {
-                entity.ToTable("AppUsers");
-                entity.HasKey(e => e.Id);
-                entity.Property(e => e.Id).HasColumnName("id");
-                entity.Property(e => e.TenantId).HasColumnName("church_id").IsRequired();
-                entity.Ignore(e => e.ChurchId);
-                entity.Property(e => e.Email).HasColumnName("email").IsRequired().HasMaxLength(255);
-                entity.Property(e => e.NormalizedEmail).HasColumnName("normalized_email").IsRequired().HasMaxLength(255);
-                entity.Property(e => e.PasswordHash).HasColumnName("password_hash").IsRequired();
-                entity.Property(e => e.DisplayName).HasColumnName("display_name").IsRequired().HasMaxLength(255);
-                entity.Property(e => e.IsActive).HasColumnName("is_active").IsRequired();
-                entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
-
-                entity.HasIndex(e => e.TenantId);
-                entity.HasIndex(e => new { e.TenantId, e.NormalizedEmail }).IsUnique();
-            });
-
-            // Configure AppRole entity
-            modelBuilder.Entity<AppRole>(entity =>
-            {
-                entity.ToTable("AppRoles");
-                entity.HasKey(e => e.Id);
-                entity.Property(e => e.Id).HasColumnName("id");
-                entity.Property(e => e.TenantId).HasColumnName("church_id").IsRequired();
-                entity.Ignore(e => e.ChurchId);
-                entity.Property(e => e.Name).HasColumnName("name").IsRequired().HasMaxLength(100);
-                entity.Property(e => e.NormalizedName).HasColumnName("normalized_name").IsRequired().HasMaxLength(100);
-
-                entity.HasIndex(e => e.TenantId);
-                entity.HasIndex(e => new { e.TenantId, e.NormalizedName }).IsUnique();
-            });
-
-            // Configure AppUserRole entity
-            modelBuilder.Entity<AppUserRole>(entity =>
-            {
-                entity.ToTable("AppUserRoles");
-                entity.HasKey(e => e.Id);
-                entity.Property(e => e.Id).HasColumnName("id");
-                entity.Property(e => e.TenantId).HasColumnName("church_id").IsRequired();
-                entity.Property(e => e.UserId).HasColumnName("user_id").IsRequired();
-                entity.Property(e => e.RoleId).HasColumnName("role_id").IsRequired();
-
-                entity.HasIndex(e => e.TenantId);
-                entity.HasIndex(e => new { e.UserId, e.RoleId }).IsUnique();
-
-                entity.HasOne(e => e.User)
-                    .WithMany(u => u.UserRoles)
-                    .HasForeignKey(e => e.UserId)
-                    .OnDelete(DeleteBehavior.Cascade);
-
-                entity.HasOne(e => e.Role)
-                    .WithMany(r => r.UserRoles)
-                    .HasForeignKey(e => e.RoleId)
-                    .OnDelete(DeleteBehavior.Cascade);
-            });
-
-            // Configure OidcAuthorizationCode entity
-            modelBuilder.Entity<OidcAuthorizationCode>(entity =>
-            {
-                entity.ToTable("OidcAuthorizationCodes");
-                entity.HasKey(e => e.Id);
-                entity.Property(e => e.Id).HasColumnName("id");
-                entity.Property(e => e.TenantId).HasColumnName("church_id").IsRequired();
-                entity.Property(e => e.UserId).HasColumnName("user_id").IsRequired();
-                entity.Property(e => e.CodeHash).HasColumnName("code_hash").IsRequired().HasMaxLength(128);
-                entity.Property(e => e.ClientId).HasColumnName("client_id").IsRequired().HasMaxLength(100);
-                entity.Property(e => e.RedirectUri).HasColumnName("redirect_uri").IsRequired().HasMaxLength(500);
-                entity.Property(e => e.CodeChallenge).HasColumnName("code_challenge").IsRequired().HasMaxLength(255);
-                entity.Property(e => e.CodeChallengeMethod).HasColumnName("code_challenge_method").IsRequired().HasMaxLength(20);
-                entity.Property(e => e.Scope).HasColumnName("scope").IsRequired().HasMaxLength(500);
-                entity.Property(e => e.Nonce).HasColumnName("nonce").HasMaxLength(255);
-                entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
-                entity.Property(e => e.ExpiresAt).HasColumnName("expires_at").IsRequired();
-                entity.Property(e => e.ConsumedAt).HasColumnName("consumed_at");
-
-                entity.HasIndex(e => e.TenantId);
-                entity.HasIndex(e => e.CodeHash).IsUnique();
-            });
-
-            // Configure OidcRefreshToken entity
-            modelBuilder.Entity<OidcRefreshToken>(entity =>
-            {
-                entity.ToTable("OidcRefreshTokens");
-                entity.HasKey(e => e.Id);
-                entity.Property(e => e.Id).HasColumnName("id");
-                entity.Property(e => e.TenantId).HasColumnName("church_id").IsRequired();
-                entity.Property(e => e.UserId).HasColumnName("user_id").IsRequired();
-                entity.Property(e => e.AuthorizationCodeId).HasColumnName("authorization_code_id");
-                entity.Property(e => e.TokenHash).HasColumnName("token_hash").IsRequired().HasMaxLength(128);
-                entity.Property(e => e.ClientId).HasColumnName("client_id").IsRequired().HasMaxLength(100);
-                entity.Property(e => e.Scope).HasColumnName("scope").IsRequired().HasMaxLength(500);
-                entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
-                entity.Property(e => e.ExpiresAt).HasColumnName("expires_at").IsRequired();
-                entity.Property(e => e.ConsumedAt).HasColumnName("consumed_at");
-                entity.Property(e => e.RevokedAt).HasColumnName("revoked_at");
-                entity.Property(e => e.ReplacedByTokenHash).HasColumnName("replaced_by_token_hash").HasMaxLength(128);
-
-                entity.HasIndex(e => e.TenantId);
-                entity.HasIndex(e => e.TokenHash).IsUnique();
             });
 
             // Configure Announcement entity
@@ -325,7 +216,7 @@ namespace Church.Infrastructure
                 if (typeof(IMultiTenantEntity).IsAssignableFrom(entityType.ClrType))
                 {
                     modelBuilder.Entity(entityType.ClrType).HasQueryFilter(
-                        ConvertFilterExpression<IMultiTenantEntity>(e => e.TenantId == CurrentTenantId, entityType.ClrType)
+                        ConvertFilterExpression<IMultiTenantEntity>(e => e.TenantId == _tenantId, entityType.ClrType)
                     );
                 }
             }
