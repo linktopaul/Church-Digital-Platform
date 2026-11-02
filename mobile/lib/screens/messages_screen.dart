@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/fellowship_models.dart';
 import '../services/fellowship_api_client.dart';
@@ -15,10 +16,13 @@ class MessagesScreen extends StatefulWidget {
 }
 
 class _MessagesScreenState extends State<MessagesScreen> {
-  late final FellowshipApiClient _apiClient;
+  late FellowshipApiClient _apiClient;
   List<FellowshipGroupData> _groups = [];
   bool _isLoading = false;
   String? _errorMessage;
+  int _loadGeneration = 0;
+  int _sessionGeneration = 0;
+  final ValueNotifier<int> _sessionGenerationNotifier = ValueNotifier<int>(0);
 
   FellowshipCategory _selectedCategory = FellowshipCategory.all;
   String _searchQuery = '';
@@ -30,7 +34,38 @@ class _MessagesScreenState extends State<MessagesScreen> {
     _loadGroups();
   }
 
+  @override
+  void didUpdateWidget(covariant MessagesScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.apiClient != widget.apiClient) {
+      _apiClient = widget.apiClient ?? HttpFellowshipApiClient();
+      _sessionGeneration++;
+      _sessionGenerationNotifier.value = _sessionGeneration;
+      _loadGeneration++;
+      _groups = [];
+      _errorMessage = null;
+      _isLoading = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final nav = Navigator.maybeOf(context);
+        if (nav != null && nav.canPop()) {
+          nav.popUntil((route) => route.isFirst);
+        }
+      });
+      _loadGroups();
+    }
+  }
+
+  @override
+  void dispose() {
+    _sessionGeneration++;
+    _sessionGenerationNotifier.value = _sessionGeneration;
+    _sessionGenerationNotifier.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadGroups() async {
+    final currentGen = ++_loadGeneration;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -40,11 +75,13 @@ class _MessagesScreenState extends State<MessagesScreen> {
       final fetched = await _apiClient.getFellowshipGroups(
         category: _selectedCategory != FellowshipCategory.all ? _selectedCategory : null,
       );
+      if (!mounted || currentGen != _loadGeneration) return;
       setState(() {
         _groups = fetched;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted || currentGen != _loadGeneration) return;
       setState(() {
         _errorMessage = e.toString();
         _isLoading = false;
@@ -58,6 +95,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
         builder: (context) => _FellowshipDetailScreen(
           group: group,
           apiClient: _apiClient,
+          sessionGenerationListenable: _sessionGenerationNotifier,
+          initialSessionGeneration: _sessionGeneration,
           onGroupUpdated: (updated) {
             setState(() {
               final index = _groups.indexWhere((g) => g.id == updated.id);
@@ -144,8 +183,10 @@ class _MessagesScreenState extends State<MessagesScreen> {
               key: const Key('saveGroupButton'),
               onPressed: () async {
                 if (nameController.text.trim().isEmpty) return;
+                final capturedSession = _sessionGeneration;
+                final client = _apiClient;
                 try {
-                  final newGroup = await _apiClient.createFellowshipGroup(
+                  final newGroup = await client.createFellowshipGroup(
                     name: nameController.text.trim(),
                     description: descriptionController.text.trim().isEmpty
                         ? null
@@ -158,15 +199,28 @@ class _MessagesScreenState extends State<MessagesScreen> {
                         ? null
                         : locationController.text.trim(),
                   );
+                  if (!mounted || capturedSession != _sessionGeneration || _apiClient != client) {
+                    return;
+                  }
                   setState(() {
                     _groups.add(newGroup);
                   });
+                  final nav = Navigator.maybeOf(context);
+                  if (nav != null && nav.canPop()) {
+                    nav.pop();
+                  }
                 } catch (e) {
+                  if (!mounted || capturedSession != _sessionGeneration || _apiClient != client) {
+                    return;
+                  }
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Failed to create space: $e')),
                   );
+                  final nav = Navigator.maybeOf(context);
+                  if (nav != null && nav.canPop()) {
+                    nav.pop();
+                  }
                 }
-                Navigator.of(context).pop();
               },
               child: const Text('Create Space'),
             ),
@@ -446,11 +500,15 @@ class _FellowshipDetailScreen extends StatefulWidget {
   final FellowshipGroupData group;
   final FellowshipApiClient apiClient;
   final ValueChanged<FellowshipGroupData> onGroupUpdated;
+  final ValueListenable<int>? sessionGenerationListenable;
+  final int initialSessionGeneration;
 
   const _FellowshipDetailScreen({
     required this.group,
     required this.apiClient,
     required this.onGroupUpdated,
+    this.sessionGenerationListenable,
+    this.initialSessionGeneration = 0,
   });
 
   @override
@@ -463,19 +521,48 @@ class _FellowshipDetailScreenState extends State<_FellowshipDetailScreen>
   late TabController _tabController;
   late FellowshipGroupData _currentGroup;
   bool _isLoadingDetail = false;
+  late int _sessionGeneration;
+
+  bool get _isSessionValid =>
+      widget.sessionGenerationListenable == null ||
+      widget.sessionGenerationListenable!.value == _sessionGeneration;
 
   @override
   void initState() {
     super.initState();
+    _sessionGeneration = widget.initialSessionGeneration;
+    widget.sessionGenerationListenable?.addListener(_handleSessionChanged);
     _tabController = TabController(length: 2, vsync: this);
     _currentGroup = widget.group;
     _fetchDetail();
   }
 
+  void _handleSessionChanged() {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final route = ModalRoute.of(context);
+      if (route != null && route.isCurrent) {
+        Navigator.of(context).pop();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    widget.sessionGenerationListenable?.removeListener(_handleSessionChanged);
+    _tabController.dispose();
+    super.dispose();
+  }
+
   Future<void> _fetchDetail() async {
+    final capturedSession = _sessionGeneration;
     setState(() => _isLoadingDetail = true);
     try {
       final detail = await widget.apiClient.getFellowshipGroupDetail(_currentGroup.id);
+      if (!mounted || !_isSessionValid || capturedSession != _sessionGeneration) {
+        return;
+      }
       setState(() {
         _currentGroup = _currentGroup.copyWith(
           members: detail.members,
@@ -490,17 +577,13 @@ class _FellowshipDetailScreenState extends State<_FellowshipDetailScreen>
       });
       widget.onGroupUpdated(_currentGroup);
     } catch (_) {
+      if (!mounted || !_isSessionValid) return;
       setState(() => _isLoadingDetail = false);
     }
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
   Future<void> _toggleMembership() async {
+    if (!_isSessionValid) return;
     final willJoin = !_currentGroup.isUserMember;
     try {
       if (willJoin) {
@@ -508,6 +591,7 @@ class _FellowshipDetailScreenState extends State<_FellowshipDetailScreen>
       } else {
         await widget.apiClient.leaveFellowshipGroup(_currentGroup.id);
       }
+      if (!mounted || !_isSessionValid) return;
       setState(() {
         _currentGroup = _currentGroup.copyWith(
           isUserMember: willJoin,
@@ -518,6 +602,7 @@ class _FellowshipDetailScreenState extends State<_FellowshipDetailScreen>
       });
       widget.onGroupUpdated(_currentGroup);
     } catch (e) {
+      if (!mounted || !_isSessionValid) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Action failed: $e')),
       );
@@ -525,8 +610,11 @@ class _FellowshipDetailScreenState extends State<_FellowshipDetailScreen>
   }
 
   void _openCreatePostDialog() {
+    if (!_isSessionValid) return;
     final titleController = TextEditingController();
     final contentController = TextEditingController();
+    final capturedSession = _sessionGeneration;
+    final client = widget.apiClient;
 
     showDialog(
       context: context,
@@ -561,23 +649,36 @@ class _FellowshipDetailScreenState extends State<_FellowshipDetailScreen>
                 return;
               }
               try {
-                final created = await widget.apiClient.createPost(
+                final created = await client.createPost(
                   _currentGroup.id,
                   title: titleController.text.trim(),
                   content: contentController.text.trim(),
                 );
+                if (!mounted || !_isSessionValid || capturedSession != _sessionGeneration) {
+                  return;
+                }
                 setState(() {
                   _currentGroup = _currentGroup.copyWith(
                     posts: [created, ..._currentGroup.posts],
                   );
                 });
                 widget.onGroupUpdated(_currentGroup);
+                final nav = Navigator.maybeOf(context);
+                if (nav != null && nav.canPop()) {
+                  nav.pop();
+                }
               } catch (e) {
+                if (!mounted || !_isSessionValid || capturedSession != _sessionGeneration) {
+                  return;
+                }
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('Failed to post: $e')),
                 );
+                final nav = Navigator.maybeOf(context);
+                if (nav != null && nav.canPop()) {
+                  nav.pop();
+                }
               }
-              Navigator.of(context).pop();
             },
             child: const Text('Post'),
           ),

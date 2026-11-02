@@ -1,17 +1,30 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
+import 'auth/auth_session.dart';
+import 'auth/auth_session_manager.dart';
+import 'network/authenticated_http_client.dart';
 import 'screens/home_screen.dart';
 import 'screens/messages_screen.dart';
 import 'screens/prayer_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/worship_screen.dart';
+import 'services/fellowship_api_client.dart';
+import 'services/prayer_api_client.dart';
 
 void main() {
   runApp(const ChurchMobileApp());
 }
 
 class ChurchMobileApp extends StatelessWidget {
-  const ChurchMobileApp({super.key});
+  final AuthService? authService;
+  final String? apiBaseUrl;
+
+  const ChurchMobileApp({
+    super.key,
+    this.authService,
+    this.apiBaseUrl,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -24,13 +37,23 @@ class ChurchMobileApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const MainNavigationScreen(),
+      home: MainNavigationScreen(
+        authService: authService,
+        apiBaseUrl: apiBaseUrl,
+      ),
     );
   }
 }
 
 class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({super.key});
+  final AuthService? authService;
+  final String? apiBaseUrl;
+
+  const MainNavigationScreen({
+    super.key,
+    this.authService,
+    this.apiBaseUrl,
+  });
 
   @override
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
@@ -38,6 +61,14 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _selectedIndex = 0;
+  StreamSubscription<AuthSession?>? _sessionSubscription;
+  AuthSession? _currentSession;
+
+  HttpFellowshipApiClient? _cachedFellowshipClient;
+  HttpPrayerApiClient? _cachedPrayerClient;
+  String? _cachedSessionKey;
+  AuthService? _cachedAuthService;
+  String? _cachedBaseUrl;
 
   static const _tabNames = [
     'Home',
@@ -47,16 +78,124 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     'Profile',
   ];
 
-  static const _screens = [
-    HomeScreen(),
-    MessagesScreen(),
-    PrayerScreen(),
-    WorshipScreen(),
-    ProfileScreen(),
+  @override
+  void initState() {
+    super.initState();
+    _currentSession = widget.authService?.currentSession;
+    _updateClients();
+    _sessionSubscription = widget.authService?.sessionStateStream.listen((session) {
+      if (mounted) {
+        setState(() {
+          _currentSession = session;
+          _updateClients();
+        });
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant MainNavigationScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.authService != widget.authService || oldWidget.apiBaseUrl != widget.apiBaseUrl) {
+      _sessionSubscription?.cancel();
+      _currentSession = widget.authService?.currentSession;
+      _updateClients();
+      _sessionSubscription = widget.authService?.sessionStateStream.listen((session) {
+        if (mounted) {
+          setState(() {
+            _currentSession = session;
+            _updateClients();
+          });
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _sessionSubscription?.cancel();
+    super.dispose();
+  }
+
+  String get _effectiveBaseUrl {
+    final provided = widget.apiBaseUrl;
+    if (provided != null && provided.trim().isNotEmpty) {
+      final trimmed = provided.trim().replaceAll(RegExp(r'/+$'), '');
+      return trimmed;
+    }
+    return const String.fromEnvironment(
+      'CHURCH_API_BASE_URL',
+      defaultValue: 'http://10.0.2.2:5178',
+    );
+  }
+
+  bool get _isAuthenticated {
+    final session = _currentSession;
+    if (session == null) return false;
+    final hasActiveToken = !session.isExpired && session.accessToken.isNotEmpty;
+    final canRefresh = session.refreshToken != null && session.refreshToken!.trim().isNotEmpty;
+    return hasActiveToken || canRefresh;
+  }
+
+  bool get _isPastor {
+    final session = _currentSession;
+    if (session == null) return false;
+    return session.roles.any((r) => r.toLowerCase() == 'pastor');
+  }
+
+  void _updateClients() {
+    final authService = widget.authService;
+    final sessionKey = _isAuthenticated && authService != null
+        ? '${_currentSession!.userId}:${_currentSession!.tenantId}'
+        : null;
+    final effectiveBase = _effectiveBaseUrl;
+
+    if (sessionKey != _cachedSessionKey ||
+        authService != _cachedAuthService ||
+        effectiveBase != _cachedBaseUrl) {
+      _cachedSessionKey = sessionKey;
+      _cachedAuthService = authService;
+      _cachedBaseUrl = effectiveBase;
+
+      if (sessionKey != null && authService != null) {
+        final authClient = AuthenticatedHttpClient(authService: authService);
+        _cachedFellowshipClient = HttpFellowshipApiClient(
+          client: authClient,
+          baseUrl: '$effectiveBase/api/v1',
+        );
+        _cachedPrayerClient = HttpPrayerApiClient(
+          client: authClient,
+          baseUrl: effectiveBase,
+        );
+      } else {
+        _cachedFellowshipClient = null;
+        _cachedPrayerClient = null;
+      }
+    }
+  }
+
+  Widget _buildMessagesScreen() {
+    return MessagesScreen(apiClient: _cachedFellowshipClient);
+  }
+
+  Widget _buildPrayerScreen() {
+    return PrayerScreen(
+      apiClient: _cachedPrayerClient,
+      isPastor: _isPastor,
+    );
+  }
+
+  List<Widget> get _screens => [
+    const HomeScreen(),
+    _buildMessagesScreen(),
+    _buildPrayerScreen(),
+    const WorshipScreen(),
+    const ProfileScreen(),
   ];
 
   @override
   Widget build(BuildContext context) {
+    _updateClients();
     return Scaffold(
       appBar: AppBar(title: Text(_tabNames[_selectedIndex])),
       body: IndexedStack(
