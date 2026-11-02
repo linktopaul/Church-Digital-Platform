@@ -155,6 +155,136 @@ namespace Church.Infrastructure.Migrations
                     b.ToTable("AppUsers", (string)null);
                 });
 
+
+            modelBuilder.Entity("Church.Core.Family", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("FamilyName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("family_name");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("church_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("Families", (string)null);
+                });
+
+            modelBuilder.Entity("Church.Core.Member", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("address");
+
+                    b.Property<DateTime?>("AnniversaryDate")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("anniversary_date");
+
+                    b.Property<string>("AvatarUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("avatar_url");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTime?>("DateOfBirth")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("date_of_birth");
+
+                    b.Property<string>("DirectoryVisibility")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("directory_visibility");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("email");
+
+                    b.Property<Guid?>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<string>("FamilyRole")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("family_role");
+
+                    b.Property<string>("FirstName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("first_name");
+
+                    b.Property<string>("LastName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("last_name");
+
+                    b.Property<string>("PhoneNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("phone_number");
+
+                    b.Property<bool>("ShowAddress")
+                        .HasColumnType("boolean")
+                        .HasColumnName("show_address");
+
+                    b.Property<bool>("ShowBirthDayAndMonth")
+                        .HasColumnType("boolean")
+                        .HasColumnName("show_birthday_and_month");
+
+                    b.Property<bool>("ShowEmail")
+                        .HasColumnType("boolean")
+                        .HasColumnName("show_email");
+
+                    b.Property<bool>("ShowPhoneNumber")
+                        .HasColumnType("boolean")
+                        .HasColumnName("show_phone_number");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("church_id");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FamilyId");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("TenantId", "Email");
+
+                    b.ToTable("Members", (string)null);
+                });
+
             modelBuilder.Entity("Church.Core.AppUserRole", b =>
                 {
                     b.Property<Guid>("Id")
@@ -795,6 +925,22 @@ namespace Church.Infrastructure.Migrations
                 {
                     b.Navigation("Items");
                 });
+
+            modelBuilder.Entity("Church.Core.Member", b =>
+                {
+                    b.HasOne("Church.Core.Family", "Family")
+                        .WithMany("Members")
+                        .HasForeignKey("FamilyId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Family");
+                });
+
+            modelBuilder.Entity("Church.Core.Family", b =>
+                {
+                    b.Navigation("Members");
+                });
+
 #pragma warning restore 612, 618
         }
     }
