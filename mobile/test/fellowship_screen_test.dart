@@ -398,4 +398,57 @@ void main() {
     expect(find.text("Member B Open Group"), findsOneWidget);
     expect(find.text("Member A Private Fellowship"), findsNothing);
   });
+
+  testWidgets('Account switch dismisses open private fellowship detail route and discards pending detail loads',
+      (tester) async {
+    const privateGroupA = FellowshipGroupData(
+      id: 'private_a',
+      name: "Member A Private Fellowship",
+      description: "Secret members-only group",
+      category: FellowshipCategory.housePrayer,
+      isPrivate: true,
+      members: ['Member A Confidential'],
+    );
+
+    final clientA = FakeFellowshipApiClient(
+      initialGroups: [privateGroupA],
+    );
+
+    const publicGroupB = FellowshipGroupData(
+      id: 'public_b',
+      name: "Member B Open Group",
+      description: "Public space",
+      category: FellowshipCategory.mensFellowship,
+      isPrivate: false,
+      members: ['Member B'],
+    );
+
+    final clientB = FakeFellowshipApiClient(initialGroups: [publicGroupB]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MessagesScreen(apiClient: clientA),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Open private group detail
+    await tester.tap(find.text("Member A Private Fellowship"));
+    await tester.pumpAndSettle();
+
+    // Verify detail screen is mounted showing private group info
+    expect(find.text("Secret members-only group"), findsOneWidget);
+
+    // Switch account to Client B
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MessagesScreen(apiClient: clientB),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Detail route was dismissed; back at MessagesScreen showing Client B's group
+    expect(find.text("Secret members-only group"), findsNothing);
+    expect(find.text("Member B Open Group"), findsOneWidget);
+  });
 }
