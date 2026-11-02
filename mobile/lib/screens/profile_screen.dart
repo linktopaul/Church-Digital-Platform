@@ -57,6 +57,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       _directory = [];
       _directoryPage = 1;
       _hasMoreDirectory = true;
+      _isLoadingMoreDirectory = false;
       _errorMessage = null;
       if (widget.apiClient != null) {
         _loadData();
@@ -78,6 +79,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
     setState(() {
       _isLoading = true;
+      _isLoadingMoreDirectory = false;
       _errorMessage = null;
       _directoryPage = 1;
     });
@@ -116,6 +118,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     final currentGen = ++_loadGeneration;
     _searchQuery = query.trim();
     _directoryPage = 1;
+
+    setState(() {
+      _isLoadingMoreDirectory = false;
+    });
 
     try {
       final fetchedDir = await client.getDirectory(
@@ -165,16 +171,23 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     }
   }
 
-  Future<void> _saveProfile(UpdateMemberProfileInput input) async {
-    final client = widget.apiClient;
-    if (client == null) return;
+  Future<void> _saveProfile(UpdateMemberProfileInput input, MemberApiClient boundClient) async {
+    if (widget.apiClient != boundClient || widget.apiClient == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Session changed. Profile changes discarded.')),
+      );
+      return;
+    }
 
     final currentGen = ++_loadGeneration;
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _isLoadingMoreDirectory = false;
+    });
 
     try {
-      final updated = await client.updateMyProfile(input);
-      if (!mounted || currentGen != _loadGeneration || client != widget.apiClient) return;
+      final updated = await boundClient.updateMyProfile(input);
+      if (!mounted || currentGen != _loadGeneration || boundClient != widget.apiClient) return;
 
       setState(() {
         _myProfile = updated;
@@ -185,19 +198,20 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       );
 
       // Reload directory to reflect updated privacy/names under the same generation guard
-      final dir = await client.getDirectory(
+      final dir = await boundClient.getDirectory(
         search: _searchQuery.isEmpty ? null : _searchQuery,
         page: 1,
         pageSize: _pageSize,
       );
-      if (mounted && currentGen == _loadGeneration && client == widget.apiClient) {
+      if (mounted && currentGen == _loadGeneration && boundClient == widget.apiClient) {
         setState(() {
           _directory = dir;
+          _directoryPage = 1;
           _hasMoreDirectory = dir.length >= _pageSize;
         });
       }
     } catch (e) {
-      if (!mounted || currentGen != _loadGeneration || client != widget.apiClient) return;
+      if (!mounted || currentGen != _loadGeneration || boundClient != widget.apiClient) return;
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -210,7 +224,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
   void _showEditProfileDialog() {
     final profile = _myProfile;
-    if (profile == null) return;
+    final dialogClient = widget.apiClient;
+    final dialogGen = _loadGeneration;
+    if (profile == null || dialogClient == null) return;
 
     final firstNameController = TextEditingController(text: profile.firstName);
     final lastNameController = TextEditingController(text: profile.lastName);
@@ -314,6 +330,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 ),
                 FilledButton(
                   onPressed: () {
+                    // Check dialog was opened for the current session
+                    if (widget.apiClient != dialogClient || _loadGeneration != dialogGen) {
+                      Navigator.of(ctx).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Session changed. Profile changes discarded.')),
+                      );
+                      return;
+                    }
+
                     final first = firstNameController.text.trim();
                     final last = lastNameController.text.trim();
                     if (first.isEmpty || last.isEmpty) {
@@ -338,6 +363,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         showAddress: showAddress,
                         showBirthday: showBirthday,
                       ),
+                      dialogClient,
                     );
                   },
                   child: const Text('Save'),
@@ -637,13 +663,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                   ),
                               ],
                             ),
-                            trailing: Chip(
-                              label: Text(
-                                member.directoryVisibility.label,
-                                style: const TextStyle(fontSize: 10),
-                              ),
-                              padding: EdgeInsets.zero,
-                            ),
+                            trailing: member.directoryVisibility != null
+                                ? Chip(
+                                    label: Text(
+                                      member.directoryVisibility!.label,
+                                      style: const TextStyle(fontSize: 10),
+                                    ),
+                                    padding: EdgeInsets.zero,
+                                  )
+                                : null,
                           ),
                         );
                       },

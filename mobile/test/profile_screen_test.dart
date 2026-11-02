@@ -149,7 +149,7 @@ void main() {
           fullName: 'John Reese',
           email: null, // Redacted contact
           phoneNumber: null,
-          directoryVisibility: DirectoryVisibility.private,
+          directoryVisibility: null, // Unconfirmed visibility omitted
           familyRole: FamilyRole.individual,
         ),
       ],
@@ -244,8 +244,10 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    // Tap Edit Profile
-    await tester.tap(find.text('Edit Profile'));
+    // Scroll to Edit Profile button in SingleChildScrollView
+    final editButton = find.text('Edit Profile');
+    await tester.ensureVisible(editButton);
+    await tester.tap(editButton);
     await tester.pumpAndSettle();
 
     expect(find.text('Edit Profile & Privacy'), findsOneWidget);
@@ -265,7 +267,10 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Sign Out'));
+    // Scroll to Sign Out button in SingleChildScrollView
+    final signOutButton = find.text('Sign Out');
+    await tester.ensureVisible(signOutButton);
+    await tester.tap(signOutButton);
     await tester.pumpAndSettle();
 
     expect(mockAuthProvider.revokeCount, 1);

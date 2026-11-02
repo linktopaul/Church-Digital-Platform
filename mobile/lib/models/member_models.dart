@@ -245,7 +245,7 @@ class DirectoryMember {
   final String? phoneNumber;
   final String? address;
   final String? birthdayNotice;
-  final DirectoryVisibility directoryVisibility;
+  final DirectoryVisibility? directoryVisibility;
   final String? familyId;
   final String? familyName;
   final FamilyRole familyRole;
@@ -258,7 +258,7 @@ class DirectoryMember {
     this.phoneNumber,
     this.address,
     this.birthdayNotice,
-    this.directoryVisibility = DirectoryVisibility.private,
+    this.directoryVisibility,
     this.familyId,
     this.familyName,
     this.familyRole = FamilyRole.individual,
@@ -275,6 +275,8 @@ class DirectoryMember {
       computedFullName = 'Church Member';
     }
 
+    final hasVisibility = json.containsKey('directoryVisibility') && json['directoryVisibility'] != null;
+
     return DirectoryMember(
       id: json['id'] as String? ?? '',
       fullName: computedFullName,
@@ -283,7 +285,7 @@ class DirectoryMember {
       phoneNumber: json['phoneNumber'] as String?,
       address: json['address'] as String?,
       birthdayNotice: json['birthdayNotice'] as String?,
-      directoryVisibility: DirectoryVisibility.fromValue(json['directoryVisibility']),
+      directoryVisibility: hasVisibility ? DirectoryVisibility.fromValue(json['directoryVisibility']) : null,
       familyId: json['familyId'] as String?,
       familyName: json['familyName'] as String?,
       familyRole: FamilyRole.fromValue(json['familyRole']),
