@@ -49,6 +49,23 @@ Map<String, dynamic> metadata() => {
 Map<String, dynamic> claims() => {'sub': 'subject', 'member_id': 'member', 'tenant_id': 'tenant', 'roles': ['Member']};
 AuthSession previous() => AuthSession(accessToken: 'old-access', refreshToken: 'old-refresh', userId: 'member', tenantId: 'tenant', roles: ['Member'], expiresAt: DateTime.now().subtract(const Duration(hours: 1)));
 
+class _DelayedClearStorage extends InMemorySecureTokenStorage {
+  final clearEntered = Completer<void>();
+  final allowClear = Completer<void>();
+  bool delayClear = false;
+
+  _DelayedClearStorage(super.initialSession);
+
+  @override
+  Future<void> clearSession() async {
+    if (delayClear) {
+      if (!clearEntered.isCompleted) clearEntered.complete();
+      await allowClear.future;
+    }
+    await super.clearSession();
+  }
+}
+
 void main() {
   setUp(() { debugDefaultTargetPlatformOverride = TargetPlatform.android; });
   tearDown(() { debugDefaultTargetPlatformOverride = null; });
@@ -195,5 +212,53 @@ void main() {
     await rejected;
     expect(native.tokenCalls, 0);
     expect(await storage.getSession(), isNull);
+  });
+  test('old-session revocation after slow storage clear does not cancel newer authorization', () async {
+    final delayedStorage = _DelayedClearStorage(previous());
+    final scopedProvider = OpenIddictAuthProvider(
+      configuration: config(),
+      storage: delayedStorage,
+      appAuth: native,
+      httpClient: MockClient((request) async {
+        requests.add(request);
+        if (request.url.path.endsWith('openid-configuration')) return http.Response(jsonEncode(document), 200);
+        if (request.url.path.endsWith('userinfo')) return http.Response(jsonEncode(userInfo), 200);
+        if (request.url.path.endsWith('revoke')) return http.Response('', 200);
+        throw StateError('Unexpected network request');
+      }),
+    );
+    addTearDown(scopedProvider.close);
+
+    final manager = AuthSessionManager(provider: scopedProvider, storage: delayedStorage);
+    addTearDown(manager.dispose);
+    await manager.setSession(previous());
+
+    delayedStorage.delayClear = true;
+    final signOutFuture = manager.signOut();
+    await delayedStorage.clearEntered.future;
+
+    final authEntered = Completer<void>();
+    final authResult = Completer<AuthorizationResponse>();
+    native.authorizeHandler = () {
+      authEntered.complete();
+      return authResult.future;
+    };
+
+    // Start new authorization while signOut is still awaiting storage cleanup.
+    final signInFuture = scopedProvider.authorizeAndSignIn(manager);
+    await authEntered.future;
+
+    // Now allow signOut's storage clear and old-session revocation to complete.
+    delayedStorage.delayClear = false;
+    delayedStorage.allowClear.complete();
+    await signOutFuture;
+
+    // Complete the newer browser authorization; it must succeed rather than
+    // being cancelled by the old session's late revokeSession call.
+    authResult.complete(authorization);
+    final newSession = await signInFuture;
+    expect(newSession.accessToken, 'access');
+    expect(manager.currentSession, equals(newSession));
+    expect(await delayedStorage.getSession(), equals(newSession));
   });
 }

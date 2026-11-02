@@ -16,7 +16,7 @@ class OidcRequestException implements Exception {
 
 /// Public native OIDC client. Browser, state, nonce and PKCE are managed by
 /// AppAuth; no password grant, client secret, WebView or custom token format.
-class OpenIddictAuthProvider implements AuthProvider {
+class OpenIddictAuthProvider implements AuthProvider, CancelableAuthProvider {
   final OidcConfiguration configuration;
   final SecureTokenStorage _storage;
   final FlutterAppAuth _appAuth;
@@ -233,9 +233,13 @@ class OpenIddictAuthProvider implements AuthProvider {
   }
 
   @override
-  Future<void> revokeSession({required String token}) async {
+  void cancelPendingAuthorization() {
     ++_authorizationAttempt;
     _pending = null;
+  }
+
+  @override
+  Future<void> revokeSession({required String token}) async {
     final metadata = await _metadata();
     final request = http.Request('POST', _endpoint(metadata, 'revocation_endpoint'));
     request.bodyFields = {'client_id': configuration.clientId, 'token': token};
@@ -245,8 +249,7 @@ class OpenIddictAuthProvider implements AuthProvider {
 
   void close() {
     _closed = true;
-    ++_authorizationAttempt;
-    _pending = null;
+    cancelPendingAuthorization();
     _http.close();
   }
 }

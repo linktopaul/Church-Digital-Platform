@@ -30,6 +30,14 @@ abstract class AuthProvider {
   });
 }
 
+/// Optional capability for providers that maintain in-flight interactive
+/// authorization state that must be invalidated immediately at a session
+/// lifecycle boundary (such as sign-out or session replacement) rather than
+/// when delayed remote token revocation runs.
+abstract class CancelableAuthProvider {
+  void cancelPendingAuthorization();
+}
+
 /// Only an explicit provider rejection (for example OAuth invalid_grant) is
 /// terminal. Transport errors, timeouts and temporary server errors must remain
 /// ordinary exceptions so a later refresh can retry the stored credentials.

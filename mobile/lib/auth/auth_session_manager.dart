@@ -45,6 +45,7 @@ class AuthSessionManager implements AuthService {
   final SecureTokenStorage _storage;
   final _sessionController = StreamController<AuthSession?>.broadcast();
   AuthSession? _currentSession;
+  AuthSession? _pendingRotatedSession;
   Object _identity = Object();
   int _generation = 0;
   bool _disposed = false;
@@ -74,9 +75,13 @@ class AuthSessionManager implements AuthService {
     if (_disposed) throw StateError('Authentication service is disposed');
     _identity = Object();
     _currentSession = null;
+    _pendingRotatedSession = null;
     _refreshing = null;
     _initializing = null;
     _isInitialized = true;
+    if (_provider is CancelableAuthProvider) {
+      (_provider as CancelableAuthProvider).cancelPendingAuthorization();
+    }
     return ++_generation;
   }
 
@@ -175,16 +180,35 @@ class AuthSessionManager implements AuthService {
   Future<AuthSession> _refresh(int generation) async {
     try {
       _check(generation);
+      final pending = _pendingRotatedSession;
+      if (pending != null) {
+        if (!pending.isExpired) {
+          await _apply(generation, pending);
+          _pendingRotatedSession = null;
+          return pending;
+        }
+        // If the unpersisted rotated session has since expired, persist it
+        // first so storage and memory hold the rotated refresh token before
+        // attempting another token exchange.
+        await _persist(generation, pending);
+        _check(generation);
+        _currentSession = pending;
+        _pendingRotatedSession = null;
+      }
       // Never reload storage here: sign-out must not resurrect persisted state.
       final token = _currentSession?.refreshToken;
       if (token == null || token.isEmpty) {
         throw StateError('Cannot refresh session: no refresh token available');
       }
       final updated = await _provider.refreshSession(refreshToken: token);
+      _check(generation);
+      _pendingRotatedSession = updated;
       await _apply(generation, updated);
+      _pendingRotatedSession = null;
       return updated;
     } on TerminalAuthException {
       _check(generation);
+      _pendingRotatedSession = null;
       await _persist(generation, null);
       _check(generation);
       _currentSession = null;
@@ -198,7 +222,8 @@ class AuthSessionManager implements AuthService {
 
   @override
   Future<void> signOut() async {
-    final token = _currentSession?.refreshToken ?? _currentSession?.accessToken;
+    final token = (_pendingRotatedSession ?? _currentSession)?.refreshToken ??
+        (_pendingRotatedSession ?? _currentSession)?.accessToken;
     final generation = _invalidate();
     _currentSession = null;
     _sessionController.add(null);
@@ -217,6 +242,7 @@ class AuthSessionManager implements AuthService {
   void dispose() {
     _disposed = true;
     ++_generation;
+    _pendingRotatedSession = null;
     _identity = Object();
     _sessionController.close();
   }

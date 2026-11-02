@@ -47,6 +47,7 @@ class DeferredStorage extends InMemorySecureTokenStorage {
   final saved = Completer<void>();
   bool delayRead = false;
   bool delaySave = false;
+  Exception? saveException;
   @override
   Future<AuthSession?> getSession() {
     if (!delayRead) return super.getSession();
@@ -58,6 +59,9 @@ class DeferredStorage extends InMemorySecureTokenStorage {
     if (delaySave) {
       saveEntered.complete();
       await saved.future;
+    }
+    if (saveException != null) {
+      throw saveException!;
     }
     await super.saveSession(session);
   }
@@ -246,6 +250,41 @@ void main() {
     expect(await storage.getSession(), original);
   });
 
+  test('temporary storage failure after refresh rotation preserves rotated session for retry without re-exchanging consumed token', () async {
+    final original = session('A', expired: true);
+    final rotated = session('A').copyWith(
+      accessToken: 'rotated-access',
+      refreshToken: 'rotated-refresh',
+    );
+    final storage = DeferredStorage(original);
+    var exchangedTokens = <String>[];
+    final provider = MockAuthProvider()..mockSessionToReturn = rotated;
+    final manager = AuthSessionManager(
+      provider: _SingleUseRefreshProvider(
+        delegate: provider,
+        validRefreshToken: original.refreshToken!,
+        onRefresh: exchangedTokens.add,
+      ),
+      storage: storage,
+    );
+    addTearDown(manager.dispose);
+    await manager.setSession(original);
+
+    final storageFailure = Exception('temporary keystore lock');
+    storage.saveException = storageFailure;
+    await expectLater(manager.refresh(), throwsA(same(storageFailure)));
+    expect(exchangedTokens, [original.refreshToken]);
+
+    // Subsequent refresh retries persisting the already-rotated credentials
+    // rather than submitting the consumed refresh token again.
+    storage.saveException = null;
+    final recovered = await manager.refresh();
+    expect(recovered, equals(rotated));
+    expect(manager.currentSession, equals(rotated));
+    expect(await storage.getSession(), equals(rotated));
+    expect(exchangedTokens, [original.refreshToken]);
+  });
+
   test('dispose prevents a late provider result from writing or emitting', () async {
     final provider = DeferredProvider();
     final original = session('A');
@@ -273,4 +312,27 @@ void main() {
     expect(await first, await second);
     expect(provider.refreshCount, 1);
   });
+}
+
+class _SingleUseRefreshProvider extends MockAuthProvider {
+  final MockAuthProvider delegate;
+  final String validRefreshToken;
+  final void Function(String) onRefresh;
+  bool _consumed = false;
+
+  _SingleUseRefreshProvider({
+    required this.delegate,
+    required this.validRefreshToken,
+    required this.onRefresh,
+  });
+
+  @override
+  Future<AuthSession> refreshSession({required String refreshToken}) async {
+    onRefresh(refreshToken);
+    if (_consumed || refreshToken != validRefreshToken) {
+      throw const TerminalAuthException();
+    }
+    _consumed = true;
+    return delegate.refreshSession(refreshToken: refreshToken);
+  }
 }
