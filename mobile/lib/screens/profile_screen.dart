@@ -8,7 +8,8 @@ import '../services/member_api_client.dart';
 /// Guardrails:
 /// - Fails closed: If [apiClient] is null, displays an explicit unauthenticated state.
 /// - Privacy-first: Redacted fields are masked; updates strictly enforce server validation.
-/// - Multi-tenant isolation: No cross-tenant data leakage; all requests use authenticated client.
+/// - Session isolation: Guard all asynchronous load/save completions with client identity and load generation
+///   to prevent race conditions when switching tenants or signing in/out.
 class ProfileScreen extends StatefulWidget {
   final MemberApiClient? apiClient;
   final AuthService? authService;
@@ -30,8 +31,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   MemberProfile? _myProfile;
   List<DirectoryMember> _directory = [];
   bool _isLoading = false;
+  bool _isLoadingMoreDirectory = false;
+  bool _hasMoreDirectory = true;
+  int _directoryPage = 1;
+  static const int _pageSize = 50;
   String? _errorMessage;
   String _searchQuery = '';
+  int _loadGeneration = 0;
 
   @override
   void initState() {
@@ -46,8 +52,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   void didUpdateWidget(covariant ProfileScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.apiClient != widget.apiClient) {
+      _loadGeneration++;
       _myProfile = null;
       _directory = [];
+      _directoryPage = 1;
+      _hasMoreDirectory = true;
       _errorMessage = null;
       if (widget.apiClient != null) {
         _loadData();
@@ -65,25 +74,34 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     final client = widget.apiClient;
     if (client == null) return;
 
+    final currentGen = ++_loadGeneration;
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _directoryPage = 1;
     });
 
     try {
       final profileFuture = client.getMyProfile();
-      final directoryFuture = client.getDirectory();
+      final directoryFuture = client.getDirectory(
+        search: _searchQuery.isEmpty ? null : _searchQuery,
+        page: 1,
+        pageSize: _pageSize,
+      );
 
       final results = await Future.wait([profileFuture, directoryFuture]);
-      if (!mounted) return;
+      if (!mounted || currentGen != _loadGeneration || client != widget.apiClient) return;
 
+      final fetchedDir = results[1] as List<DirectoryMember>;
       setState(() {
         _myProfile = results[0] as MemberProfile;
-        _directory = results[1] as List<DirectoryMember>;
+        _directory = fetchedDir;
+        _hasMoreDirectory = fetchedDir.length >= _pageSize;
         _isLoading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || currentGen != _loadGeneration || client != widget.apiClient) return;
       setState(() {
         _isLoading = false;
         _errorMessage = e is MemberApiException ? e.message : 'Failed to load member profile.';
@@ -91,15 +109,73 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     }
   }
 
+  Future<void> _searchDirectory(String query) async {
+    final client = widget.apiClient;
+    if (client == null) return;
+
+    final currentGen = ++_loadGeneration;
+    _searchQuery = query.trim();
+    _directoryPage = 1;
+
+    try {
+      final fetchedDir = await client.getDirectory(
+        search: _searchQuery.isEmpty ? null : _searchQuery,
+        page: 1,
+        pageSize: _pageSize,
+      );
+      if (!mounted || currentGen != _loadGeneration || client != widget.apiClient) return;
+
+      setState(() {
+        _directory = fetchedDir;
+        _hasMoreDirectory = fetchedDir.length >= _pageSize;
+      });
+    } catch (e) {
+      if (!mounted || currentGen != _loadGeneration || client != widget.apiClient) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e is MemberApiException ? e.message : 'Directory search failed.')),
+      );
+    }
+  }
+
+  Future<void> _loadMoreDirectory() async {
+    final client = widget.apiClient;
+    if (client == null || _isLoadingMoreDirectory || !_hasMoreDirectory) return;
+
+    final currentGen = _loadGeneration;
+    setState(() => _isLoadingMoreDirectory = true);
+
+    final nextPage = _directoryPage + 1;
+    try {
+      final moreMembers = await client.getDirectory(
+        search: _searchQuery.isEmpty ? null : _searchQuery,
+        page: nextPage,
+        pageSize: _pageSize,
+      );
+      if (!mounted || currentGen != _loadGeneration || client != widget.apiClient) return;
+
+      setState(() {
+        _directory.addAll(moreMembers);
+        _directoryPage = nextPage;
+        _hasMoreDirectory = moreMembers.length >= _pageSize;
+        _isLoadingMoreDirectory = false;
+      });
+    } catch (e) {
+      if (!mounted || currentGen != _loadGeneration || client != widget.apiClient) return;
+      setState(() => _isLoadingMoreDirectory = false);
+    }
+  }
+
   Future<void> _saveProfile(UpdateMemberProfileInput input) async {
     final client = widget.apiClient;
     if (client == null) return;
 
+    final currentGen = ++_loadGeneration;
     setState(() => _isLoading = true);
 
     try {
       final updated = await client.updateMyProfile(input);
-      if (!mounted) return;
+      if (!mounted || currentGen != _loadGeneration || client != widget.apiClient) return;
+
       setState(() {
         _myProfile = updated;
         _isLoading = false;
@@ -107,13 +183,21 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Profile updated successfully.')),
       );
-      // Reload directory to reflect updated privacy/names
-      final dir = await client.getDirectory();
-      if (mounted) {
-        setState(() => _directory = dir);
+
+      // Reload directory to reflect updated privacy/names under the same generation guard
+      final dir = await client.getDirectory(
+        search: _searchQuery.isEmpty ? null : _searchQuery,
+        page: 1,
+        pageSize: _pageSize,
+      );
+      if (mounted && currentGen == _loadGeneration && client == widget.apiClient) {
+        setState(() {
+          _directory = dir;
+          _hasMoreDirectory = dir.length >= _pageSize;
+        });
       }
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || currentGen != _loadGeneration || client != widget.apiClient) return;
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -244,6 +328,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         firstName: first,
                         lastName: last,
                         phoneNumber: phoneController.text.trim().isEmpty ? null : phoneController.text.trim(),
+                        avatarUrl: profile.avatarUrl,
                         address: addressController.text.trim().isEmpty ? null : addressController.text.trim(),
                         dateOfBirth: profile.dateOfBirth,
                         anniversaryDate: profile.anniversaryDate,
@@ -469,14 +554,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   }
 
   Widget _buildDirectoryTab() {
-    final filtered = _directory.where((m) {
-      if (_searchQuery.isEmpty) return true;
-      final q = _searchQuery.toLowerCase();
-      return m.fullName.toLowerCase().contains(q) ||
-          (m.email?.toLowerCase().contains(q) ?? false) ||
-          (m.familyName?.toLowerCase().contains(q) ?? false);
-    }).toList();
-
     return Column(
       children: [
         Padding(
@@ -488,67 +565,90 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             ),
+            onSubmitted: (val) => _searchDirectory(val),
             onChanged: (val) {
-              setState(() => _searchQuery = val.trim());
+              if (val.trim() != _searchQuery) {
+                _searchDirectory(val);
+              }
             },
           ),
         ),
         Expanded(
-          child: RefreshIndicator(
-            onRefresh: _loadData,
-            child: filtered.isEmpty
-                ? const Center(child: Text('No members found in directory.'))
-                : ListView.builder(
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) {
-                      final member = filtered[index];
-                      final initials = (member.firstName.isNotEmpty ? member.firstName[0] : '') +
-                          (member.lastName.isNotEmpty ? member.lastName[0] : '');
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (scrollInfo) {
+              if (scrollInfo.metrics.pixels >= scrollInfo.metrics.maxScrollExtent - 200 &&
+                  !_isLoadingMoreDirectory &&
+                  _hasMoreDirectory) {
+                _loadMoreDirectory();
+              }
+              return false;
+            },
+            child: RefreshIndicator(
+              onRefresh: _loadData,
+              child: _directory.isEmpty
+                  ? const Center(child: Text('No members found in directory.'))
+                  : ListView.builder(
+                      itemCount: _directory.length + (_isLoadingMoreDirectory ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index == _directory.length) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16.0),
+                            child: Center(child: CircularProgressIndicator()),
+                          );
+                        }
 
-                      return Card(
-                        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-                            child: Text(initials.toUpperCase()),
-                          ),
-                          title: Text(
-                            member.fullName,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (member.familyName != null)
-                                Text(
-                                  '${member.familyName} (${member.familyRole.label})',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Theme.of(context).colorScheme.primary,
-                                  ),
-                                ),
-                              if (member.email != null && member.email!.isNotEmpty)
-                                Text('Email: ${member.email}', style: const TextStyle(fontSize: 12)),
-                              if (member.phoneNumber != null && member.phoneNumber!.isNotEmpty)
-                                Text('Phone: ${member.phoneNumber}', style: const TextStyle(fontSize: 12)),
-                              if (member.email == null && member.phoneNumber == null)
-                                const Text(
-                                  'Contact details unlisted',
-                                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                                ),
-                            ],
-                          ),
-                          trailing: Chip(
-                            label: Text(
-                              member.directoryVisibility.label,
-                              style: const TextStyle(fontSize: 10),
+                        final member = _directory[index];
+                        final initial = member.fullName.isNotEmpty
+                            ? member.fullName[0].toUpperCase()
+                            : '?';
+
+                        return Card(
+                          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+                              child: Text(initial),
                             ),
-                            padding: EdgeInsets.zero,
+                            title: Text(
+                              member.fullName,
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (member.familyName != null)
+                                  Text(
+                                    '${member.familyName} (${member.familyRole.label})',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Theme.of(context).colorScheme.primary,
+                                    ),
+                                  ),
+                                if (member.email != null && member.email!.isNotEmpty)
+                                  Text('Email: ${member.email}', style: const TextStyle(fontSize: 12)),
+                                if (member.phoneNumber != null && member.phoneNumber!.isNotEmpty)
+                                  Text('Phone: ${member.phoneNumber}', style: const TextStyle(fontSize: 12)),
+                                if (member.birthdayNotice != null && member.birthdayNotice!.isNotEmpty)
+                                  Text('Birthday: ${member.birthdayNotice}', style: const TextStyle(fontSize: 12)),
+                                if (member.email == null && member.phoneNumber == null)
+                                  const Text(
+                                    'Contact details unlisted',
+                                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                                  ),
+                              ],
+                            ),
+                            trailing: Chip(
+                              label: Text(
+                                member.directoryVisibility.label,
+                                style: const TextStyle(fontSize: 10),
+                              ),
+                              padding: EdgeInsets.zero,
+                            ),
                           ),
-                        ),
-                      );
-                    },
-                  ),
+                        );
+                      },
+                    ),
+            ),
           ),
         ),
       ],

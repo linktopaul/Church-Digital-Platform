@@ -123,6 +123,7 @@ class MemberProfile {
   final String lastName;
   final String email;
   final String? phoneNumber;
+  final String? avatarUrl;
   final String? address;
   final DateTime? dateOfBirth;
   final DateTime? anniversaryDate;
@@ -144,6 +145,7 @@ class MemberProfile {
     required this.lastName,
     required this.email,
     this.phoneNumber,
+    this.avatarUrl,
     this.address,
     this.dateOfBirth,
     this.anniversaryDate,
@@ -169,6 +171,7 @@ class MemberProfile {
       lastName: json['lastName'] as String? ?? '',
       email: json['email'] as String? ?? '',
       phoneNumber: json['phoneNumber'] as String?,
+      avatarUrl: json['avatarUrl'] as String?,
       address: json['address'] as String?,
       dateOfBirth: json['dateOfBirth'] != null ? DateTime.tryParse(json['dateOfBirth'] as String) : null,
       anniversaryDate: json['anniversaryDate'] != null ? DateTime.tryParse(json['anniversaryDate'] as String) : null,
@@ -176,7 +179,7 @@ class MemberProfile {
       showEmail: json['showEmail'] as bool? ?? false,
       showPhoneNumber: json['showPhoneNumber'] as bool? ?? false,
       showAddress: json['showAddress'] as bool? ?? false,
-      showBirthday: json['showBirthday'] as bool? ?? false,
+      showBirthday: json['showBirthDayAndMonth'] as bool? ?? json['showBirthday'] as bool? ?? false,
       familyId: json['familyId'] as String?,
       familyName: json['familyName'] as String?,
       familyRole: FamilyRole.fromValue(json['familyRole']),
@@ -192,6 +195,7 @@ class MemberProfile {
     String? lastName,
     String? email,
     String? phoneNumber,
+    String? avatarUrl,
     String? address,
     DateTime? dateOfBirth,
     DateTime? anniversaryDate,
@@ -213,6 +217,7 @@ class MemberProfile {
       lastName: lastName ?? this.lastName,
       email: email ?? this.email,
       phoneNumber: phoneNumber ?? this.phoneNumber,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
       address: address ?? this.address,
       dateOfBirth: dateOfBirth ?? this.dateOfBirth,
       anniversaryDate: anniversaryDate ?? this.anniversaryDate,
@@ -234,12 +239,12 @@ class MemberProfile {
 @immutable
 class DirectoryMember {
   final String id;
-  final String firstName;
-  final String lastName;
+  final String fullName;
+  final String? avatarUrl;
   final String? email;
   final String? phoneNumber;
   final String? address;
-  final DateTime? dateOfBirth;
+  final String? birthdayNotice;
   final DirectoryVisibility directoryVisibility;
   final String? familyId;
   final String? familyName;
@@ -247,29 +252,37 @@ class DirectoryMember {
 
   const DirectoryMember({
     required this.id,
-    required this.firstName,
-    required this.lastName,
+    required this.fullName,
+    this.avatarUrl,
     this.email,
     this.phoneNumber,
     this.address,
-    this.dateOfBirth,
+    this.birthdayNotice,
     this.directoryVisibility = DirectoryVisibility.private,
     this.familyId,
     this.familyName,
     this.familyRole = FamilyRole.individual,
   });
 
-  String get fullName => '$firstName $lastName'.trim();
-
   factory DirectoryMember.fromJson(Map<String, dynamic> json) {
+    String computedFullName = json['fullName'] as String? ?? '';
+    if (computedFullName.isEmpty) {
+      final first = json['firstName'] as String? ?? '';
+      final last = json['lastName'] as String? ?? '';
+      computedFullName = '$first $last'.trim();
+    }
+    if (computedFullName.isEmpty) {
+      computedFullName = 'Church Member';
+    }
+
     return DirectoryMember(
       id: json['id'] as String? ?? '',
-      firstName: json['firstName'] as String? ?? '',
-      lastName: json['lastName'] as String? ?? '',
+      fullName: computedFullName,
+      avatarUrl: json['avatarUrl'] as String?,
       email: json['email'] as String?,
       phoneNumber: json['phoneNumber'] as String?,
       address: json['address'] as String?,
-      dateOfBirth: json['dateOfBirth'] != null ? DateTime.tryParse(json['dateOfBirth'] as String) : null,
+      birthdayNotice: json['birthdayNotice'] as String?,
       directoryVisibility: DirectoryVisibility.fromValue(json['directoryVisibility']),
       familyId: json['familyId'] as String?,
       familyName: json['familyName'] as String?,
@@ -317,6 +330,7 @@ class UpdateMemberProfileInput {
   final String firstName;
   final String lastName;
   final String? phoneNumber;
+  final String? avatarUrl;
   final String? address;
   final DateTime? dateOfBirth;
   final DateTime? anniversaryDate;
@@ -330,6 +344,7 @@ class UpdateMemberProfileInput {
     required this.firstName,
     required this.lastName,
     this.phoneNumber,
+    this.avatarUrl,
     this.address,
     this.dateOfBirth,
     this.anniversaryDate,
@@ -345,6 +360,7 @@ class UpdateMemberProfileInput {
       'firstName': firstName,
       'lastName': lastName,
       'phoneNumber': phoneNumber,
+      'avatarUrl': avatarUrl,
       'address': address,
       'dateOfBirth': dateOfBirth?.toUtc().toIso8601String(),
       'anniversaryDate': anniversaryDate?.toUtc().toIso8601String(),
@@ -352,6 +368,7 @@ class UpdateMemberProfileInput {
       'showEmail': showEmail,
       'showPhoneNumber': showPhoneNumber,
       'showAddress': showAddress,
+      'showBirthDayAndMonth': showBirthday,
       'showBirthday': showBirthday,
     };
   }

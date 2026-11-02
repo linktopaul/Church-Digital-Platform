@@ -32,7 +32,7 @@ void main() {
       expect(FamilyRole.fromValue(null), FamilyRole.individual);
     });
 
-    test('MemberProfile deserialization parses all fields and date strings', () {
+    test('MemberProfile deserialization parses all backend DTO fields including avatarUrl and showBirthDayAndMonth', () {
       final json = {
         'id': 'mem-1',
         'tenantId': 'ten-1',
@@ -40,6 +40,7 @@ void main() {
         'lastName': 'Doe',
         'email': 'john@church.local',
         'phoneNumber': '+15551234567',
+        'avatarUrl': 'https://church.local/avatars/john.png',
         'address': '123 Main St',
         'dateOfBirth': '1990-05-15T00:00:00.000Z',
         'anniversaryDate': '2015-06-20T00:00:00.000Z',
@@ -47,7 +48,7 @@ void main() {
         'showEmail': true,
         'showPhoneNumber': false,
         'showAddress': true,
-        'showBirthday': false,
+        'showBirthDayAndMonth': true,
         'familyId': 'fam-1',
         'familyName': 'Doe Family',
         'familyRole': 1,
@@ -61,23 +62,25 @@ void main() {
       expect(profile.fullName, 'John Doe');
       expect(profile.email, 'john@church.local');
       expect(profile.phoneNumber, '+15551234567');
+      expect(profile.avatarUrl, 'https://church.local/avatars/john.png');
       expect(profile.directoryVisibility, DirectoryVisibility.publicToMembers);
       expect(profile.showEmail, true);
       expect(profile.showPhoneNumber, false);
+      expect(profile.showBirthday, true);
       expect(profile.familyRole, FamilyRole.headOfHousehold);
       expect(profile.familyName, 'Doe Family');
       expect(profile.dateOfBirth?.year, 1990);
     });
 
-    test('DirectoryMember deserialization handles null contact info for private profiles', () {
+    test('DirectoryMember deserialization parses fullName and handles null contact info for private profiles', () {
       final json = {
         'id': 'mem-2',
-        'firstName': 'Jane',
-        'lastName': 'Smith',
+        'fullName': 'Jane Smith',
+        'avatarUrl': null,
         'email': null,
         'phoneNumber': null,
         'address': null,
-        'dateOfBirth': null,
+        'birthdayNotice': null,
         'directoryVisibility': 0,
         'familyId': null,
         'familyName': null,
@@ -87,32 +90,37 @@ void main() {
       final member = DirectoryMember.fromJson(json);
       expect(member.id, 'mem-2');
       expect(member.fullName, 'Jane Smith');
+      expect(member.avatarUrl, isNull);
       expect(member.email, isNull);
       expect(member.phoneNumber, isNull);
+      expect(member.birthdayNotice, isNull);
       expect(member.directoryVisibility, DirectoryVisibility.private);
     });
 
-    test('UpdateMemberProfileInput serializes correctly to JSON', () {
+    test('UpdateMemberProfileInput serializes correctly to JSON including showBirthDayAndMonth and avatarUrl', () {
       final input = UpdateMemberProfileInput(
         firstName: 'Alice',
         lastName: 'Wonderland',
         phoneNumber: '+15559876543',
+        avatarUrl: 'https://church.local/avatars/alice.png',
         address: '456 Elm St',
         directoryVisibility: DirectoryVisibility.publicToMembers,
         showEmail: true,
         showPhoneNumber: true,
         showAddress: false,
-        showBirthday: false,
+        showBirthday: true,
       );
 
       final json = input.toJson();
       expect(json['firstName'], 'Alice');
       expect(json['lastName'], 'Wonderland');
       expect(json['phoneNumber'], '+15559876543');
+      expect(json['avatarUrl'], 'https://church.local/avatars/alice.png');
       expect(json['directoryVisibility'], 1);
       expect(json['showEmail'], true);
       expect(json['showPhoneNumber'], true);
       expect(json['showAddress'], false);
+      expect(json['showBirthDayAndMonth'], true);
     });
   });
 
@@ -131,8 +139,10 @@ void main() {
             'firstName': 'Paul',
             'lastName': 'Apostle',
             'email': 'paul@church.local',
+            'avatarUrl': 'https://church.local/paul.png',
             'directoryVisibility': 1,
             'showEmail': true,
+            'showBirthDayAndMonth': true,
             'familyRole': 0,
           }),
           200,
@@ -146,10 +156,12 @@ void main() {
       expect(profile.id, 'mem-10');
       expect(profile.fullName, 'Paul Apostle');
       expect(profile.email, 'paul@church.local');
+      expect(profile.avatarUrl, 'https://church.local/paul.png');
       expect(profile.directoryVisibility, DirectoryVisibility.publicToMembers);
+      expect(profile.showBirthday, true);
     });
 
-    test('updateMyProfile calls PUT /api/v1/members/me with JSON payload', () async {
+    test('updateMyProfile calls PUT /api/v1/members/me with JSON payload including avatarUrl and showBirthDayAndMonth', () async {
       final client = MockClient((request) async {
         expect(request.method, 'PUT');
         expect(request.url.path, '/api/v1/members/me');
@@ -157,6 +169,8 @@ void main() {
         final body = jsonDecode(request.body) as Map<String, dynamic>;
         expect(body['firstName'], 'Peter');
         expect(body['lastName'], 'Fisherman');
+        expect(body['avatarUrl'], 'https://church.local/peter.png');
+        expect(body['showBirthDayAndMonth'], true);
         expect(body['directoryVisibility'], 0);
 
         return http.Response(
@@ -166,8 +180,10 @@ void main() {
             'firstName': 'Peter',
             'lastName': 'Fisherman',
             'email': 'peter@church.local',
+            'avatarUrl': 'https://church.local/peter.png',
             'directoryVisibility': 0,
             'showEmail': false,
+            'showBirthDayAndMonth': true,
             'familyRole': 0,
           }),
           200,
@@ -180,26 +196,30 @@ void main() {
         const UpdateMemberProfileInput(
           firstName: 'Peter',
           lastName: 'Fisherman',
+          avatarUrl: 'https://church.local/peter.png',
+          showBirthday: true,
           directoryVisibility: DirectoryVisibility.private,
         ),
       );
 
       expect(updated.firstName, 'Peter');
+      expect(updated.avatarUrl, 'https://church.local/peter.png');
       expect(updated.directoryVisibility, DirectoryVisibility.private);
     });
 
-    test('getDirectory calls GET /api/v1/members with search parameter', () async {
+    test('getDirectory calls GET /api/v1/members with search and pagination parameters', () async {
       final client = MockClient((request) async {
         expect(request.method, 'GET');
         expect(request.url.path, '/api/v1/members');
         expect(request.url.queryParameters['search'], 'Barnabas');
+        expect(request.url.queryParameters['page'], '2');
+        expect(request.url.queryParameters['pageSize'], '25');
 
         return http.Response(
           jsonEncode([
             {
               'id': 'mem-12',
-              'firstName': 'Barnabas',
-              'lastName': 'Encourager',
+              'fullName': 'Barnabas Encourager',
               'email': 'barnabas@church.local',
               'directoryVisibility': 1,
               'familyRole': 0,
@@ -211,7 +231,11 @@ void main() {
       });
 
       final apiClient = HttpMemberApiClient(client: client, baseUrl: testBaseUrl);
-      final directory = await apiClient.getDirectory(search: 'Barnabas');
+      final directory = await apiClient.getDirectory(
+        search: 'Barnabas',
+        page: 2,
+        pageSize: 25,
+      );
 
       expect(directory, hasLength(1));
       expect(directory.first.fullName, 'Barnabas Encourager');
@@ -230,8 +254,7 @@ void main() {
             'members': [
               {
                 'id': 'mem-12',
-                'firstName': 'Barnabas',
-                'lastName': 'Encourager',
+                'fullName': 'Barnabas Encourager',
                 'directoryVisibility': 1,
                 'familyRole': 1,
               }
@@ -248,7 +271,7 @@ void main() {
       expect(family.id, 'fam-42');
       expect(family.familyName, 'The Encouragers');
       expect(family.members, hasLength(1));
-      expect(family.members.first.firstName, 'Barnabas');
+      expect(family.members.first.fullName, 'Barnabas Encourager');
     });
 
     test('Error handling maps HTTP status codes to MemberApiException', () async {

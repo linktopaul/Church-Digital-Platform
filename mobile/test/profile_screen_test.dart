@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:church_digital_platform_mobile/auth/auth_session.dart';
@@ -55,6 +54,7 @@ class FakeMemberApiClient implements MemberApiClient {
       lastName: input.lastName,
       email: myProfile?.email ?? 'john.doe@church.local',
       phoneNumber: input.phoneNumber,
+      avatarUrl: input.avatarUrl ?? myProfile?.avatarUrl,
       address: input.address,
       dateOfBirth: input.dateOfBirth,
       anniversaryDate: input.anniversaryDate,
@@ -71,19 +71,26 @@ class FakeMemberApiClient implements MemberApiClient {
   }
 
   @override
-  Future<List<DirectoryMember>> getDirectory({String? search}) async {
+  Future<List<DirectoryMember>> getDirectory({
+    String? search,
+    int page = 1,
+    int pageSize = 50,
+  }) async {
     if (shouldFailDirectory) {
       throw MemberApiException(failureMessage ?? 'Failed to load directory');
     }
-    if (search == null || search.isEmpty) {
-      return List.from(directory);
+    var list = List<DirectoryMember>.from(directory);
+    if (search != null && search.trim().isNotEmpty) {
+      final q = search.trim().toLowerCase();
+      list = list
+          .where((m) =>
+              m.fullName.toLowerCase().contains(q) ||
+              (m.email?.toLowerCase().contains(q) ?? false) ||
+              (m.familyName?.toLowerCase().contains(q) ?? false))
+          .toList();
     }
-    final q = search.toLowerCase();
-    return directory
-        .where((m) =>
-            m.fullName.toLowerCase().contains(q) ||
-            (m.email?.toLowerCase().contains(q) ?? false))
-        .toList();
+    final skip = (page - 1) * pageSize;
+    return list.skip(skip).take(pageSize).toList();
   }
 
   @override
@@ -118,18 +125,19 @@ void main() {
         lastName: 'Connor',
         email: 'sarah@church.local',
         phoneNumber: '+15551234567',
+        avatarUrl: 'https://church.local/sarah.png',
         address: '100 Resistance Way',
         directoryVisibility: DirectoryVisibility.publicToMembers,
         showEmail: true,
         showPhoneNumber: true,
+        showBirthday: true,
         familyName: 'Connor Family',
         familyRole: FamilyRole.headOfHousehold,
       ),
       directory: const [
         DirectoryMember(
           id: 'mem-1',
-          firstName: 'Sarah',
-          lastName: 'Connor',
+          fullName: 'Sarah Connor',
           email: 'sarah@church.local',
           phoneNumber: '+15551234567',
           directoryVisibility: DirectoryVisibility.publicToMembers,
@@ -138,8 +146,7 @@ void main() {
         ),
         DirectoryMember(
           id: 'mem-2',
-          firstName: 'John',
-          lastName: 'Reese',
+          fullName: 'John Reese',
           email: null, // Redacted contact
           phoneNumber: null,
           directoryVisibility: DirectoryVisibility.private,
@@ -230,7 +237,7 @@ void main() {
     expect(find.byType(TextField), findsOneWidget); // Search bar
   });
 
-  testWidgets('edit profile dialog updates profile data and updates UI', (tester) async {
+  testWidgets('edit profile dialog preserves avatar and updates profile and privacy switches', (tester) async {
     await tester.pumpWidget(createSubject(
       client: fakeClient,
       authService: authSessionManager,
@@ -248,6 +255,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Profile updated successfully.'), findsOneWidget);
+    expect(fakeClient.myProfile?.avatarUrl, 'https://church.local/sarah.png');
   });
 
   testWidgets('sign out button triggers authService signOut', (tester) async {

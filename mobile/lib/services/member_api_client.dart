@@ -33,8 +33,12 @@ abstract class MemberApiClient {
   /// Updates the profile and privacy settings of the currently authenticated member.
   Future<MemberProfile> updateMyProfile(UpdateMemberProfileInput input);
 
-  /// Fetches the church member directory (respecting privacy visibility rules).
-  Future<List<DirectoryMember>> getDirectory({String? search});
+  /// Fetches the church member directory (respecting privacy visibility rules) with pagination and search.
+  Future<List<DirectoryMember>> getDirectory({
+    String? search,
+    int page = 1,
+    int pageSize = 50,
+  });
 
   /// Fetches an individual member by ID from the directory.
   Future<DirectoryMember> getMember(String id);
@@ -195,13 +199,20 @@ class HttpMemberApiClient implements MemberApiClient {
   }
 
   @override
-  Future<List<DirectoryMember>> getDirectory({String? search}) async {
+  Future<List<DirectoryMember>> getDirectory({
+    String? search,
+    int page = 1,
+    int pageSize = 50,
+  }) async {
     const endpoint = '/api/v1/members';
-    final queryParams = <String, String>{};
+    final queryParams = <String, String>{
+      'page': page.toString(),
+      'pageSize': pageSize.toString(),
+    };
     if (search != null && search.trim().isNotEmpty) {
       queryParams['search'] = search.trim();
     }
-    final uri = _buildUri(endpoint, queryParams.isEmpty ? null : queryParams);
+    final uri = _buildUri(endpoint, queryParams);
 
     final response = await _executeRequest(
       () => _client.get(uri, headers: _buildHeaders()),
