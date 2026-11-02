@@ -1070,6 +1070,16 @@ public static class AuthEndpoints
                             "Refresh token is expired or revoked."));
                     }
 
+                    var tokenCreatedMs = new DateTimeOffset(storedToken.CreatedAt).ToUnixTimeMilliseconds();
+                    if (await jwtService.IsUserRevokedAtAsync(db, storedToken.UserId, tokenCreatedMs, httpContext.RequestAborted))
+                    {
+                        storedToken.RevokedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync();
+                        return Results.BadRequest(new OidcErrorResponse(
+                            "invalid_grant",
+                            "Refresh token is invalid due to a subsequent sign-out."));
+                    }
+
                     var user = await db.AppUsers
                         .IgnoreQueryFilters()
                         .FirstOrDefaultAsync(u => u.Id == storedToken.UserId && u.TenantId == storedToken.TenantId && u.IsActive);
@@ -1177,7 +1187,17 @@ public static class AuthEndpoints
                 {
                     var nowUtc = DateTime.UtcNow;
                     var nowUnixMs = new DateTimeOffset(nowUtc).ToUnixTimeMilliseconds();
-                    storedRefresh.RevokedAt = nowUtc;
+
+                    // Revoke all active refresh tokens for this user
+                    var activeTokens = await db.OidcRefreshTokens
+                        .IgnoreQueryFilters()
+                        .Where(t => t.UserId == storedRefresh.UserId && t.TenantId == storedRefresh.TenantId && t.RevokedAt == null)
+                        .ToListAsync();
+
+                    foreach (var token in activeTokens)
+                    {
+                        token.RevokedAt = nowUtc;
+                    }
 
                     // Invalidate outstanding unconsumed authorization codes for this user
                     var outstandingCodes = await db.OidcAuthorizationCodes

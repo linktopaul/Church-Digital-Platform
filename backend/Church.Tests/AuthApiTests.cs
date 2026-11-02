@@ -790,4 +790,56 @@ public class AuthApiTests : IClassFixture<ProductionWebApplicationFactory>
         var meRes = await client.SendAsync(meReq);
         Assert.Equal(HttpStatusCode.Unauthorized, meRes.StatusCode);
     }
+
+    [Fact]
+    public async Task TwoSessions_RevokingOneSessionViaRevokeEndpoint_RevokesOtherRefreshTokenAndPreventsRedemption()
+    {
+        var tenantId = Guid.NewGuid();
+        await SeedUserAsync(
+            tenantId,
+            "two.sessions.user@church.org",
+            "TwoSessionsPass!123",
+            "Two Sessions User",
+            ChurchRoleNames.Member);
+
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false
+        });
+
+        // 1. Establish session 1
+        var session1Tokens = await AuthenticateWithPkceAsync(
+            client,
+            tenantId,
+            "two.sessions.user@church.org",
+            "TwoSessionsPass!123");
+
+        // 2. Establish session 2
+        var session2Tokens = await AuthenticateWithPkceAsync(
+            client,
+            tenantId,
+            "two.sessions.user@church.org",
+            "TwoSessionsPass!123");
+
+        Assert.NotEqual(session1Tokens.RefreshToken, session2Tokens.RefreshToken);
+
+        // 3. Sign out session 1 through /connect/revoke with its refresh token
+        var revokeRes = await client.PostAsync("/connect/revoke", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["client_id"] = ClientId,
+            ["token"] = session1Tokens.RefreshToken
+        }));
+        Assert.Equal(HttpStatusCode.OK, revokeRes.StatusCode);
+
+        // 4. Redeeming session 2's refresh token must be rejected
+        var refresh2Res = await client.PostAsync("/connect/token", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["client_id"] = ClientId,
+            ["refresh_token"] = session2Tokens.RefreshToken
+        }));
+        Assert.Equal(HttpStatusCode.BadRequest, refresh2Res.StatusCode);
+        var errorJson = await refresh2Res.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("invalid_grant", errorJson.GetProperty("error").GetString());
+    }
 }
