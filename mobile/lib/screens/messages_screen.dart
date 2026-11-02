@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/fellowship_models.dart';
 import '../services/fellowship_api_client.dart';
