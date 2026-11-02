@@ -98,10 +98,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       _errorMessage = null;
     });
 
+    final queryToFetch = _lastInputQuery;
     try {
       final profileFuture = client.getMyProfile();
       final directoryFuture = client.getDirectory(
-        search: _searchQuery.isEmpty ? null : _searchQuery,
+        search: queryToFetch.isEmpty ? null : queryToFetch,
         page: 1,
         pageSize: _pageSize,
       );
@@ -117,6 +118,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           _myProfile = fetchedProfile;
         }
         if (dirGen == _directoryLoadGeneration) {
+          _searchQuery = queryToFetch;
           _directory = fetchedDir;
           _hasMoreDirectory = fetchedDir.length >= _pageSize;
           _directoryPage = 1;
