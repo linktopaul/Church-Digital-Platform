@@ -4,8 +4,8 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const planner=require('./planner.cjs');
-function fixture({dryRun=false,failLabels=false,comments=[],checks=[],adopt=false,mergeable=true,mergeableState='clean'}={}){
- const config={version:1,maxActive:1,maxPerAgent:{jules:1},enabledAgents:['jules'],tasks:[{issue:1,agent:'jules',ready:true,dependencies:[],owns:['feature/'],branch:'feature-one',...(adopt?{pullRequest:2}:{})}],leases:adopt?[{issue:1,agent:'jules',status:'active'}]:[]};
+function fixture({dryRun=false,failLabels=false,comments=[],checks=[],adopt=false,withPullRequestInTask=true,mergeable=true,mergeableState='clean'}={}){
+ const config={version:1,maxActive:1,maxPerAgent:{jules:1},enabledAgents:['jules'],tasks:[{issue:1,agent:'jules',ready:true,dependencies:[],owns:['feature/'],branch:'feature-one',...(adopt&&withPullRequestInTask?{pullRequest:2}:{})}],leases:adopt?[{issue:1,agent:'jules',status:'active'}]:[]};
  const calls=[];let report;const failures=[];
  const issue={number:1,state:'open',labels:[]};
  const prData={number:2,state:'open',mergeable,mergeable_state:mergeableState,head:{sha:'abc',ref:'feature-one'}};
@@ -24,3 +24,4 @@ test('malformed owner state prevents dispatch',async()=>{const f=fixture({commen
 test('missing review and aggregate gate do not summon implementer',async()=>{const f=fixture({adopt:true,checks:[{id:1,name:'Review acceptance',conclusion:'action_required'},{id:2,name:'gate',conclusion:'failure'}]});await f.execute();assert.equal(f.calls.length,0);});
 test('actual failing feature check gets one bounded follow-up',async()=>{const f=fixture({adopt:true,checks:[{id:1,name:'Flutter mobile checks',conclusion:'failure',html_url:'https://github.com/o/r/actions/runs/1'}]});await f.execute();assert.equal(f.calls.length,1);assert.match(f.calls[0][1].body,/EXISTING session/);});
 test('merge conflict without failing checks gets one bounded follow-up',async()=>{const f=fixture({adopt:true,mergeable:false,mergeableState:'dirty',checks:[{id:1,name:'Flutter mobile checks',conclusion:'success'}]});await f.execute();assert.equal(f.calls.length,1);assert.match(f.calls[0][1].body,/Resolve merge conflicts with main/);});
+test('discovers PR by registered branch when task has no bootstrap pullRequest',async()=>{const f=fixture({adopt:true,withPullRequestInTask:false,checks:[{id:1,name:'Flutter mobile checks',conclusion:'failure',html_url:'https://github.com/o/r/actions/runs/1'}]});await f.execute();assert.equal(f.calls.length,1);assert.equal(f.calls[0][1].issue_number,2);});

@@ -60,11 +60,18 @@ async function run({github,context,core,dryRun=false}){
  if(!dryRun&&!decision.alerts.length){
   for(const task of config.tasks){
    const lease=leaseMap.get(task.issue);
-   if(task.agent!=='jules'||!lease||!['active','dispatched','blocked'].includes(lease.status)||!task.pullRequest)continue;
-   const prSummary=pulls.find(p=>p.number===task.pullRequest);
-   if(!prSummary||prSummary.draft||(task.branch&&prSummary.head.ref!==task.branch))continue;
+   if(task.agent!=='jules'||!lease||!['active','dispatched','blocked'].includes(lease.status))continue;
+   const targetPrNumber=lease.pullRequest??task.pullRequest;
+   const expectedBranch=lease.branch||task.branch;
+   const prSummary=pulls.find(p=>{
+    if(targetPrNumber)return p.number===targetPrNumber;
+    if(expectedBranch&&p.head?.ref===expectedBranch)return true;
+    const refs=[...((p.title||'')+'\n'+(p.body||'')).matchAll(/\b(?:close[sd]?|fix(?:es|ed)?|resolve[sd]?)\s+(?:[\w.-]+\/[\w.-]+)?#(\d+)\b/gi)];
+    return refs.some(m=>Number(m[1])===task.issue);
+   });
+   if(!prSummary||prSummary.draft||(expectedBranch&&prSummary.head?.ref!==expectedBranch))continue;
    const pr=github.rest.pulls?.get?(await github.rest.pulls.get({owner,repo,pull_number:prSummary.number})).data:prSummary;
-   if(pr.draft||(task.branch&&pr.head?.ref!==task.branch))continue;
+   if(pr.draft||(expectedBranch&&pr.head?.ref!==expectedBranch))continue;
    const hasConflict=pr.mergeable===false||pr.mergeable_state==='dirty';
    const checks=await github.paginate(github.rest.checks.listForRef,{owner,repo,ref:pr.head.sha,per_page:100});
    const latest=new Map();for(const check of checks)if(!latest.has(check.name)||check.id>latest.get(check.name).id)latest.set(check.name,check);
