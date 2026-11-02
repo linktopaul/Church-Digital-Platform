@@ -1070,16 +1070,6 @@ public static class AuthEndpoints
                             "Refresh token is expired or revoked."));
                     }
 
-                    var tokenCreatedMs = new DateTimeOffset(storedToken.CreatedAt).ToUnixTimeMilliseconds();
-                    if (await jwtService.IsUserRevokedAtAsync(db, storedToken.UserId, tokenCreatedMs, httpContext.RequestAborted))
-                    {
-                        storedToken.RevokedAt = DateTime.UtcNow;
-                        await db.SaveChangesAsync();
-                        return Results.BadRequest(new OidcErrorResponse(
-                            "invalid_grant",
-                            "Refresh token is invalid due to a subsequent sign-out."));
-                    }
-
                     var user = await db.AppUsers
                         .IgnoreQueryFilters()
                         .FirstOrDefaultAsync(u => u.Id == storedToken.UserId && u.TenantId == storedToken.TenantId && u.IsActive);
@@ -1185,48 +1175,7 @@ public static class AuthEndpoints
 
                 if (storedRefresh != null && !storedRefresh.RevokedAt.HasValue)
                 {
-                    var nowUtc = DateTime.UtcNow;
-                    var nowUnixMs = new DateTimeOffset(nowUtc).ToUnixTimeMilliseconds();
-
-                    // Revoke all active refresh tokens for this user
-                    var activeTokens = await db.OidcRefreshTokens
-                        .IgnoreQueryFilters()
-                        .Where(t => t.UserId == storedRefresh.UserId && t.TenantId == storedRefresh.TenantId && t.RevokedAt == null)
-                        .ToListAsync();
-
-                    foreach (var token in activeTokens)
-                    {
-                        token.RevokedAt = nowUtc;
-                    }
-
-                    // Invalidate outstanding unconsumed authorization codes for this user
-                    var outstandingCodes = await db.OidcAuthorizationCodes
-                        .IgnoreQueryFilters()
-                        .Where(c => c.UserId == storedRefresh.UserId && c.TenantId == storedRefresh.TenantId && c.ConsumedAt == null)
-                        .ToListAsync();
-
-                    foreach (var code in outstandingCodes)
-                    {
-                        code.ConsumedAt = nowUtc;
-                    }
-
-                    // Record user revocation watermark so active access tokens and pending codes cannot be redeemed
-                    jwtService.RevokeAllUserTokens(storedRefresh.UserId);
-                    var userCutOffHash = JwtTokenService.ComputeSha256Base64Url($"revoked-user:{storedRefresh.UserId:N}:{nowUnixMs}:{Guid.NewGuid():N}");
-                    db.OidcRefreshTokens.Add(new OidcRefreshToken
-                    {
-                        Id = Guid.NewGuid(),
-                        TenantId = storedRefresh.TenantId,
-                        UserId = storedRefresh.UserId,
-                        TokenHash = userCutOffHash,
-                        ClientId = req.ClientId!.Trim(),
-                        Scope = "revoked_user",
-                        CreatedAt = nowUtc,
-                        ExpiresAt = nowUtc.AddDays(jwtService.RefreshTokenLifetimeDays),
-                        RevokedAt = nowUtc,
-                        ReplacedByTokenHash = nowUnixMs.ToString()
-                    });
-
+                    storedRefresh.RevokedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync();
                 }
                 else if (jwtService.TryValidateAccessToken(rawToken, out var revokedPrincipal, out _) &&
