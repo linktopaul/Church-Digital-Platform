@@ -31,6 +31,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   MemberProfile? _myProfile;
   List<DirectoryMember> _directory = [];
   bool _isLoading = false;
+  bool _isSavingProfile = false;
   bool _isLoadingMoreDirectory = false;
   bool _isSearchingOrRefreshingDirectory = false;
   bool _hasMoreDirectory = true;
@@ -65,6 +66,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       _hasMoreDirectory = true;
       _isLoadingMoreDirectory = false;
       _isSearchingOrRefreshingDirectory = false;
+      _isSavingProfile = false;
       _errorMessage = null;
       if (widget.apiClient != null) {
         _loadData();
@@ -136,7 +138,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
     final sessionGen = _sessionGeneration;
     final dirGen = ++_directoryLoadGeneration;
-    _searchQuery = query.trim();
+    final cleanQuery = query.trim();
 
     setState(() {
       _isLoadingMoreDirectory = false;
@@ -145,13 +147,14 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
     try {
       final fetchedDir = await client.getDirectory(
-        search: _searchQuery.isEmpty ? null : _searchQuery,
+        search: cleanQuery.isEmpty ? null : cleanQuery,
         page: 1,
         pageSize: _pageSize,
       );
       if (!mounted || sessionGen != _sessionGeneration || dirGen != _directoryLoadGeneration || client != widget.apiClient) return;
 
       setState(() {
+        _searchQuery = cleanQuery;
         _directory = fetchedDir;
         _directoryPage = 1;
         _hasMoreDirectory = fetchedDir.length >= _pageSize;
@@ -159,7 +162,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       });
     } catch (e) {
       if (!mounted || sessionGen != _sessionGeneration || dirGen != _directoryLoadGeneration || client != widget.apiClient) return;
-      setState(() => _isSearchingOrRefreshingDirectory = false);
+      setState(() {
+        _isSearchingOrRefreshingDirectory = false;
+        _hasMoreDirectory = false;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e is MemberApiException ? e.message : 'Directory search failed.')),
       );
@@ -206,7 +212,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     final sessionGen = _sessionGeneration;
     final profileMutationGen = ++_profileMutationGeneration;
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _isSavingProfile = true;
+    });
 
     try {
       final updated = await boundClient.updateMyProfile(input);
@@ -215,6 +224,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       setState(() {
         _myProfile = updated;
         _isLoading = false;
+        _isSavingProfile = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Profile updated successfully.')),
@@ -250,7 +260,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       }
     } catch (e) {
       if (!mounted || sessionGen != _sessionGeneration || profileMutationGen != _profileMutationGeneration || boundClient != widget.apiClient) return;
-      setState(() => _isLoading = false);
+      setState(() {
+        _isLoading = false;
+        _isSavingProfile = false;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(e is MemberApiException ? e.message : 'Failed to update profile.'),
@@ -261,6 +274,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   }
 
   void _showEditProfileDialog() {
+    if (_isSavingProfile) return;
     final profile = _myProfile;
     final dialogClient = widget.apiClient;
     final dialogSessionGen = _sessionGeneration;
@@ -594,7 +608,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: _showEditProfileDialog,
+                  onPressed: _isSavingProfile ? null : _showEditProfileDialog,
                   icon: const Icon(Icons.edit_outlined),
                   label: const Text('Edit Profile'),
                 ),

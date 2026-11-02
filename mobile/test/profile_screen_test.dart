@@ -5,8 +5,6 @@ import 'package:church_digital_platform_mobile/auth/auth_session_manager.dart';
 import 'package:church_digital_platform_mobile/models/member_models.dart';
 import 'package:church_digital_platform_mobile/screens/profile_screen.dart';
 import 'package:church_digital_platform_mobile/services/member_api_client.dart';
-import 'support/in_memory_secure_token_storage.dart';
-import 'support/mock_auth_provider.dart';
 
 class FakeMemberApiClient implements MemberApiClient {
   MemberProfile? myProfile;
@@ -16,6 +14,7 @@ class FakeMemberApiClient implements MemberApiClient {
   bool shouldFailUpdate;
   bool shouldFailDirectory;
   String? failureMessage;
+  Completer<void>? updateCompleter;
 
   FakeMemberApiClient({
     this.myProfile,
@@ -25,6 +24,7 @@ class FakeMemberApiClient implements MemberApiClient {
     this.shouldFailUpdate = false,
     this.shouldFailDirectory = false,
     this.failureMessage,
+    this.updateCompleter,
   }) : directory = directory ?? [];
 
   @override
@@ -44,6 +44,9 @@ class FakeMemberApiClient implements MemberApiClient {
 
   @override
   Future<MemberProfile> updateMyProfile(UpdateMemberProfileInput input) async {
+    if (updateCompleter != null) {
+      await updateCompleter!.future;
+    }
     if (shouldFailUpdate) {
       throw MemberApiException(failureMessage ?? 'Failed to update profile');
     }
@@ -110,11 +113,57 @@ class FakeMemberApiClient implements MemberApiClient {
   }
 }
 
+class MockAuthService implements AuthService {
+  int signOutCount = 0;
+  AuthSession? _currentSession;
+  final _sessionController = StreamController<AuthSession?>.broadcast();
+
+  MockAuthService([this._currentSession]);
+
+  @override
+  Stream<AuthSession?> get sessionStateStream => _sessionController.stream;
+
+  @override
+  AuthSession? get currentSession => _currentSession;
+
+  @override
+  Object? get sessionIdentity => Object();
+
+  @override
+  Future<AuthSession?> initialize() async => _currentSession;
+
+  @override
+  Future<AuthSession> signInWithAuthorizationCode({
+    required String code,
+    required String codeVerifier,
+    required String redirectUri,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> setSession(AuthSession session) async {
+    _currentSession = session;
+    _sessionController.add(session);
+  }
+
+  @override
+  Future<AuthSession> refresh() => throw UnimplementedError();
+
+  @override
+  Future<void> signOut() async {
+    signOutCount++;
+    _currentSession = null;
+    _sessionController.add(null);
+  }
+
+  @override
+  void dispose() {
+    _sessionController.close();
+  }
+}
+
 void main() {
   late FakeMemberApiClient fakeClient;
-  late MockAuthProvider mockAuthProvider;
-  late InMemorySecureTokenStorage inMemoryStorage;
-  late AuthSessionManager authSessionManager;
+  late MockAuthService mockAuthService;
 
   setUp(() {
     fakeClient = FakeMemberApiClient(
@@ -155,16 +204,20 @@ void main() {
       ],
     );
 
-    mockAuthProvider = MockAuthProvider();
-    inMemoryStorage = InMemorySecureTokenStorage();
-    authSessionManager = AuthSessionManager(
-      provider: mockAuthProvider,
-      storage: inMemoryStorage,
+    mockAuthService = MockAuthService(
+      const AuthSession(
+        accessToken: 'access_1',
+        refreshToken: 'refresh_1',
+        userId: 'mem-1',
+        tenantId: 'ten-1',
+        roles: ['Member'],
+        expiresAt: DateTime.fromMillisecondsSinceEpoch(2000000000000, isUtc: true),
+      ),
     );
   });
 
   tearDown(() {
-    authSessionManager.dispose();
+    mockAuthService.dispose();
   });
 
   Widget createSubject({
@@ -196,7 +249,7 @@ void main() {
   testWidgets('renders member profile details and privacy settings when authenticated', (tester) async {
     await tester.pumpWidget(createSubject(
       client: fakeClient,
-      authService: authSessionManager,
+      authService: mockAuthService,
     ));
     await tester.pumpAndSettle();
 
@@ -214,7 +267,7 @@ void main() {
   testWidgets('directory tab displays members and masks redacted contact information', (tester) async {
     await tester.pumpWidget(createSubject(
       client: fakeClient,
-      authService: authSessionManager,
+      authService: mockAuthService,
     ));
     await tester.pumpAndSettle();
 
@@ -232,7 +285,7 @@ void main() {
   testWidgets('edit profile dialog preserves avatar and updates profile and privacy switches', (tester) async {
     await tester.pumpWidget(createSubject(
       client: fakeClient,
-      authService: authSessionManager,
+      authService: mockAuthService,
     ));
     await tester.pumpAndSettle();
 
@@ -252,21 +305,64 @@ void main() {
     expect(fakeClient.myProfile?.avatarUrl, 'https://church.local/sarah.png');
   });
 
-  testWidgets('sign out button triggers authService signOut', (tester) async {
-    await authSessionManager.setSession(
-      AuthSession(
-        accessToken: 'access_1',
-        refreshToken: 'refresh_1',
-        userId: 'mem-1',
-        tenantId: 'ten-1',
-        roles: const ['Member'],
-        expiresAt: DateTime.now().add(const Duration(hours: 1)),
-      ),
-    );
+  testWidgets('disables edit button while profile save is in progress', (tester) async {
+    final completer = Completer<void>();
+    fakeClient.updateCompleter = completer;
 
     await tester.pumpWidget(createSubject(
       client: fakeClient,
-      authService: authSessionManager,
+      authService: mockAuthService,
+    ));
+    await tester.pumpAndSettle();
+
+    final editButton = find.text('Edit Profile');
+    await tester.ensureVisible(editButton);
+    await tester.tap(editButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit Profile & Privacy'), findsOneWidget);
+
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+
+    final button = tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Edit Profile'));
+    expect(button.onPressed, isNull);
+
+    completer.complete();
+    await tester.pumpAndSettle();
+
+    final enabledButton = tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Edit Profile'));
+    expect(enabledButton.onPressed, isNotNull);
+    expect(find.text('Profile updated successfully.'), findsOneWidget);
+  });
+
+  testWidgets('failed directory search keeps previous query and disables pagination', (tester) async {
+    await tester.pumpWidget(createSubject(
+      client: fakeClient,
+      authService: mockAuthService,
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Directory'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sarah Connor'), findsOneWidget);
+
+    fakeClient.shouldFailDirectory = true;
+    fakeClient.failureMessage = 'Directory lookup failed';
+
+    await tester.enterText(find.byType(TextField), 'Unknown');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Directory lookup failed'), findsOneWidget);
+    expect(find.text('Sarah Connor'), findsOneWidget);
+  });
+
+  testWidgets('sign out button triggers authService signOut', (tester) async {
+    await tester.pumpWidget(createSubject(
+      client: fakeClient,
+      authService: mockAuthService,
     ));
     await tester.pumpAndSettle();
 
@@ -274,9 +370,9 @@ void main() {
     final signOutButton = find.text('Sign Out');
     await tester.ensureVisible(signOutButton);
     await tester.tap(signOutButton);
-    await tester.pumpAndSettle();
+    await tester.pump();
 
-    expect(mockAuthProvider.revokeCount, 1);
+    expect(mockAuthService.signOutCount, 1);
   });
 
   testWidgets('displays error message and retry button when getMyProfile fails', (tester) async {
