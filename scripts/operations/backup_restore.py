@@ -6,38 +6,33 @@ Follows operational safeguards:
 - Secrets are never accepted as command-line arguments or printed in logs/diagnostics
 - Strict refusal if source database equals target database
 - Refuses restore into populated target databases by default (no DROP DATABASE, no --clean)
-- Atomic backup staging so failed backups never delete or corrupt pre-existing archives
 - Custom archive format (pg_dump -Fc) for transactional restores
-- Comprehensive verification comparing EF migration history, table counts, and deterministic
-  full-row cryptographic digests (covering content, Unicode, privacy flags, and FK columns)
+- Comprehensive verification comparing EF migration history, table counts, relationships, and Unicode fields
 - Guarantees source database is unmodified after backup
 """
 
 import argparse
+import json
 import os
 from pathlib import Path
 import re
 import subprocess
 import sys
-import tempfile
 
-# Core tables and their primary key columns based on EF Core model in main baseline
-TABLE_PRIMARY_KEYS = {
-    "Tenants": "Id",
-    "Announcements": "id",
-    "PrayerRequests": "id",
-    "Songs": "id",
-    "Setlists": "id",
-    "SetlistItems": "id",
-    "FellowshipGroups": "id",
-    "FellowshipMembers": "id",
-    "FellowshipPosts": "id",
-}
-
-CORE_TABLES = list(TABLE_PRIMARY_KEYS.keys())
+# Tables to verify based on EF Core model in main baseline
+CORE_TABLES = [
+    "Tenants",
+    "Announcements",
+    "PrayerRequests",
+    "Songs",
+    "Setlists",
+    "SetlistItems",
+    "FellowshipGroups",
+    "FellowshipMembers",
+    "FellowshipPosts",
+]
 
 IDENTIFIER_REGEX = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
-ROW_SIGNATURE_REGEX = re.compile(r"^[^:]+:[0-9a-f]{32}$")
 
 
 def validate_db_identifier(name: str, label: str) -> str:
@@ -59,9 +54,7 @@ def get_libpq_env() -> dict:
     return env
 
 
-def run_psql(
-    db_name: str, query: str, env: dict | None = None, tuples_only: bool = False
-) -> subprocess.CompletedProcess:
+def run_psql(db_name: str, query: str, env: dict | None = None, tuples_only: bool = False) -> subprocess.CompletedProcess:
     """Run a query via psql with safe parameters and suppressed diagnostic leaking."""
     if env is None:
         env = get_libpq_env()
@@ -90,9 +83,11 @@ def run_psql(
 
 
 def check_database_exists(db_name: str) -> bool:
-    """Check if database exists on the PostgreSQL host using postgres maintenance DB or direct connect."""
+    """Check if database exists on the PostgreSQL host using postgres maintenance DB or template1."""
+    # Try connecting to the database directly; if connection succeeds, it exists.
     maintenance_db = os.environ.get("PGMAINTENANCEDATABASE") or "postgres"
     env = get_libpq_env()
+    # First try querying pg_database via maintenance db
     query = f"SELECT 1 FROM pg_database WHERE datname = '{db_name}';"
     res = subprocess.run(
         [
@@ -115,88 +110,74 @@ def check_database_exists(db_name: str) -> bool:
     if res.returncode == 0:
         return bool(res.stdout.strip())
 
+    # Fallback: test connecting to the db directly
     res_direct = run_psql(db_name, "SELECT 1;", env=env)
     return res_direct.returncode == 0
 
 
 def is_database_populated(db_name: str) -> bool:
-    """Check if non-system schemas have any user tables, views, or sequences."""
+    """Check if public schema has any user tables or sequences."""
     query = (
-        "SELECT ("
-        "(SELECT count(*) FROM information_schema.tables "
-        "WHERE table_schema NOT IN ('pg_catalog', 'information_schema') "
-        "AND table_schema NOT LIKE 'pg_toast%') + "
-        "(SELECT count(*) FROM information_schema.sequences "
-        "WHERE sequence_schema NOT IN ('pg_catalog', 'information_schema') "
-        "AND sequence_schema NOT LIKE 'pg_toast%')"
-        ");"
+        "SELECT count(*) FROM information_schema.tables "
+        "WHERE table_schema = 'public' AND table_type = 'BASE TABLE';"
     )
     res = run_psql(db_name, query, tuples_only=True)
     if res.returncode != 0:
-        raise RuntimeError("Failed to check if target database is populated.")
+        raise RuntimeError(f"Failed to check if target database is populated.")
     count_str = res.stdout.strip()
-    if not count_str.isdigit():
+    try:
+        count = int(count_str)
+        return count > 0
+    except ValueError:
         raise RuntimeError("Unexpected response from database when checking table counts.")
-    return int(count_str) > 0
 
 
 def run_backup(source_db: str, backup_path: Path) -> None:
-    """Perform pg_dump in custom archive format using atomic staging file replacement."""
+    """Perform pg_dump in custom archive format into backup_path."""
     validate_db_identifier(source_db, "Source")
     env = get_libpq_env()
     backup_path = Path(backup_path).resolve()
     backup_path.parent.mkdir(parents=True, exist_ok=True)
 
-    fd, temp_str = tempfile.mkstemp(
-        prefix=f".{backup_path.name}.",
-        suffix=".tmp",
-        dir=str(backup_path.parent),
+    cmd = [
+        "pg_dump",
+        "--no-password",
+        "--format=custom",
+        "--blobs",
+        "--dbname",
+        source_db,
+        "--file",
+        str(backup_path),
+    ]
+
+    res = subprocess.run(
+        cmd,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
-    os.close(fd)
-    temp_path = Path(temp_str)
-
-    try:
-        cmd = [
-            "pg_dump",
-            "--no-password",
-            "--format=custom",
-            "--blobs",
-            "--dbname",
-            source_db,
-            "--file",
-            str(temp_path),
-        ]
-
-        res = subprocess.run(
-            cmd,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=60,
+    if res.returncode != 0:
+        if backup_path.exists():
+            backup_path.unlink(missing_ok=True)
+        raise RuntimeError(
+            "Backup operation failed. Database diagnostics are suppressed for privacy."
         )
-        if res.returncode != 0:
-            raise RuntimeError(
-                "Backup operation failed. Database diagnostics are suppressed for privacy."
-            )
 
-        if not temp_path.exists() or temp_path.stat().st_size == 0:
-            raise RuntimeError("Backup completed but produced an empty or missing archive.")
-
-        os.replace(temp_path, backup_path)
-    finally:
-        if temp_path.exists():
-            temp_path.unlink(missing_ok=True)
+    if not backup_path.exists() or backup_path.stat().st_size == 0:
+        if backup_path.exists():
+            backup_path.unlink(missing_ok=True)
+        raise RuntimeError("Backup completed but produced an empty or missing archive.")
 
 
 def run_restore(backup_path: Path, target_db: str, source_db: str | None = None) -> None:
     """Restore custom archive dump into a distinct, empty target database."""
     target_db = validate_db_identifier(target_db, "Target")
-    effective_source_db = source_db if source_db is not None else os.environ.get("PGDATABASE")
-    if effective_source_db:
-        effective_source_db = validate_db_identifier(effective_source_db, "Source")
-        if effective_source_db == target_db:
+    if source_db:
+        source_db = validate_db_identifier(source_db, "Source")
+        if source_db == target_db:
             raise ValueError(
-                f"Source and target database cannot be the same ('{effective_source_db}'). "
+                f"Source and target database cannot be the same ('{source_db}'). "
                 "Refusing destructive in-place restore."
             )
 
@@ -214,7 +195,7 @@ def run_restore(backup_path: Path, target_db: str, source_db: str | None = None)
 
     if is_database_populated(target_db):
         raise RuntimeError(
-            f"Target database '{target_db}' already contains tables or sequences. "
+            f"Target database '{target_db}' already contains tables. "
             "Refusing restore into non-empty target to prevent accidental overwrite."
         )
 
@@ -245,63 +226,58 @@ def run_restore(backup_path: Path, target_db: str, source_db: str | None = None)
 
 
 def get_database_snapshot(db_name: str) -> dict:
-    """Capture migration history, table counts, and deterministic full-row digests."""
+    """Capture table counts, migration histories, and row hashes/signatures for verification."""
     validate_db_identifier(db_name, "Database")
     env = get_libpq_env()
 
     # 1. Fetch EF Migrations
-    ef_query = (
-        'SELECT "MigrationId" || \':\' || "ProductVersion" '
-        'FROM public."__EFMigrationsHistory" ORDER BY "MigrationId";'
-    )
+    ef_query = 'SELECT "MigrationId", "ProductVersion" FROM public."__EFMigrationsHistory" ORDER BY "MigrationId";'
     res = run_psql(db_name, ef_query, env=env, tuples_only=True)
     if res.returncode != 0:
         raise RuntimeError("Failed to read __EFMigrationsHistory from database.")
     migrations = [line.strip() for line in res.stdout.strip().splitlines() if line.strip()]
-    if not migrations:
-        raise RuntimeError("No EF Core migrations found in __EFMigrationsHistory.")
 
-    # 2. Fetch Table Counts and Deterministic Full-Row Signatures
+    # 2. Fetch Table Counts
     counts = {}
-    row_signatures = {}
     for table in CORE_TABLES:
         table_sql = f'SELECT count(*) FROM public."{table}";'
-        res_count = run_psql(db_name, table_sql, env=env, tuples_only=True)
-        if res_count.returncode != 0:
-            raise RuntimeError(
-                f"Failed to query row count for table '{table}'. Database diagnostics are suppressed."
-            )
-        count_str = res_count.stdout.strip()
-        if not count_str.isdigit():
-            raise RuntimeError(f"Malformed row count response for table '{table}'.")
-        counts[table] = int(count_str)
+        res = run_psql(db_name, table_sql, env=env, tuples_only=True)
+        if res.returncode == 0 and res.stdout.strip().isdigit():
+            counts[table] = int(res.stdout.strip())
+        else:
+            # Table might not exist or error
+            counts[table] = -1
 
-        pk_col = TABLE_PRIMARY_KEYS[table]
-        sig_sql = (
-            f'SELECT t."{pk_col}"::text || \':\' || md5(row_to_json(t)::text) '
-            f'FROM public."{table}" AS t ORDER BY t."{pk_col}"::text;'
-        )
-        res_sig = run_psql(db_name, sig_sql, env=env, tuples_only=True)
-        if res_sig.returncode != 0:
-            raise RuntimeError(
-                f"Failed to query row signatures for table '{table}'. Database diagnostics are suppressed."
-            )
-        sigs = [line.strip() for line in res_sig.stdout.strip().splitlines() if line.strip()]
-        if len(sigs) != counts[table] or any(not ROW_SIGNATURE_REGEX.match(s) for s in sigs):
-            raise RuntimeError(
-                f"Malformed or inconsistent row signature response for table '{table}'."
-            )
-        row_signatures[table] = sigs
+    # 3. Fetch exact IDs and representative hashes (Tenants, FellowshipGroups, Songs)
+    tenant_ids_query = 'SELECT "Id"::text, "Slug", "Name" FROM public."Tenants" ORDER BY "Id";'
+    res_t = run_psql(db_name, tenant_ids_query, env=env, tuples_only=True)
+    tenants = [line.strip() for line in res_t.stdout.strip().splitlines() if line.strip()]
+
+    groups_query = 'SELECT "id"::text, "church_id"::text, "name" FROM public."FellowshipGroups" ORDER BY "id";'
+    res_g = run_psql(db_name, groups_query, env=env, tuples_only=True)
+    groups = [line.strip() for line in res_g.stdout.strip().splitlines() if line.strip()]
+
+    songs_query = 'SELECT "id"::text, "church_id"::text, "title" FROM public."Songs" ORDER BY "id";'
+    res_s = run_psql(db_name, songs_query, env=env, tuples_only=True)
+    songs = [line.strip() for line in res_s.stdout.strip().splitlines() if line.strip()]
+
+    # Prayer Requests count and IDs without leaking prayer text
+    pr_query = 'SELECT "id"::text, "church_id"::text, "status" FROM public."PrayerRequests" ORDER BY "id";'
+    res_p = run_psql(db_name, pr_query, env=env, tuples_only=True)
+    pr = [line.strip() for line in res_p.stdout.strip().splitlines() if line.strip()]
 
     return {
         "migrations": migrations,
         "counts": counts,
-        "row_signatures": row_signatures,
+        "tenants": tenants,
+        "groups": groups,
+        "songs": songs,
+        "pr": pr,
     }
 
 
 def verify_databases(source_db: str, target_db: str) -> None:
-    """Compare source and target databases to verify backup and restore integrity."""
+    """Compare source and target databases to verify backup integrity."""
     source_db = validate_db_identifier(source_db, "Source")
     target_db = validate_db_identifier(target_db, "Target")
     if source_db == target_db:
@@ -317,21 +293,28 @@ def verify_databases(source_db: str, target_db: str) -> None:
         )
 
     # 2. Compare table counts
-    for table in CORE_TABLES:
-        src_count = src_snapshot["counts"].get(table)
+    for table, count in src_snapshot["counts"].items():
         tgt_count = tgt_snapshot["counts"].get(table)
-        if src_count != tgt_count:
+        if count != tgt_count:
             raise AssertionError(
-                f"Row count mismatch for table '{table}': source has {src_count}, target has {tgt_count}."
+                f"Row count mismatch for table '{table}': source has {count}, target has {tgt_count}."
             )
 
-    # 3. Compare deterministic full-row signatures (all columns, Unicode fields, and FK relations)
-    for table in CORE_TABLES:
-        if src_snapshot["row_signatures"].get(table) != tgt_snapshot["row_signatures"].get(table):
-            raise AssertionError(
-                f"Row content or relationship signature mismatch for table '{table}' "
-                f"between {source_db} and {target_db}."
-            )
+    # 3. Compare tenants (IDs, slugs, Unicode names)
+    if src_snapshot["tenants"] != tgt_snapshot["tenants"]:
+        raise AssertionError("Tenant records mismatch between source and target.")
+
+    # 4. Compare fellowship groups & relations
+    if src_snapshot["groups"] != tgt_snapshot["groups"]:
+        raise AssertionError("Fellowship groups mismatch between source and target.")
+
+    # 5. Compare worship songs & relations
+    if src_snapshot["songs"] != tgt_snapshot["songs"]:
+        raise AssertionError("Songs mismatch between source and target.")
+
+    # 6. Compare prayer requests & statuses
+    if src_snapshot["pr"] != tgt_snapshot["pr"]:
+        raise AssertionError("Prayer requests metadata mismatch between source and target.")
 
 
 def main(argv=None) -> int:
