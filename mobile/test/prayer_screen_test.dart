@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:church_digital_platform_mobile/models/prayer_models.dart';
@@ -84,6 +85,18 @@ class FakePrayerApiClient implements PrayerApiClient {
   }
 }
 
+class DeferredPrayerApiClient extends FakePrayerApiClient {
+  final Completer<List<PrayerRequestData>> myRequestsCompleter = Completer<List<PrayerRequestData>>();
+  final Completer<PrayerRequestData> createCompleter = Completer<PrayerRequestData>();
+
+  @override
+  Future<List<PrayerRequestData>> getMyPrayerRequests() => myRequestsCompleter.future;
+
+  @override
+  Future<PrayerRequestData> createPrayerRequest(CreatePrayerRequestInput input) =>
+      createCompleter.future;
+}
+
 void main() {
   Widget createWidgetUnderTest({
     PrayerApiClient? apiClient,
@@ -117,6 +130,34 @@ void main() {
     expect(find.text('No Submitted Requests'), findsOneWidget);
     expect(find.textContaining('Share your requests with our pastoral team confidentially.'), findsOneWidget);
     expect(find.text('Request Prayer'), findsOneWidget);
+  });
+
+  testWidgets('empty state supports pull-to-refresh to load newly submitted requests', (tester) async {
+    final fakeClient = FakePrayerApiClient(myRequests: [], allRequests: []);
+
+    await tester.pumpWidget(createWidgetUnderTest(apiClient: fakeClient, isPastor: true));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('All Pastoral Requests'));
+    await tester.pumpAndSettle();
+    expect(find.text('No Prayer Requests'), findsOneWidget);
+
+    fakeClient.allRequests = [
+      PrayerRequestData(
+        id: 'new-pastor-req',
+        churchId: 'c1',
+        memberId: 'm2',
+        content: 'Newly arrived confidential prayer request',
+        status: PrayerRequestStatus.submitted,
+        createdAt: DateTime(2026, 11, 2),
+        updatedAt: DateTime(2026, 11, 2),
+      ),
+    ];
+
+    await tester.drag(find.text('No Prayer Requests'), const Offset(0, 300));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Newly arrived confidential prayer request'), findsOneWidget);
   });
 
   testWidgets('displays list of requests for member without pastor controls', (tester) async {
@@ -200,6 +241,43 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Praying for church unity and upcoming mission trip.'), findsOneWidget);
+    expect(find.text('Your prayer request was submitted confidentially.'), findsOneWidget);
+  });
+
+  testWidgets('preserves submission confirmation and list update if sheet is dismissed while POST is pending', (tester) async {
+    final deferredClient = DeferredPrayerApiClient();
+    deferredClient.myRequestsCompleter.complete([]);
+
+    await tester.pumpWidget(createWidgetUnderTest(apiClient: deferredClient));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Request Prayer'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField), 'Slow network prayer request');
+    await tester.tap(find.text('Submit Request'));
+    await tester.pump();
+
+    // User dismisses the bottom sheet while POST is still in flight.
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsNothing);
+
+    // Server confirms creation after sheet was dismissed.
+    deferredClient.createCompleter.complete(
+      PrayerRequestData(
+        id: 'created-slow',
+        churchId: 'c1',
+        memberId: 'm1',
+        content: 'Slow network prayer request',
+        status: PrayerRequestStatus.submitted,
+        createdAt: DateTime(2026, 11, 2),
+        updatedAt: DateTime(2026, 11, 2),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Slow network prayer request'), findsOneWidget);
     expect(find.text('Your prayer request was submitted confidentially.'), findsOneWidget);
   });
 
@@ -316,5 +394,115 @@ void main() {
     // Status in list remains Submitted
     expect(find.text('Submitted'), findsOneWidget);
     expect(find.text('Answered'), findsNothing);
+  });
+
+  testWidgets('discards late A response after switching from client A to client B', (tester) async {
+    final clientA = DeferredPrayerApiClient();
+    final clientB = FakePrayerApiClient(
+      myRequests: [
+        PrayerRequestData(
+          id: 'req-b',
+          churchId: 'c1',
+          memberId: 'member-b',
+          content: 'Member B confidential request',
+          status: PrayerRequestStatus.submitted,
+          createdAt: DateTime(2026, 11, 2),
+          updatedAt: DateTime(2026, 11, 2),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(createWidgetUnderTest(apiClient: clientA));
+    await tester.pump();
+
+    // Switch to Member B before Member A's response arrives.
+    await tester.pumpWidget(createWidgetUnderTest(apiClient: clientB));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Member B confidential request'), findsOneWidget);
+
+    // Late completion of Member A's load must be ignored.
+    clientA.myRequestsCompleter.complete([
+      PrayerRequestData(
+        id: 'req-a',
+        churchId: 'c1',
+        memberId: 'member-a',
+        content: 'Member A secret prayer',
+        status: PrayerRequestStatus.submitted,
+        createdAt: DateTime(2026, 11, 1),
+        updatedAt: DateTime(2026, 11, 1),
+      ),
+    ]);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Member B confidential request'), findsOneWidget);
+    expect(find.text('Member A secret prayer'), findsNothing);
+  });
+
+  testWidgets('invalidates open submission sheet on account switch or logout', (tester) async {
+    final clientA = DeferredPrayerApiClient();
+    clientA.myRequestsCompleter.complete([]);
+    final clientB = FakePrayerApiClient(myRequests: []);
+
+    await tester.pumpWidget(createWidgetUnderTest(apiClient: clientA));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Request Prayer'));
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsOneWidget);
+
+    await tester.enterText(find.byType(TextFormField), 'Member A pending submission');
+    await tester.tap(find.text('Submit Request'));
+    await tester.pump();
+
+    // Switch account to clientB while sheet is open and POST is pending.
+    await tester.pumpWidget(createWidgetUnderTest(apiClient: clientB));
+    await tester.pumpAndSettle();
+
+    // Sheet is automatically dismissed and late completion from A is ignored.
+    expect(find.byType(BottomSheet), findsNothing);
+    clientA.createCompleter.complete(
+      PrayerRequestData(
+        id: 'a-created',
+        churchId: 'c1',
+        memberId: 'member-a',
+        content: 'Member A pending submission',
+        status: PrayerRequestStatus.submitted,
+        createdAt: DateTime(2026, 11, 2),
+        updatedAt: DateTime(2026, 11, 2),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Member A pending submission'), findsNothing);
+  });
+
+  testWidgets('supports updating isPastor from false to true without ticker assertion', (tester) async {
+    final fakeClient = FakePrayerApiClient(
+      myRequests: [],
+      allRequests: [
+        PrayerRequestData(
+          id: 'pastor-feed-item',
+          churchId: 'c1',
+          memberId: 'm2',
+          content: 'Pastoral care needed',
+          status: PrayerRequestStatus.submitted,
+          createdAt: DateTime(2026, 11, 2),
+          updatedAt: DateTime(2026, 11, 2),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(createWidgetUnderTest(apiClient: fakeClient, isPastor: false));
+    await tester.pumpAndSettle();
+    expect(find.text('All Pastoral Requests'), findsNothing);
+
+    await tester.pumpWidget(createWidgetUnderTest(apiClient: fakeClient, isPastor: true));
+    await tester.pumpAndSettle();
+
+    expect(find.text('All Pastoral Requests'), findsOneWidget);
+    await tester.tap(find.text('All Pastoral Requests'));
+    await tester.pumpAndSettle();
+    expect(find.text('Pastoral care needed'), findsOneWidget);
   });
 }

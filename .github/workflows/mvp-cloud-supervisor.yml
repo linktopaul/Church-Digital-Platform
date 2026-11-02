@@ -35,11 +35,16 @@ jobs:
               const {data:checks}=await github.rest.checks.listForRef({owner,repo,ref:pr.head.sha,per_page:100});
               const failures=checks.check_runs.filter(c=>['failure','timed_out','action_required'].includes(c.conclusion));
               const comments=await github.paginate(github.rest.issues.listComments,{owner,repo,issue_number:pr.number,per_page:100});
+              // Only the repository owner's explicit marker transfers implementation.
+              // Review requests below remain independent of implementation ownership.
+              const ownershipMarker='<!-- implementation-owner:codex -->';
+              const codexOwned=(pr.user.login===owner && (pr.body || '').includes(ownershipMarker)) ||
+                comments.some(c=>c.user?.login===owner && (c.body || '').includes(ownershipMarker));
               const marker='<!-- mvp-supervisor:'+pr.head.sha+' -->';
               const commits=await github.paginate(github.rest.pulls.listCommits,{owner,repo,pull_number:pr.number,per_page:100});
               const latest=commits[commits.length-1];
               const recentlyAsked=comments.some(c=>c.body.includes('@codex review') && Date.now()-Date.parse(c.created_at)<3600000);
-              if ((pr.mergeable===false || failures.length) && !comments.some(c=>c.body.includes(marker))) {
+              if (!codexOwned && (pr.mergeable===false || failures.length) && !comments.some(c=>c.body.includes(marker))) {
                 const details=failures.map(c=>'- '+c.name+': '+c.conclusion+' '+c.html_url).join('\n');
                 actions.push({number:pr.number,body:marker+'\n@jules Please inspect and fix the current head '+pr.head.sha+'. '+(pr.mergeable===false?'Resolve merge conflicts with main without discarding either feature. ':'')+'\n'+details+'\nUse the linked logs, add focused regression coverage, run relevant tests, and push fixes to this existing PR. Address outstanding Codex findings, not only CI. If blocked by credentials, provider choice, or an owner decision, explain the exact blocker. Do not choose paid services, deploy, or weaken required checks.'});
               }

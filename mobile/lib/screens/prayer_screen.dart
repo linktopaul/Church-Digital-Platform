@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/prayer_models.dart';
 import '../services/prayer_api_client.dart';
@@ -7,6 +8,8 @@ import '../services/prayer_api_client.dart';
 /// Guardrails:
 /// - Fails closed: If [apiClient] is null, renders an explicit sign-in / configuration state.
 /// - Privacy: Content is marked confidential, never logged, and only visible according to permissions.
+/// - Session isolation: Switching or clearing [apiClient] immediately purges cached confidential
+///   requests, invalidates open submission sheets, and discards late prior-session responses.
 /// - Status mutation: Pastor status controls reflect server authorization; non-pastor cannot mutate status.
 /// - No optimistic writes: List and status updates only reflect confirmed server responses.
 class PrayerScreen extends StatefulWidget {
@@ -23,8 +26,11 @@ class PrayerScreen extends StatefulWidget {
   State<PrayerScreen> createState() => _PrayerScreenState();
 }
 
-class _PrayerScreenState extends State<PrayerScreen> with SingleTickerProviderStateMixin {
+class _PrayerScreenState extends State<PrayerScreen> with TickerProviderStateMixin {
   late TabController _tabController;
+  final ValueNotifier<int> _sessionGenerationNotifier = ValueNotifier<int>(0);
+  int _sessionGeneration = 0;
+  int _loadGeneration = 0;
   bool _isLoading = false;
   String? _errorMessage;
   List<PrayerRequestData> _myRequests = [];
@@ -45,20 +51,40 @@ class _PrayerScreenState extends State<PrayerScreen> with SingleTickerProviderSt
   @override
   void didUpdateWidget(covariant PrayerScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.isPastor != widget.isPastor) {
+    final clientChanged = oldWidget.apiClient != widget.apiClient;
+    final roleChanged = oldWidget.isPastor != widget.isPastor;
+
+    if (roleChanged) {
       _tabController.dispose();
       _tabController = TabController(
         length: widget.isPastor ? 2 : 1,
         vsync: this,
       );
+      if (!widget.isPastor) {
+        _allRequests = [];
+      }
     }
-    if (oldWidget.apiClient != widget.apiClient && widget.apiClient != null) {
+
+    if (clientChanged) {
+      _sessionGeneration++;
+      _sessionGenerationNotifier.value = _sessionGeneration;
+      _loadGeneration++;
+      _myRequests = [];
+      _allRequests = [];
+      _errorMessage = null;
+      _isLoading = false;
+    }
+
+    if (widget.apiClient != null && (clientChanged || roleChanged)) {
       _loadData();
     }
   }
 
   @override
   void dispose() {
+    _sessionGeneration++;
+    _sessionGenerationNotifier.value = _sessionGeneration;
+    _sessionGenerationNotifier.dispose();
     _tabController.dispose();
     super.dispose();
   }
@@ -67,6 +93,10 @@ class _PrayerScreenState extends State<PrayerScreen> with SingleTickerProviderSt
     final client = widget.apiClient;
     if (client == null) return;
 
+    final capturedSessionGen = _sessionGeneration;
+    final capturedLoadGen = ++_loadGeneration;
+    final capturedIsPastor = widget.isPastor;
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -74,31 +104,107 @@ class _PrayerScreenState extends State<PrayerScreen> with SingleTickerProviderSt
 
     try {
       final myReqs = await client.getMyPrayerRequests();
+      if (!mounted ||
+          capturedSessionGen != _sessionGeneration ||
+          capturedLoadGen != _loadGeneration ||
+          widget.apiClient != client) {
+        return;
+      }
+
       List<PrayerRequestData> allReqs = [];
-      if (widget.isPastor) {
+      if (capturedIsPastor && widget.isPastor) {
         allReqs = await client.getAllPrayerRequests();
       }
 
-      if (mounted) {
-        setState(() {
-          _myRequests = myReqs;
-          _allRequests = allReqs;
-          _isLoading = false;
-        });
+      if (!mounted ||
+          capturedSessionGen != _sessionGeneration ||
+          capturedLoadGen != _loadGeneration ||
+          widget.apiClient != client) {
+        return;
       }
+
+      setState(() {
+        _myRequests = myReqs;
+        _allRequests = widget.isPastor ? allReqs : [];
+        _isLoading = false;
+      });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _errorMessage = e is PrayerApiException
-              ? e.message
-              : 'Failed to load prayer requests. Please try again.';
-        });
+      if (!mounted ||
+          capturedSessionGen != _sessionGeneration ||
+          capturedLoadGen != _loadGeneration ||
+          widget.apiClient != client) {
+        return;
       }
+      setState(() {
+        _isLoading = false;
+        _errorMessage = e is PrayerApiException
+            ? e.message
+            : 'Failed to load prayer requests. Please try again.';
+      });
     }
   }
 
+  Future<PrayerRequestData> _submitRequestForSession({
+    required PrayerApiClient originatingClient,
+    required int originatingSessionGen,
+    required String content,
+  }) async {
+    if (!mounted ||
+        originatingSessionGen != _sessionGeneration ||
+        widget.apiClient != originatingClient) {
+      throw const PrayerApiException(
+        'Session changed. Please sign in and submit your request again.',
+        statusCode: 401,
+      );
+    }
+
+    final created = await originatingClient.createPrayerRequest(
+      CreatePrayerRequestInput(content: content),
+    );
+
+    if (!mounted ||
+        originatingSessionGen != _sessionGeneration ||
+        widget.apiClient != originatingClient) {
+      throw const PrayerApiException(
+        'Session changed while submitting prayer request.',
+        statusCode: 401,
+      );
+    }
+
+    // Invalidate any older in-flight GET started before this mutation completed
+    // so a stale snapshot cannot overwrite the confirmed submission.
+    final hadPendingLoad = _isLoading;
+    _loadGeneration++;
+    setState(() {
+      _isLoading = false;
+      _myRequests = [
+        created,
+        ..._myRequests.where((r) => r.id != created.id),
+      ];
+      if (widget.isPastor) {
+        _allRequests = [
+          created,
+          ..._allRequests.where((r) => r.id != created.id),
+        ];
+      }
+    });
+    if (hadPendingLoad) {
+      _loadData();
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Your prayer request was submitted confidentially.'),
+      ),
+    );
+
+    return created;
+  }
+
   void _openSubmitDialog() {
+    final client = widget.apiClient;
+    if (client == null) return;
+    final capturedSessionGen = _sessionGeneration;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -106,20 +212,13 @@ class _PrayerScreenState extends State<PrayerScreen> with SingleTickerProviderSt
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) => _PrayerSubmitBottomSheet(
-        apiClient: widget.apiClient!,
-        onSuccess: (newRequest) {
-          setState(() {
-            _myRequests = [newRequest, ..._myRequests];
-            if (widget.isPastor) {
-              _allRequests = [newRequest, ..._allRequests];
-            }
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Your prayer request was submitted confidentially.'),
-            ),
-          );
-        },
+        sessionGenerationListenable: _sessionGenerationNotifier,
+        expectedSessionGeneration: capturedSessionGen,
+        onSubmit: (content) => _submitRequestForSession(
+          originatingClient: client,
+          originatingSessionGen: capturedSessionGen,
+          content: content,
+        ),
       ),
     );
   }
@@ -127,6 +226,7 @@ class _PrayerScreenState extends State<PrayerScreen> with SingleTickerProviderSt
   Future<void> _updateStatus(PrayerRequestData request, PrayerRequestStatus newStatus) async {
     final client = widget.apiClient;
     if (client == null) return;
+    final capturedSessionGen = _sessionGeneration;
 
     try {
       final updated = await client.updatePrayerRequestStatus(
@@ -134,32 +234,39 @@ class _PrayerScreenState extends State<PrayerScreen> with SingleTickerProviderSt
         UpdatePrayerRequestStatusInput(status: newStatus),
       );
 
-      if (mounted) {
-        setState(() {
-          _allRequests = _allRequests
-              .map((r) => r.id == updated.id ? updated : r)
-              .toList();
-          _myRequests = _myRequests
-              .map((r) => r.id == updated.id ? updated : r)
-              .toList();
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Prayer request status updated to ${newStatus.displayName}.'),
-          ),
-        );
+      if (!mounted ||
+          capturedSessionGen != _sessionGeneration ||
+          widget.apiClient != client) {
+        return;
       }
+
+      setState(() {
+        _allRequests = _allRequests
+            .map((r) => r.id == updated.id ? updated : r)
+            .toList();
+        _myRequests = _myRequests
+            .map((r) => r.id == updated.id ? updated : r)
+            .toList();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Prayer request status updated to ${newStatus.displayName}.'),
+        ),
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              e is PrayerApiException ? e.message : 'Failed to update prayer status.',
-            ),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
+      if (!mounted ||
+          capturedSessionGen != _sessionGeneration ||
+          widget.apiClient != client) {
+        return;
       }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e is PrayerApiException ? e.message : 'Failed to update prayer status.',
+          ),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
     }
   }
 
@@ -397,7 +504,18 @@ class _PrayerScreenState extends State<PrayerScreen> with SingleTickerProviderSt
 
   Widget _buildList(List<PrayerRequestData> requests, {required bool isPastorFeed}) {
     if (requests.isEmpty) {
-      return _buildEmptyState(isPastorFeed: isPastorFeed);
+      return RefreshIndicator(
+        onRefresh: _loadData,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: _buildEmptyState(isPastorFeed: isPastorFeed),
+            ),
+          ],
+        ),
+      );
     }
     return RefreshIndicator(
       onRefresh: _loadData,
@@ -451,12 +569,14 @@ class _PrayerScreenState extends State<PrayerScreen> with SingleTickerProviderSt
 }
 
 class _PrayerSubmitBottomSheet extends StatefulWidget {
-  final PrayerApiClient apiClient;
-  final void Function(PrayerRequestData newRequest) onSuccess;
+  final ValueListenable<int> sessionGenerationListenable;
+  final int expectedSessionGeneration;
+  final Future<PrayerRequestData> Function(String content) onSubmit;
 
   const _PrayerSubmitBottomSheet({
-    required this.apiClient,
-    required this.onSuccess,
+    required this.sessionGenerationListenable,
+    required this.expectedSessionGeneration,
+    required this.onSubmit,
   });
 
   @override
@@ -469,13 +589,41 @@ class _PrayerSubmitBottomSheetState extends State<_PrayerSubmitBottomSheet> {
   bool _isSubmitting = false;
   String? _submitError;
 
+  bool get _isSessionValid =>
+      widget.sessionGenerationListenable.value == widget.expectedSessionGeneration;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.sessionGenerationListenable.addListener(_handleSessionGenerationChanged);
+  }
+
+  void _handleSessionGenerationChanged() {
+    if (!_isSessionValid && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _isSessionValid) return;
+        final route = ModalRoute.of(context);
+        if (route != null && route.isCurrent) {
+          Navigator.of(context).pop();
+        }
+      });
+    }
+  }
+
   @override
   void dispose() {
+    widget.sessionGenerationListenable.removeListener(_handleSessionGenerationChanged);
     _contentController.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
+    if (!_isSessionValid) {
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
@@ -484,16 +632,13 @@ class _PrayerSubmitBottomSheetState extends State<_PrayerSubmitBottomSheet> {
     });
 
     try {
-      final created = await widget.apiClient.createPrayerRequest(
-        CreatePrayerRequestInput(content: _contentController.text.trim()),
-      );
+      await widget.onSubmit(_contentController.text.trim());
 
-      if (mounted) {
+      if (mounted && _isSessionValid) {
         Navigator.of(context).pop();
-        widget.onSuccess(created);
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && _isSessionValid) {
         setState(() {
           _isSubmitting = false;
           _submitError = e is PrayerApiException
