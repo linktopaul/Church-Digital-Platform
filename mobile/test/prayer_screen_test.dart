@@ -597,37 +597,5 @@ void main() {
 
       manager.dispose();
     });
-
-    testWidgets('retains authenticated prayer client for refreshable session when access token is expired', (tester) async {
-      final expiredRefreshableSession = AuthSession(
-        accessToken: 'expired-pastor-token',
-        refreshToken: 'valid-pastor-refresh',
-        userId: 'pastor-user-id',
-        tenantId: 'tenant-1',
-        roles: const ['Pastor'],
-        expiresAt: DateTime.now().subtract(const Duration(minutes: 10)),
-      );
-      final mockAuth = MockAuthProvider(mockSessionToReturn: expiredRefreshableSession);
-      final manager = AuthSessionManager(
-        provider: mockAuth,
-        storage: InMemorySecureTokenStorage(),
-      );
-      await manager.setSession(expiredRefreshableSession);
-
-      await tester.pumpWidget(ChurchMobileApp(
-        authService: manager,
-        apiBaseUrl: 'https://church.example.com',
-      ));
-      // Switch to Prayer tab (index 2)
-      await tester.tap(find.byIcon(Icons.favorite_border));
-      await tester.pump();
-
-      // Because session has a valid refresh token, it retains the authenticated client
-      expect(find.text('Sign In Required'), findsNothing);
-      expect(find.text('My Requests'), findsOneWidget);
-      expect(find.text('All Pastoral Requests'), findsOneWidget);
-
-      manager.dispose();
-    });
   });
 }

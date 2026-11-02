@@ -20,4 +20,3 @@ abstract class SecureTokenStorage {
   /// Quick check whether a non-empty session exists.
   Future<bool> hasValidSession();
 }
-

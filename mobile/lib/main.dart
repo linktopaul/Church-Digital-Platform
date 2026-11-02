@@ -131,10 +131,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   bool get _isAuthenticated {
     final session = _currentSession;
-    if (session == null) return false;
-    final hasActiveToken = !session.isExpired && session.accessToken.isNotEmpty;
-    final canRefresh = session.refreshToken != null && session.refreshToken!.trim().isNotEmpty;
-    return hasActiveToken || canRefresh;
+    return session != null && !session.isExpired && session.accessToken.isNotEmpty;
   }
 
   bool get _isPastor {
