@@ -3,7 +3,15 @@
 const {plan}=require('./planner.cjs');
 const fs=require('node:fs');
 const MARK='delivery-state:v1';
-function readRecord(body){const m=(body||'').match(/<!-- delivery-state:v1 (\{[^\n]*\}) -->/);if(!m)return null;return JSON.parse(m[1]);}
+function readRecord(body){
+ const text=body||'';
+ if(!text.includes(MARK))return null;
+ const m=text.match(/<!-- delivery-state:v1 (\{[^\r\n]*\}) -->/);
+ if(!m)throw Error('Malformed state marker');
+ const parsed=JSON.parse(m[1]);
+ if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw Error('Malformed state payload');
+ return parsed;
+}
 async function run({github,context,core,dryRun=false}){
  const config=JSON.parse(fs.readFileSync('.github/delivery/plan.json','utf8'));
  if(config.version!==1)throw Error('Unsupported delivery plan version');
