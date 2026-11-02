@@ -309,8 +309,18 @@ namespace Church.API.Endpoints
                     return Results.NotFound(new { error = "Family not found." });
                 }
 
-                var memberResponses = family.Members
+                var isFamilyMember = family.Members.Any(m => m.Id == callerId);
+                var visibleMembers = family.Members
                     .Where(m => privileged || m.Id == callerId || m.DirectoryVisibility == DirectoryVisibility.PublicToMembers)
+                    .ToList();
+
+                // If non-privileged caller is not in this family and cannot see any public members, return 404 to protect family privacy
+                if (!privileged && !isFamilyMember && visibleMembers.Count == 0)
+                {
+                    return Results.NotFound(new { error = "Family not found." });
+                }
+
+                var memberResponses = visibleMembers
                     .OrderBy(m => m.FamilyRole == FamilyRole.HeadOfHousehold ? 0 :
                                   m.FamilyRole == FamilyRole.Spouse ? 1 : 2)
                     .ThenBy(m => m.FirstName)
@@ -361,7 +371,7 @@ namespace Church.API.Endpoints
                 return Results.Created($"/api/v1/members/families/{family.Id}", response);
             });
 
-            // 7. PUT /api/v1/members/{id:guid}/family (Assign member to family)
+            // 7. PUT /api/v1/members/{id:guid}/family (Assign member to family - Leaders only, or self-disassociate)
             group.MapPut("/{id:guid}/family", async (
                 Guid id,
                 AssignFamilyRequest request,
@@ -371,9 +381,14 @@ namespace Church.API.Endpoints
                 var callerId = GetCurrentUserId(user);
                 var privileged = IsPrivileged(user);
 
-                if (!privileged && id != callerId)
+                // Regular members can only disassociate themselves (FamilyId == null).
+                // Assigning someone to a family requires leader authorization (Admin or Pastor).
+                if (!privileged)
                 {
-                    return Results.Forbid();
+                    if (id != callerId || request.FamilyId.HasValue)
+                    {
+                        return Results.Forbid();
+                    }
                 }
 
                 var member = await db.Members.FirstOrDefaultAsync(m => m.Id == id);

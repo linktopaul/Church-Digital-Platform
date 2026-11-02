@@ -374,5 +374,126 @@ namespace Church.Tests
             Assert.NotNull(updated.AnniversaryDate);
             Assert.Equal(DateTimeKind.Utc, updated.AnniversaryDate.Value.Kind);
         }
+
+        [Fact]
+        public async Task Scenario9_FamilySecurity_NonLeaderCannotAssignToFamily_Returns403()
+        {
+            var churchId = Guid.NewGuid();
+            var memberAId = Guid.NewGuid();
+            var adminId = Guid.NewGuid();
+
+            var family = new Family
+            {
+                Id = Guid.NewGuid(),
+                TenantId = churchId,
+                FamilyName = "The Johnsons"
+            };
+            SeedFamily(churchId, family);
+
+            var memberA = new Member
+            {
+                Id = memberAId,
+                TenantId = churchId,
+                FirstName = "Bob",
+                LastName = "Jones",
+                Email = "bob@church.local",
+                DirectoryVisibility = DirectoryVisibility.PublicToMembers
+            };
+            SeedMember(churchId, memberA);
+
+            // Member A tries to attach themselves to The Johnsons without leader approval
+            var memberClient = _factory.CreateClient();
+            memberClient.DefaultRequestHeaders.Add("X-User-Role", "Member");
+            memberClient.DefaultRequestHeaders.Add("X-User-Id", memberAId.ToString());
+            memberClient.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
+
+            var selfAssignRes = await memberClient.PutAsJsonAsync(
+                $"/api/v1/members/{memberAId}/family",
+                new AssignFamilyRequest(family.Id, FamilyRole.Spouse));
+            Assert.Equal(HttpStatusCode.Forbidden, selfAssignRes.StatusCode);
+
+            // Admin assigns Member A to family -> Success 200
+            var adminClient = _factory.CreateClient();
+            adminClient.DefaultRequestHeaders.Add("X-User-Role", "Admin");
+            adminClient.DefaultRequestHeaders.Add("X-User-Id", adminId.ToString());
+            adminClient.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
+
+            var adminAssignRes = await adminClient.PutAsJsonAsync(
+                $"/api/v1/members/{memberAId}/family",
+                new AssignFamilyRequest(family.Id, FamilyRole.Spouse));
+            Assert.Equal(HttpStatusCode.OK, adminAssignRes.StatusCode);
+
+            // Member A can disassociate themselves (FamilyId = null) -> Success 200
+            var disassociateRes = await memberClient.PutAsJsonAsync(
+                $"/api/v1/members/{memberAId}/family",
+                new AssignFamilyRequest(null, FamilyRole.Individual));
+            Assert.Equal(HttpStatusCode.OK, disassociateRes.StatusCode);
+        }
+
+        [Fact]
+        public async Task Scenario10_FamilySecurity_HiddenFamily_Returns404ToUnrelatedMember()
+        {
+            var churchId = Guid.NewGuid();
+            var unrelatedMemberId = Guid.NewGuid();
+            var pastorId = Guid.NewGuid();
+            var hiddenFamilyId = Guid.NewGuid();
+
+            var family = new Family
+            {
+                Id = hiddenFamilyId,
+                TenantId = churchId,
+                FamilyName = "The Secret Family"
+            };
+            SeedFamily(churchId, family);
+
+            // Seed members who all have DirectoryVisibility = Private
+            var member1 = new Member
+            {
+                Id = Guid.NewGuid(),
+                TenantId = churchId,
+                FirstName = "Secret1",
+                LastName = "Person",
+                Email = "s1@church.local",
+                FamilyId = hiddenFamilyId,
+                FamilyRole = FamilyRole.HeadOfHousehold,
+                DirectoryVisibility = DirectoryVisibility.Private
+            };
+            SeedMember(churchId, member1);
+
+            var member2 = new Member
+            {
+                Id = Guid.NewGuid(),
+                TenantId = churchId,
+                FirstName = "Secret2",
+                LastName = "Person",
+                Email = "s2@church.local",
+                FamilyId = hiddenFamilyId,
+                FamilyRole = FamilyRole.Spouse,
+                DirectoryVisibility = DirectoryVisibility.Private
+            };
+            SeedMember(churchId, member2);
+
+            // Unrelated regular member tries to inspect this family
+            var unrelatedClient = _factory.CreateClient();
+            unrelatedClient.DefaultRequestHeaders.Add("X-User-Role", "Member");
+            unrelatedClient.DefaultRequestHeaders.Add("X-User-Id", unrelatedMemberId.ToString());
+            unrelatedClient.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
+
+            var lookupRes = await unrelatedClient.GetAsync($"/api/v1/members/families/{hiddenFamilyId}");
+            Assert.Equal(HttpStatusCode.NotFound, lookupRes.StatusCode);
+
+            // Pastor inspects -> Success 200 with unredacted members
+            var pastorClient = _factory.CreateClient();
+            pastorClient.DefaultRequestHeaders.Add("X-User-Role", "Pastor");
+            pastorClient.DefaultRequestHeaders.Add("X-User-Id", pastorId.ToString());
+            pastorClient.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
+
+            var pastorRes = await pastorClient.GetAsync($"/api/v1/members/families/{hiddenFamilyId}");
+            Assert.Equal(HttpStatusCode.OK, pastorRes.StatusCode);
+            var pastorFamily = await pastorRes.Content.ReadFromJsonAsync<FamilyResponse>();
+            Assert.NotNull(pastorFamily);
+            Assert.Equal("The Secret Family", pastorFamily.FamilyName);
+            Assert.Equal(2, pastorFamily.Members.Count);
+        }
     }
 }
