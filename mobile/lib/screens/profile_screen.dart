@@ -39,6 +39,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   static const int _pageSize = 50;
   String? _errorMessage;
   String _searchQuery = '';
+  String _lastInputQuery = '';
 
   int _sessionGeneration = 0;
   int _profileMutationGeneration = 0;
@@ -67,6 +68,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       _isLoadingMoreDirectory = false;
       _isSearchingOrRefreshingDirectory = false;
       _isSavingProfile = false;
+      _searchQuery = '';
+      _lastInputQuery = '';
       _errorMessage = null;
       if (widget.apiClient != null) {
         _loadData();
@@ -93,7 +96,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       _isLoadingMoreDirectory = false;
       _isSearchingOrRefreshingDirectory = true;
       _errorMessage = null;
-      _directoryPage = 1;
     });
 
     try {
@@ -139,6 +141,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     final sessionGen = _sessionGeneration;
     final dirGen = ++_directoryLoadGeneration;
     final cleanQuery = query.trim();
+    _lastInputQuery = cleanQuery;
 
     setState(() {
       _isLoadingMoreDirectory = false;
@@ -643,10 +646,16 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             ),
-            onSubmitted: (val) => _searchDirectory(val),
+            onSubmitted: (val) {
+              final trimmed = val.trim();
+              _lastInputQuery = trimmed;
+              _searchDirectory(trimmed);
+            },
             onChanged: (val) {
-              if (val.trim() != _searchQuery) {
-                _searchDirectory(val);
+              final trimmed = val.trim();
+              if (trimmed != _lastInputQuery) {
+                _lastInputQuery = trimmed;
+                _searchDirectory(trimmed);
               }
             },
           ),

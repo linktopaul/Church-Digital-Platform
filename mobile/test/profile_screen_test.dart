@@ -360,6 +360,26 @@ void main() {
     expect(find.text('Sarah Connor'), findsOneWidget);
   });
 
+  testWidgets('reverting search input invalidates pending query', (tester) async {
+    await tester.pumpWidget(createSubject(
+      client: fakeClient,
+      authService: mockAuthService,
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Directory'));
+    await tester.pumpAndSettle();
+
+    // Type query then revert back to empty
+    await tester.enterText(find.byType(TextField), 'John');
+    await tester.enterText(find.byType(TextField), '');
+    await tester.pumpAndSettle();
+
+    // Both members should be visible because empty query won
+    expect(find.text('Sarah Connor'), findsOneWidget);
+    expect(find.text('John Reese'), findsOneWidget);
+  });
+
   testWidgets('sign out button triggers authService signOut', (tester) async {
     await tester.pumpWidget(createSubject(
       client: fakeClient,
