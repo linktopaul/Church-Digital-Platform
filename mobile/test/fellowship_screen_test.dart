@@ -459,6 +459,10 @@ void main() {
     await tester.tap(find.text("Member A Private Fellowship"));
     await tester.pumpAndSettle();
 
+    // Switch to About & Members tab to view private description
+    await tester.tap(find.text('About & Members'));
+    await tester.pumpAndSettle();
+
     // Verify detail screen is mounted showing private group info
     expect(find.text("Secret members-only group"), findsOneWidget);
 
