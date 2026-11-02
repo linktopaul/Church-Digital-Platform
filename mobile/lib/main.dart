@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'auth/auth_provider.dart';
 import 'auth/auth_session.dart';
+import 'auth/auth_session_manager.dart';
 import 'network/authenticated_http_client.dart';
 import 'screens/home_screen.dart';
 import 'screens/messages_screen.dart';
@@ -110,7 +111,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   String get _effectiveBaseUrl {
     final provided = widget.apiBaseUrl;
     if (provided != null && provided.trim().isNotEmpty) {
-      return provided.trim();
+      final trimmed = provided.trim().replaceAll(RegExp(r'/+$'), '');
+      return trimmed;
     }
     return const String.fromEnvironment(
       'CHURCH_API_BASE_URL',
@@ -135,9 +137,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       final authClient = AuthenticatedHttpClient(authService: authService);
       final client = HttpFellowshipApiClient(
         client: authClient,
-        baseUrl: _effectiveBaseUrl,
-        currentUserId: _currentSession?.userId,
-        currentMemberName: _currentSession?.displayName,
+        baseUrl: '$_effectiveBaseUrl/api/v1',
       );
       return MessagesScreen(apiClient: client);
     }

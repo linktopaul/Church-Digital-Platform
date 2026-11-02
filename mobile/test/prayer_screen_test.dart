@@ -533,7 +533,7 @@ void main() {
         ),
       );
       final manager = AuthSessionManager(
-        authProvider: mockAuth,
+        provider: mockAuth,
         storage: InMemorySecureTokenStorage(),
       );
       await manager.setSession(mockAuth.mockSessionToReturn!);
