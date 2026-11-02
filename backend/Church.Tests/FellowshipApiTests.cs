@@ -150,6 +150,18 @@ namespace Church.Tests
             memberClient.DefaultRequestHeaders.Add("X-User-Id", memberId.ToString());
             memberClient.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
 
+            // Verify initial membership status for memberClient (not yet member)
+            var initialListRes = await memberClient.GetAsync("/api/v1/fellowships");
+            var initialList = await initialListRes.Content.ReadFromJsonAsync<List<FellowshipGroupResponse>>();
+            var initialGroup = initialList?.FirstOrDefault(g => g.Id == group.Id);
+            Assert.NotNull(initialGroup);
+            Assert.False(initialGroup.IsUserMember);
+
+            var initialDetailRes = await memberClient.GetAsync($"/api/v1/fellowships/{group.Id}");
+            var initialDetail = await initialDetailRes.Content.ReadFromJsonAsync<FellowshipGroupDetailResponse>();
+            Assert.NotNull(initialDetail);
+            Assert.False(initialDetail.IsUserMember);
+
             // 1. Join Group
             var joinRes = await memberClient.PostAsJsonAsync($"/api/v1/fellowships/{group.Id}/join", new JoinFellowshipGroupRequest("Brother Timothy"));
             Assert.Equal(HttpStatusCode.Created, joinRes.StatusCode);
@@ -157,6 +169,18 @@ namespace Church.Tests
             Assert.NotNull(joinData);
             Assert.Equal(memberId, joinData.MemberId);
             Assert.Equal("Brother Timothy", joinData.MemberName);
+
+            // Verify membership restored in list and detail
+            var joinedListRes = await memberClient.GetAsync("/api/v1/fellowships");
+            var joinedList = await joinedListRes.Content.ReadFromJsonAsync<List<FellowshipGroupResponse>>();
+            var joinedGroup = joinedList?.FirstOrDefault(g => g.Id == group.Id);
+            Assert.NotNull(joinedGroup);
+            Assert.True(joinedGroup.IsUserMember);
+
+            var joinedDetailRes = await memberClient.GetAsync($"/api/v1/fellowships/{group.Id}");
+            var joinedDetail = await joinedDetailRes.Content.ReadFromJsonAsync<FellowshipGroupDetailResponse>();
+            Assert.NotNull(joinedDetail);
+            Assert.True(joinedDetail.IsUserMember);
 
             // 2. Check Members list
             var membersRes = await memberClient.GetAsync($"/api/v1/fellowships/{group.Id}/members");

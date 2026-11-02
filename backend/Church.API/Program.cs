@@ -788,7 +788,8 @@ fellowshipGroup.MapGet("/", async (
             g.Location,
             g.IsPrivate,
             g.Members.Count,
-            g.CreatedAt
+            g.CreatedAt,
+            userId != Guid.Empty && g.Members.Any(m => m.MemberId == userId)
         ))
         .ToListAsync();
 
@@ -846,6 +847,8 @@ fellowshipGroup.MapGet("/{id:guid}", async (
         ))
         .ToList();
 
+    var isUserMember = userId != Guid.Empty && group.Members.Any(m => m.MemberId == userId);
+
     var response = new FellowshipGroupDetailResponse(
         group.Id,
         group.TenantId,
@@ -859,7 +862,8 @@ fellowshipGroup.MapGet("/{id:guid}", async (
         group.IsPrivate,
         group.CreatedAt,
         memberResponses,
-        postResponses
+        postResponses,
+        isUserMember
     );
 
     return Results.Ok(response);
@@ -913,6 +917,8 @@ fellowshipGroup.MapPost("/", [Authorize(Roles = "Admin,Pastor,FellowshipLeader")
     db.FellowshipGroups.Add(group);
     await db.SaveChangesAsync();
 
+    var isCurrentUserMember = currentUserId != Guid.Empty && group.Members.Any(m => m.MemberId == currentUserId);
+
     var response = new FellowshipGroupResponse(
         group.Id,
         group.TenantId,
@@ -925,7 +931,8 @@ fellowshipGroup.MapPost("/", [Authorize(Roles = "Admin,Pastor,FellowshipLeader")
         group.Location,
         group.IsPrivate,
         group.Members.Count,
-        group.CreatedAt
+        group.CreatedAt,
+        isCurrentUserMember
     );
 
     return Results.Created($"/api/v1/fellowships/{group.Id}", response);
@@ -986,6 +993,7 @@ fellowshipGroup.MapPut("/{id:guid}", [Authorize(Roles = "Admin,Pastor,Fellowship
     await db.SaveChangesAsync();
 
     var memberCount = await db.FellowshipMembers.CountAsync(m => m.FellowshipGroupId == group.Id);
+    var isUserMember = userId != Guid.Empty && await db.FellowshipMembers.AnyAsync(m => m.FellowshipGroupId == group.Id && m.MemberId == userId);
 
     var response = new FellowshipGroupResponse(
         group.Id,
@@ -999,7 +1007,8 @@ fellowshipGroup.MapPut("/{id:guid}", [Authorize(Roles = "Admin,Pastor,Fellowship
         group.Location,
         group.IsPrivate,
         memberCount,
-        group.CreatedAt
+        group.CreatedAt,
+        isUserMember
     );
 
     return Results.Ok(response);

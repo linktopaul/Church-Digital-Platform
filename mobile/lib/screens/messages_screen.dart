@@ -5,10 +5,18 @@ import '../services/fellowship_api_client.dart';
 
 class MessagesScreen extends StatefulWidget {
   final FellowshipApiClient? apiClient;
+  final String? apiBaseUrl;
+  final String Function()? getAuthToken;
+  final String? currentUserId;
+  final String? currentMemberName;
 
   const MessagesScreen({
     super.key,
     this.apiClient,
+    this.apiBaseUrl,
+    this.getAuthToken,
+    this.currentUserId,
+    this.currentMemberName,
   });
 
   @override
@@ -30,15 +38,29 @@ class _MessagesScreenState extends State<MessagesScreen> {
   @override
   void initState() {
     super.initState();
-    _apiClient = widget.apiClient ?? HttpFellowshipApiClient();
+    _apiClient = widget.apiClient ??
+        HttpFellowshipApiClient(
+          baseUrl: widget.apiBaseUrl,
+          getAuthToken: widget.getAuthToken,
+          currentUserId: widget.currentUserId,
+          currentMemberName: widget.currentMemberName,
+        );
     _loadGroups();
   }
 
   @override
   void didUpdateWidget(covariant MessagesScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.apiClient != widget.apiClient) {
-      _apiClient = widget.apiClient ?? HttpFellowshipApiClient();
+    if (oldWidget.apiClient != widget.apiClient ||
+        oldWidget.apiBaseUrl != widget.apiBaseUrl ||
+        oldWidget.currentUserId != widget.currentUserId) {
+      _apiClient = widget.apiClient ??
+          HttpFellowshipApiClient(
+            baseUrl: widget.apiBaseUrl,
+            getAuthToken: widget.getAuthToken,
+            currentUserId: widget.currentUserId,
+            currentMemberName: widget.currentMemberName,
+          );
       _sessionGeneration++;
       _sessionGenerationNotifier.value = _sessionGeneration;
       _loadGeneration++;
@@ -567,7 +589,8 @@ class _FellowshipDetailScreenState extends State<_FellowshipDetailScreen>
         _currentGroup = _currentGroup.copyWith(
           members: detail.members,
           posts: detail.posts,
-          memberCount: detail.memberCount > 0 ? detail.memberCount : _currentGroup.memberCount,
+          memberCount: detail.memberCount,
+          isUserMember: detail.isUserMember,
           description: detail.description,
           leaderName: detail.leaderName ?? _currentGroup.leaderName,
           meetingSchedule: detail.meetingSchedule ?? _currentGroup.meetingSchedule,
@@ -586,11 +609,23 @@ class _FellowshipDetailScreenState extends State<_FellowshipDetailScreen>
     if (!_isSessionValid) return;
     final willJoin = !_currentGroup.isUserMember;
     try {
-      if (willJoin) {
-        await widget.apiClient.joinFellowshipGroup(_currentGroup.id);
-      } else {
-        await widget.apiClient.leaveFellowshipGroup(_currentGroup.id);
+      final success = willJoin
+          ? await widget.apiClient.joinFellowshipGroup(_currentGroup.id)
+          : await widget.apiClient.leaveFellowshipGroup(_currentGroup.id);
+
+      if (!success) {
+        if (mounted && _isSessionValid) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(willJoin
+                  ? 'Failed to join space. Please check permissions.'
+                  : 'Failed to leave space.'),
+            ),
+          );
+        }
+        return;
       }
+
       if (!mounted || !_isSessionValid) return;
       setState(() {
         _currentGroup = _currentGroup.copyWith(
@@ -601,6 +636,9 @@ class _FellowshipDetailScreenState extends State<_FellowshipDetailScreen>
         );
       });
       widget.onGroupUpdated(_currentGroup);
+
+      // Perform canonical reload after success
+      await _fetchDetail();
     } catch (e) {
       if (!mounted || !_isSessionValid) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -876,3 +914,4 @@ class _FellowshipDetailScreenState extends State<_FellowshipDetailScreen>
     );
   }
 }
+

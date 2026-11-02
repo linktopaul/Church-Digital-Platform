@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:church_digital_platform_mobile/models/fellowship_models.dart';
 import 'package:church_digital_platform_mobile/screens/messages_screen.dart';
 import 'package:church_digital_platform_mobile/services/fellowship_api_client.dart';
@@ -136,6 +139,7 @@ class ControllableFellowshipApiClient extends FakeFellowshipApiClient {
     );
   }
 }
+
 
 void main() {
   List<FellowshipGroupData> createSampleGroups() => [
@@ -344,6 +348,7 @@ void main() {
     expect(find.text('Joined'), findsOneWidget);
   });
 
+
   testWidgets('MessagesScreen reloads groups when apiClient is updated via didUpdateWidget',
       (tester) async {
     final client1 = FakeFellowshipApiClient(initialGroups: []);
@@ -537,5 +542,411 @@ void main() {
     // Verify Member A's group was NOT added to Client B's list
     expect(find.text("Member B Open Group"), findsOneWidget);
     expect(find.text("Member A Secret Group"), findsNothing);
+  });
+
+  group('HttpFellowshipApiClient unit & contract tests', () {
+    test('normalizes both root and /api/v1 base URLs', () async {
+      final requestedPaths = <String>[];
+      final mockClient = MockClient((request) async {
+        requestedPaths.add(request.url.path);
+        return http.Response(jsonEncode([]), 200);
+      });
+
+      final rootClient = HttpFellowshipApiClient(
+        client: mockClient,
+        baseUrl: 'http://10.0.2.2:5178/',
+      );
+      await rootClient.getFellowshipGroups();
+
+      final prefixedClient = HttpFellowshipApiClient(
+        client: mockClient,
+        baseUrl: 'http://10.0.2.2:5178/api/v1/',
+      );
+      await prefixedClient.getFellowshipGroups();
+
+      expect(requestedPaths, equals([
+        '/api/v1/fellowships',
+        '/api/v1/fellowships',
+      ]));
+      expect(rootClient.baseUrl, equals('http://10.0.2.2:5178/api/v1'));
+      expect(prefixedClient.baseUrl, equals('http://10.0.2.2:5178/api/v1'));
+    });
+
+    test('createFellowshipGroup serializes groupType as integer enum and honors server isUserMember', () async {
+      late String capturedBody;
+      var serverIsMember = true;
+      final mockClient = MockClient((request) async {
+        if (request.url.path == '/api/v1/fellowships' && request.method == 'POST') {
+          capturedBody = request.body;
+          return http.Response(
+            jsonEncode({
+              'id': 'g-created-1',
+              'name': 'Test Group',
+              'description': 'Test Desc',
+              'groupType': 1,
+              'leaderName': 'Leader',
+              'isPrivate': false,
+              'memberCount': 1,
+              'isUserMember': serverIsMember,
+            }),
+            201,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        return http.Response('Not Found', 404);
+      });
+
+      final apiClient = HttpFellowshipApiClient(
+        client: mockClient,
+        baseUrl: 'http://example.com',
+      );
+
+      final result = await apiClient.createFellowshipGroup(
+        name: 'Men of Faith',
+        category: FellowshipCategory.mensFellowship,
+      );
+
+      final decoded = jsonDecode(capturedBody) as Map<String, dynamic>;
+      expect(decoded['groupType'], equals(1)); // MensFellowship is 1, not 'MensFellowship' string
+      expect(result.id, equals('g-created-1'));
+      expect(result.category, equals(FellowshipCategory.mensFellowship));
+      expect(result.isUserMember, isTrue);
+
+      serverIsMember = false;
+      final nonMemberResult = await apiClient.createFellowshipGroup(
+        name: 'Delegated Space',
+        category: FellowshipCategory.sundaySchool,
+      );
+      expect(nonMemberResult.isUserMember, isFalse);
+    });
+
+    test('getFellowshipGroups and getFellowshipGroupDetail restore isUserMember without display-name spoofing', () async {
+      final mockClient = MockClient((request) async {
+        if (request.url.path == '/api/v1/fellowships' && request.method == 'GET') {
+          return http.Response(
+            jsonEncode([
+              {
+                'id': 'g1',
+                'name': 'Group 1',
+                'description': 'Desc',
+                'groupType': 1,
+                'memberCount': 5,
+                'isUserMember': true,
+              },
+              {
+                'id': 'g2',
+                'name': 'Group 2',
+                'description': 'Desc',
+                'groupType': 2,
+                'memberCount': 2,
+                'isUserMember': false,
+              },
+            ]),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        } else if (request.url.path == '/api/v1/fellowships/g1' && request.method == 'GET') {
+          return http.Response(
+            jsonEncode({
+              'id': 'g1',
+              'name': 'Group 1',
+              'description': 'Desc',
+              'groupType': 1,
+              'isUserMember': true,
+              'members': [
+                {'memberId': 'user-123', 'memberName': 'Timothy', 'role': 'Member'},
+              ],
+              'recentPosts': [],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        } else if (request.url.path == '/api/v1/fellowships/g2' && request.method == 'GET') {
+          return http.Response(
+            jsonEncode({
+              'id': 'g2',
+              'name': 'Group 2',
+              'description': 'Desc',
+              'groupType': 2,
+              'members': [
+                {'memberId': 'other-user-999', 'memberName': 'Timothy', 'role': 'Member'},
+              ],
+              'recentPosts': [],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        return http.Response('Not Found', 404);
+      });
+
+      final apiClient = HttpFellowshipApiClient(
+        client: mockClient,
+        baseUrl: 'http://example.com/api/v1',
+        currentUserId: 'user-123',
+        currentMemberName: 'Timothy',
+      );
+
+      final groups = await apiClient.getFellowshipGroups();
+      expect(groups[0].isUserMember, isTrue);
+      expect(groups[1].isUserMember, isFalse);
+
+      final detail1 = await apiClient.getFellowshipGroupDetail('g1');
+      expect(detail1.isUserMember, isTrue);
+
+      // Same display name ('Timothy') with a different memberId must not grant membership
+      final detail2 = await apiClient.getFellowshipGroupDetail('g2');
+      expect(detail2.isUserMember, isFalse);
+    });
+
+    test('joinFellowshipGroup and leaveFellowshipGroup return false on HTTP 400, 401, or 403', () async {
+      final mockClient = MockClient((request) async {
+        if (request.url.path == '/api/v1/fellowships/forbidden/join') {
+          return http.Response(jsonEncode({'error': 'Private group cannot be joined'}), 403);
+        }
+        if (request.url.path == '/api/v1/fellowships/unauthorized/leave') {
+          return http.Response(jsonEncode({'error': 'Unauthorized'}), 401);
+        }
+        return http.Response('OK', 200);
+      });
+
+      final apiClient = HttpFellowshipApiClient(
+        client: mockClient,
+        baseUrl: 'http://example.com/api/v1',
+      );
+
+      final joinResult = await apiClient.joinFellowshipGroup('forbidden');
+      expect(joinResult, isFalse);
+
+      final leaveResult = await apiClient.leaveFellowshipGroup('unauthorized');
+      expect(leaveResult, isFalse);
+    });
+  });
+
+  group('Failed-mutation and reload-after-success widget tests', () {
+    testWidgets('Failed join (HTTP 403) does not alter local membership or member count and shows error', (tester) async {
+      final mockClient = MockClient((request) async {
+        if (request.url.path == '/api/v1/fellowships' && request.method == 'GET') {
+          return http.Response(
+            jsonEncode([
+              {
+                'id': 'private-g',
+                'name': 'Private Group',
+                'description': 'Confidential prayer cell',
+                'groupType': 3,
+                'memberCount': 2,
+                'isPrivate': true,
+                'isUserMember': false,
+              }
+            ]),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        } else if (request.url.path == '/api/v1/fellowships/private-g' && request.method == 'GET') {
+          return http.Response(
+            jsonEncode({
+              'id': 'private-g',
+              'name': 'Private Group',
+              'description': 'Confidential prayer cell',
+              'groupType': 3,
+              'memberCount': 2,
+              'isPrivate': true,
+              'isUserMember': false,
+              'members': [],
+              'recentPosts': [],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        } else if (request.url.path == '/api/v1/fellowships/private-g/join') {
+          return http.Response(
+            jsonEncode({'error': 'Unauthorized self-join'}),
+            403,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        return http.Response('Not Found', 404);
+      });
+
+      final apiClient = HttpFellowshipApiClient(
+        client: mockClient,
+        baseUrl: 'http://example.com/api/v1',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MessagesScreen(apiClient: apiClient),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Private Group'), findsOneWidget);
+
+      // Open detail
+      await tester.tap(find.byKey(const Key('groupItem_private-g')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Join'), findsOneWidget);
+
+      // Attempt to join
+      await tester.tap(find.byKey(const Key('toggleMembershipButton')));
+      await tester.pumpAndSettle();
+
+      // Ensure membership is NOT updated to 'Joined'
+      expect(find.text('Join'), findsOneWidget);
+      expect(find.text('Joined'), findsNothing);
+
+      // Ensure SnackBar error message is shown
+      expect(find.text('Failed to join space. Please check permissions.'), findsOneWidget);
+    });
+
+    testWidgets('Successful join reloads group detail and updates membership from server', (tester) async {
+      int detailFetchCount = 0;
+      final mockClient = MockClient((request) async {
+        if (request.url.path == '/api/v1/fellowships' && request.method == 'GET') {
+          return http.Response(
+            jsonEncode([
+              {
+                'id': 'open-g',
+                'name': 'Open Community',
+                'description': 'Open for everyone',
+                'groupType': 4,
+                'memberCount': 5,
+                'isPrivate': false,
+                'isUserMember': false,
+              }
+            ]),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        } else if (request.url.path == '/api/v1/fellowships/open-g' && request.method == 'GET') {
+          detailFetchCount++;
+          final isMemberNow = detailFetchCount > 1;
+          return http.Response(
+            jsonEncode({
+              'id': 'open-g',
+              'name': 'Open Community',
+              'description': 'Open for everyone',
+              'groupType': 4,
+              'memberCount': isMemberNow ? 6 : 5,
+              'isPrivate': false,
+              'isUserMember': isMemberNow,
+              'members': isMemberNow
+                  ? [
+                      {'memberId': 'u1', 'memberName': 'Leader', 'role': 'Leader'},
+                      {'memberId': 'u2', 'memberName': 'New Joined User', 'role': 'Member'}
+                    ]
+                  : [
+                      {'memberId': 'u1', 'memberName': 'Leader', 'role': 'Leader'}
+                    ],
+              'recentPosts': [],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        } else if (request.url.path == '/api/v1/fellowships/open-g/join') {
+          return http.Response(
+            jsonEncode({'id': 'mem-1'}),
+            201,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        return http.Response('Not Found', 404);
+      });
+
+      final apiClient = HttpFellowshipApiClient(
+        client: mockClient,
+        baseUrl: 'http://example.com/api/v1',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MessagesScreen(apiClient: apiClient),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('groupItem_open-g')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Join'), findsOneWidget);
+
+      // Tap join
+      await tester.tap(find.byKey(const Key('toggleMembershipButton')));
+      await tester.pumpAndSettle();
+
+      // State is now Joined and detail was reloaded (detailFetchCount == 2)
+      expect(find.text('Joined'), findsOneWidget);
+      expect(detailFetchCount, equals(2));
+
+      // Switch to About & Members tab to verify newly fetched member
+      await tester.tap(find.text('About & Members'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('New Joined User'), findsOneWidget);
+      expect(find.text('Members (2)'), findsOneWidget);
+    });
+
+    testWidgets('Canonical detail reload reconciles membership when server reports isUserMember: false', (tester) async {
+      final mockClient = MockClient((request) async {
+        if (request.url.path == '/api/v1/fellowships' && request.method == 'GET') {
+          return http.Response(
+            jsonEncode([
+              {
+                'id': 'stale-g',
+                'name': 'Stale Membership Group',
+                'description': 'User left on another device',
+                'groupType': 1,
+                'memberCount': 3,
+                'isPrivate': false,
+                'isUserMember': true,
+              }
+            ]),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        } else if (request.url.path == '/api/v1/fellowships/stale-g' && request.method == 'GET') {
+          return http.Response(
+            jsonEncode({
+              'id': 'stale-g',
+              'name': 'Stale Membership Group',
+              'description': 'User left on another device',
+              'groupType': 1,
+              'memberCount': 0,
+              'isPrivate': false,
+              'isUserMember': false,
+              'members': [],
+              'recentPosts': [],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        return http.Response('Not Found', 404);
+      });
+
+      final apiClient = HttpFellowshipApiClient(
+        client: mockClient,
+        baseUrl: 'http://example.com',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MessagesScreen(apiClient: apiClient),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Initially shows Joined from list response
+      expect(find.text('Joined'), findsOneWidget);
+
+      // Opening detail triggers _fetchDetail(), which reports isUserMember: false and memberCount: 0
+      await tester.tap(find.byKey(const Key('groupItem_stale-g')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Join'), findsOneWidget);
+      expect(find.text('Joined'), findsNothing);
+      expect(find.byKey(const Key('addPostButton')), findsNothing);
+    });
   });
 }
