@@ -8,7 +8,7 @@ function fixture({dryRun=false,failLabels=false,comments=[],checks=[],adopt=fals
  const config={version:1,maxActive:1,maxPerAgent:{jules:1},enabledAgents:['jules'],tasks:[{issue:1,agent:'jules',ready:true,dependencies:[],owns:['feature/'],branch:'feature-one',...(adopt?{pullRequest:2}:{})}],leases:adopt?[{issue:1,agent:'jules',status:'active'}]:[]};
  const calls=[];let report;const failures=[];
  const issue={number:1,state:'open',labels:[]};
- const rest={issues:{listForRepo:async()=>[issue],listComments:async()=>comments,get:async()=>({data:issue}),createComment:async a=>{calls.push(['comment',a]);},addLabels:async()=>{calls.push(['labels']);if(failLabels)throw Error('permission denied');}},pulls:{list:async()=>adopt?[{number:2,head:{sha:'abc',ref:'feature-one'}}]:[]},checks:{listForRef:async()=>checks}};
+ const rest={issues:{listForRepo:async()=>[issue],listComments:async()=>comments,get:async()=>({data:issue}),createComment:async a=>{calls.push(['comment',a]);},addLabels:async()=>{calls.push(['labels']);if(failLabels)throw Error('permission denied');}},pulls:{list:async()=>adopt?[{number:2,state:'open',head:{sha:'abc',ref:'feature-one'}}]:[]},checks:{listForRef:async()=>checks}};
  const github={rest,paginate:async(fn,args)=>fn(args)};
  const summary={addHeading(){return this;},addRaw(){return this;},addCodeBlock(){return this;},async write(){}};
  const module={exports:{}};
