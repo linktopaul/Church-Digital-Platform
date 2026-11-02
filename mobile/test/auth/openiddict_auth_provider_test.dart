@@ -116,6 +116,17 @@ void main() {
     expect(requests.last.headers['Authorization'], 'Bearer access');
     await expectLater(exchange(), throwsStateError); // single-use callback
   });
+  test('authorizeAndSignIn completes PKCE exchange and persists session through AuthSessionManager', () async {
+    final manager = AuthSessionManager(provider: provider, storage: storage);
+    addTearDown(manager.dispose);
+    final session = await provider.authorizeAndSignIn(manager);
+    expect(session.accessToken, 'access');
+    expect(session.userId, 'member');
+    expect(session.tenantId, 'tenant');
+    expect(manager.currentSession, equals(session));
+    expect(await storage.getSession(), equals(session));
+    expect(native.tokenCalls, 1);
+  });
   test('external or mismatched callbacks never reach the native token endpoint', () async {
     await expectLater(exchange(), throwsStateError);
     await provider.authorize();

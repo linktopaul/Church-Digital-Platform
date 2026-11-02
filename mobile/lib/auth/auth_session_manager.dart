@@ -71,7 +71,7 @@ class AuthSessionManager implements AuthService {
     }
   }
 
-  int _invalidate() {
+  int _invalidate({bool cancelPendingAuthorization = true}) {
     if (_disposed) throw StateError('Authentication service is disposed');
     _identity = Object();
     _currentSession = null;
@@ -79,7 +79,7 @@ class AuthSessionManager implements AuthService {
     _refreshing = null;
     _initializing = null;
     _isInitialized = true;
-    if (_provider is CancelableAuthProvider) {
+    if (cancelPendingAuthorization && _provider is CancelableAuthProvider) {
       (_provider as CancelableAuthProvider).cancelPendingAuthorization();
     }
     return ++_generation;
@@ -156,7 +156,7 @@ class AuthSessionManager implements AuthService {
   Future<AuthSession> signInWithAuthorizationCode({
     required String code, required String codeVerifier, required String redirectUri,
   }) async {
-    final generation = _invalidate();
+    final generation = _invalidate(cancelPendingAuthorization: false);
     final session = await _provider.exchangeAuthorizationCode(
       code: code, codeVerifier: codeVerifier, redirectUri: redirectUri,
     );
@@ -244,6 +244,9 @@ class AuthSessionManager implements AuthService {
     ++_generation;
     _pendingRotatedSession = null;
     _identity = Object();
+    if (_provider is CancelableAuthProvider) {
+      (_provider as CancelableAuthProvider).cancelPendingAuthorization();
+    }
     _sessionController.close();
   }
 }
