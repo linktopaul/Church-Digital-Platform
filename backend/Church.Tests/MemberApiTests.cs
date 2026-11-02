@@ -334,5 +334,45 @@ namespace Church.Tests
             var dirRes = await client.GetAsync("/api/v1/members");
             Assert.Equal(HttpStatusCode.Unauthorized, dirRes.StatusCode);
         }
+
+        [Fact]
+        public async Task Scenario8_DateInputs_UnspecifiedKind_NormalizedToUtc()
+        {
+            var churchId = Guid.NewGuid();
+            var memberId = Guid.NewGuid();
+
+            var client = _factory.CreateClient();
+            client.DefaultRequestHeaders.Add("X-User-Role", "Member");
+            client.DefaultRequestHeaders.Add("X-User-Id", memberId.ToString());
+            client.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
+
+            // Unspecified Kind dates simulate bare JSON date inputs without timezone (e.g. "1988-11-25")
+            var unspecifiedBirth = new DateTime(1988, 11, 25, 0, 0, 0, DateTimeKind.Unspecified);
+            var unspecifiedAnniv = new DateTime(2015, 6, 10, 0, 0, 0, DateTimeKind.Unspecified);
+
+            var updateReq = new UpdateMemberProfileRequest(
+                FirstName: "Timothy",
+                LastName: "Keller",
+                PhoneNumber: "+15554443333",
+                AvatarUrl: null,
+                DateOfBirth: unspecifiedBirth,
+                AnniversaryDate: unspecifiedAnniv,
+                Address: "100 Redeemer Way",
+                DirectoryVisibility: DirectoryVisibility.PublicToMembers,
+                ShowPhoneNumber: true,
+                ShowEmail: true,
+                ShowAddress: true,
+                ShowBirthDayAndMonth: true
+            );
+
+            var putRes = await client.PutAsJsonAsync("/api/v1/members/me", updateReq);
+            Assert.Equal(HttpStatusCode.OK, putRes.StatusCode);
+            var updated = await putRes.Content.ReadFromJsonAsync<FullMemberProfileResponse>();
+            Assert.NotNull(updated);
+            Assert.NotNull(updated.DateOfBirth);
+            Assert.Equal(DateTimeKind.Utc, updated.DateOfBirth.Value.Kind);
+            Assert.NotNull(updated.AnniversaryDate);
+            Assert.Equal(DateTimeKind.Utc, updated.AnniversaryDate.Value.Kind);
+        }
     }
 }

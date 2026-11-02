@@ -28,6 +28,17 @@ namespace Church.API.Endpoints
             return user.IsInRole("Admin") || user.IsInRole("Pastor");
         }
 
+        private static DateTime? NormalizeToUtc(DateTime? dt)
+        {
+            if (!dt.HasValue) return null;
+            return dt.Value.Kind switch
+            {
+                DateTimeKind.Utc => dt.Value,
+                DateTimeKind.Local => dt.Value.ToUniversalTime(),
+                _ => DateTime.SpecifyKind(dt.Value, DateTimeKind.Utc)
+            };
+        }
+
         private static DirectoryMemberResponse MapToDirectoryMember(Member m, bool isPrivileged, Guid callerId)
         {
             var isSelf = (m.Id == callerId);
@@ -188,8 +199,8 @@ namespace Church.API.Endpoints
                 member.LastName = request.LastName.Trim();
                 member.PhoneNumber = request.PhoneNumber?.Trim();
                 member.AvatarUrl = request.AvatarUrl?.Trim();
-                member.DateOfBirth = request.DateOfBirth;
-                member.AnniversaryDate = request.AnniversaryDate;
+                member.DateOfBirth = NormalizeToUtc(request.DateOfBirth);
+                member.AnniversaryDate = NormalizeToUtc(request.AnniversaryDate);
                 member.Address = request.Address?.Trim();
                 member.DirectoryVisibility = request.DirectoryVisibility;
                 member.ShowPhoneNumber = request.ShowPhoneNumber;
