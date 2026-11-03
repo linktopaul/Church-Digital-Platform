@@ -41,7 +41,8 @@ public record ContributionResponse(
     string ReceiptNumber,
     string? VerifiedBy,
     DateTime? VerifiedAt,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    string? VerificationNote = null
 );
 
 public record VerifyContributionRequest(

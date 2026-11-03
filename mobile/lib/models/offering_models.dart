@@ -215,6 +215,7 @@ class Contribution {
   final String? verifiedBy;
   final DateTime? verifiedAt;
   final DateTime createdAt;
+  final String? verificationNote;
 
   const Contribution({
     required this.id,
@@ -233,6 +234,7 @@ class Contribution {
     this.verifiedBy,
     this.verifiedAt,
     required this.createdAt,
+    this.verificationNote,
   });
 
   factory Contribution.fromJson(Map<String, dynamic> json) {
@@ -260,6 +262,7 @@ class Contribution {
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'] as String) ?? DateTime.now()
           : DateTime.now(),
+      verificationNote: json['verificationNote'] as String?,
     );
   }
 
@@ -280,6 +283,7 @@ class Contribution {
         'verifiedBy': verifiedBy,
         'verifiedAt': verifiedAt?.toIso8601String(),
         'createdAt': createdAt.toIso8601String(),
+        if (verificationNote != null) 'verificationNote': verificationNote,
       };
 }
 

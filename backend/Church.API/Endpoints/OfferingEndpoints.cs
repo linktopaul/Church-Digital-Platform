@@ -143,7 +143,7 @@ public static class OfferingEndpoints
                 .OrderByDescending(c => c.CreatedAt)
                 .ToListAsync();
 
-            var results = contributions.Select(c => MapToResponse(c, "Church Digital Platform")).ToList();
+            var results = contributions.Select(c => MapToResponse(c, "Church Digital Platform", includeAuditNotes: true)).ToList();
             return Results.Ok(results);
         });
 
@@ -175,7 +175,7 @@ public static class OfferingEndpoints
                 .OrderByDescending(c => c.CreatedAt)
                 .ToListAsync();
 
-            var results = contributions.Select(c => MapToResponse(c, "Church Digital Platform")).ToList();
+            var results = contributions.Select(c => MapToResponse(c, "Church Digital Platform", includeAuditNotes: true)).ToList();
             return Results.Ok(results);
         });
 
@@ -210,15 +210,18 @@ public static class OfferingEndpoints
             }
             if (!string.IsNullOrWhiteSpace(request?.VerificationNote))
             {
-                contribution.PaymentNote = string.IsNullOrWhiteSpace(contribution.PaymentNote)
-                    ? $"[Verified]: {request.VerificationNote.Trim()}"
-                    : $"{contribution.PaymentNote} | [Verified]: {request.VerificationNote.Trim()}";
+                var vNote = request.VerificationNote.Trim();
+                if (vNote.Length > 500)
+                {
+                    return Results.BadRequest(new { error = "Verification note cannot exceed 500 characters." });
+                }
+                contribution.VerificationNote = vNote;
             }
             contribution.UpdatedAt = DateTime.UtcNow;
 
             await db.SaveChangesAsync();
 
-            return Results.Ok(MapToResponse(contribution, "Church Digital Platform"));
+            return Results.Ok(MapToResponse(contribution, "Church Digital Platform", includeAuditNotes: true));
         });
 
         // 6. Ledger Summary / Fund Totals (Privileged: Pastor or Admin only)
@@ -303,7 +306,7 @@ public static class OfferingEndpoints
         return (newGuid, user.Identity?.Name ?? "Church Member");
     }
 
-    private static ContributionResponse MapToResponse(Contribution c, string payeeName)
+    private static ContributionResponse MapToResponse(Contribution c, string payeeName, bool includeAuditNotes = false)
     {
         var fundName = c.FundType switch
         {
@@ -334,7 +337,8 @@ public static class OfferingEndpoints
             ReceiptNumber: c.ReceiptNumber,
             VerifiedBy: c.VerifiedBy,
             VerifiedAt: c.VerifiedAt,
-            CreatedAt: c.CreatedAt
+            CreatedAt: c.CreatedAt,
+            VerificationNote: includeAuditNotes ? c.VerificationNote : null
         );
     }
 }

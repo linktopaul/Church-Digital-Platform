@@ -851,6 +851,8 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
               Text('Ref: ${c.transactionReference}', style: const TextStyle(fontSize: 11)),
             if (isVerified && c.verifiedBy != null)
               Text('Verified by: ${c.verifiedBy}', style: const TextStyle(fontSize: 11, color: Colors.green)),
+            if (isVerified && c.verificationNote != null && c.verificationNote!.isNotEmpty)
+              Text('Audit Note: ${c.verificationNote}', style: const TextStyle(fontSize: 11, color: Colors.blueGrey)),
           ],
         ),
         trailing: isVerified

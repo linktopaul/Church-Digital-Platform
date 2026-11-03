@@ -25,6 +25,7 @@ namespace Church.Infrastructure.Migrations
                     transaction_reference = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
                     upi_payee_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     payment_note = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    verification_note = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
                     status = table.Column<int>(type: "integer", nullable: false),
                     verified_by = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
                     verified_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),

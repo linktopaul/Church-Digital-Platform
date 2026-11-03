@@ -261,6 +261,7 @@ public class OfferingsApiTests : IClassFixture<CustomWebApplicationFactory>
         Assert.Equal("UPI-UTR-99887766", verified.TransactionReference);
         Assert.NotNull(verified.VerifiedBy);
         Assert.NotNull(verified.VerifiedAt);
+        Assert.Equal("Confirmed on bank statement", verified.VerificationNote);
     }
 
     [Fact]

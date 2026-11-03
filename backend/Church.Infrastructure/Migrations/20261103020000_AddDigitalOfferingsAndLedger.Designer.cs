@@ -362,6 +362,11 @@ namespace Church.Infrastructure.Migrations
                         .HasColumnType("character varying(500)")
                         .HasColumnName("payment_note");
 
+                    b.Property<string>("VerificationNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("verification_note");
+
                     b.Property<string>("ReceiptNumber")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -2013,6 +2018,11 @@ namespace Church.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)")
                         .HasColumnName("payment_note");
+
+                    b.Property<string>("VerificationNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("verification_note");
 
                     b.Property<string>("ReceiptNumber")
                         .IsRequired()

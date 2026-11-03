@@ -19,6 +19,7 @@ public class Contribution : IMultiTenantEntity
     public string? TransactionReference { get; set; } // UTR / Payment confirmation reference
     public string UpiPayeeId { get; set; } = string.Empty; // e.g. "church@upi"
     public string? PaymentNote { get; set; }
+    public string? VerificationNote { get; set; }
     public ContributionStatus Status { get; set; } = ContributionStatus.Pending;
     public string? VerifiedBy { get; set; }
     public DateTime? VerifiedAt { get; set; }

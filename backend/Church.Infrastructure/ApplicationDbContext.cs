@@ -770,6 +770,7 @@ namespace Church.Infrastructure
                 entity.Property(e => e.TransactionReference).HasColumnName("transaction_reference").HasMaxLength(100);
                 entity.Property(e => e.UpiPayeeId).HasColumnName("upi_payee_id").HasMaxLength(100).IsRequired();
                 entity.Property(e => e.PaymentNote).HasColumnName("payment_note").HasMaxLength(500);
+                entity.Property(e => e.VerificationNote).HasColumnName("verification_note").HasMaxLength(500);
                 entity.Property(e => e.Status).HasColumnName("status").IsRequired();
                 entity.Property(e => e.VerifiedBy).HasColumnName("verified_by").HasMaxLength(255);
                 entity.Property(e => e.VerifiedAt).HasColumnName("verified_at");
