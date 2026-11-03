@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: church_pilot_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-church_pilot}
+      POSTGRES_USER: ${POSTGRES_USER:-church_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-church_pilot_secure_pass}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-church_admin} -d ${POSTGRES_DB:-church_pilot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: church_pilot_api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ENVIRONMENT:-Production}
+      ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=${POSTGRES_DB:-church_pilot};Username=${POSTGRES_USER:-church_admin};Password=${POSTGRES_PASSWORD:-church_pilot_secure_pass}
+      Authentication__Issuer: ${API_ISSUER:-http://localhost:8080}
+      Authentication__Audience: church_api
+      Authentication__AllowTestHeaderAuth: "false"
+      Authentication__RsaPrivateKeyPem: ${RSA_PRIVATE_KEY_PEM:-}
+    ports:
+      - "${API_PORT:-8080}:8080"
+
+volumes:
+  pgdata:
+    driver: local
