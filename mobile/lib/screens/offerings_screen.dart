@@ -385,10 +385,10 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
         bottom: TabBar(
           controller: _tabController,
           tabs: [
-            const Tab(icon: Icon(Icons.volunteer_activism), text: 'Give Now'),
-            const Tab(icon: Icon(Icons.receipt_long), text: 'My Giving'),
+            const Tab(text: 'Give Now'),
+            const Tab(text: 'My Giving'),
             if (widget.isPastor)
-              const Tab(icon: Icon(Icons.account_balance), text: 'Ledger'),
+              const Tab(text: 'Ledger'),
           ],
         ),
       ),

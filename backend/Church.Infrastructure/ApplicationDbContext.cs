@@ -66,6 +66,12 @@ namespace Church.Infrastructure
 
 
 
+                protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        {
+            base.OnConfiguring(optionsBuilder);
+            optionsBuilder.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
+        }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
 
         {
@@ -755,6 +761,7 @@ namespace Church.Infrastructure
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Id).HasColumnName("id");
                 entity.Property(e => e.TenantId).HasColumnName("church_id").IsRequired();
+                entity.Ignore(e => e.ChurchId);
                 entity.Property(e => e.MemberId).HasColumnName("member_id").IsRequired();
                 entity.Property(e => e.MemberName).HasColumnName("member_name").HasMaxLength(255).IsRequired();
                 entity.Property(e => e.FundType).HasColumnName("fund_type").IsRequired();
@@ -766,14 +773,13 @@ namespace Church.Infrastructure
                 entity.Property(e => e.Status).HasColumnName("status").IsRequired();
                 entity.Property(e => e.VerifiedBy).HasColumnName("verified_by").HasMaxLength(255);
                 entity.Property(e => e.VerifiedAt).HasColumnName("verified_at");
-                entity.Property(e => e.ReceiptNumber).HasColumnName("receipt_number").HasMaxLength(50).IsRequired();
+                entity.Property(e => e.ReceiptNumber).HasColumnName("receipt_number").HasMaxLength(100).IsRequired();
                 entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
                 entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
 
                 entity.HasIndex(e => e.TenantId);
-                entity.HasIndex(e => new { e.TenantId, e.MemberId });
-                entity.HasIndex(e => new { e.TenantId, e.Status });
-                entity.HasIndex(e => new { e.TenantId, e.CreatedAt });
+                entity.HasIndex(e => e.MemberId);
+                entity.HasIndex(e => e.ReceiptNumber).IsUnique();
             });
 
             // Apply multi-tenancy filter to all entities implementing IMultiTenantEntity
