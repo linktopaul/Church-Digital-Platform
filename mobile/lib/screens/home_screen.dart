@@ -40,11 +40,13 @@ class HomeScreen extends StatelessWidget {
                     children: [
                       Icon(Icons.home, color: Theme.of(context).colorScheme.primary),
                       const SizedBox(width: 8),
-                      Text(
-                        'Welcome to Church Digital Platform',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
+                      Expanded(
+                        child: Text(
+                          'Welcome to Church Digital Platform',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
                       ),
                     ],
                   ),

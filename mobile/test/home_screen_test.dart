@@ -39,4 +39,19 @@ void main() {
 
     expect(find.byType(CelebrationsScreen), findsOneWidget);
   });
+
+  testWidgets('renders welcome card on a narrow portrait phone without overflow', (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    final client = StubCelebrationApiClient();
+    await tester.pumpWidget(MaterialApp(
+      home: HomeScreen(celebrationClient: client),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Welcome to Church Digital Platform'), findsOneWidget);
+    expect(find.text('Celebrations & Blessings'), findsOneWidget);
+  });
 }

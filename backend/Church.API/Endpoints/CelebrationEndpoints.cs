@@ -37,7 +37,7 @@ public static class CelebrationEndpoints
             var membersQuery = db.Members.AsNoTracking();
 
             // Privacy filter: non-privileged callers only see members who opted into public directory visibility
-            // AND consented to birthday/anniversary display
+            // AND consented to birthday display
             if (!isPrivileged)
             {
                 membersQuery = membersQuery.Where(m =>
@@ -76,8 +76,9 @@ public static class CelebrationEndpoints
                     ));
                 }
 
-                // Anniversary check
-                if (m.AnniversaryDate.HasValue &&
+                // Anniversary check (restricted to privileged pastoral/admin care until an explicit anniversary opt-in exists)
+                if (isPrivileged &&
+                    m.AnniversaryDate.HasValue &&
                     m.AnniversaryDate.Value.Month == month &&
                     m.AnniversaryDate.Value.Day == day)
                 {
@@ -155,7 +156,9 @@ public static class CelebrationEndpoints
                     ));
                 }
 
-                if (m.AnniversaryDate.HasValue &&
+                // Anniversary check (restricted to privileged pastoral/admin care)
+                if (isPrivileged &&
+                    m.AnniversaryDate.HasValue &&
                     dayOffsets.TryGetValue((m.AnniversaryDate.Value.Month, m.AnniversaryDate.Value.Day), out var annInfo))
                 {
                     var years = annInfo.Date.Year - m.AnniversaryDate.Value.Year;

@@ -31,7 +31,7 @@ public class CelebrationsApiTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task TodayCelebrations_ReturnsMatchingBirthdaysAndAnniversaries_WithAgeRedactionForRegularMembers()
+    public async Task TodayCelebrations_RegularMembersSeeBirthdaysWithAgeRedaction_AnniversariesRestrictedToPastors()
     {
         var churchId = Guid.NewGuid();
         var today = DateTime.UtcNow;
@@ -57,10 +57,11 @@ public class CelebrationsApiTests : IClassFixture<CustomWebApplicationFactory>
             FirstName = "David",
             LastName = "Livingstone",
             Email = "david@church.local",
+            PhoneNumber = "+15559998888",
             AnniversaryDate = new DateTime(2010, today.Month, today.Day, 0, 0, 0, DateTimeKind.Utc),
             DirectoryVisibility = DirectoryVisibility.PublicToMembers,
-            ShowBirthDayAndMonth = true,
-            ShowPhoneNumber = false
+            ShowBirthDayAndMonth = true, // Birthday opt-in does not authorize anniversary publishing
+            ShowPhoneNumber = true
         };
 
         var otherMonthMember = new Member
@@ -79,7 +80,7 @@ public class CelebrationsApiTests : IClassFixture<CustomWebApplicationFactory>
         SeedMember(churchId, annivMember);
         SeedMember(churchId, otherMonthMember);
 
-        // 1. Regular Member: receives celebrations, but birth year (exact age) is redacted (null)
+        // 1. Regular Member: receives birthdays (with age redacted), but NOT anniversaries
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
         client.DefaultRequestHeaders.Add("X-User-Role", "Member");
@@ -91,7 +92,8 @@ public class CelebrationsApiTests : IClassFixture<CustomWebApplicationFactory>
         var celebrations = await response.Content.ReadFromJsonAsync<List<CelebrationEventResponse>>();
         Assert.NotNull(celebrations);
         Assert.Contains(celebrations!, c => c.MemberName == "Grace Hopper" && c.Type == CelebrationType.Birthday);
-        Assert.Contains(celebrations!, c => c.MemberName == "David Livingstone" && c.Type == CelebrationType.Anniversary);
+        // Anniversaries are strictly privileged-only until explicit consent is available
+        Assert.DoesNotContain(celebrations!, c => c.Type == CelebrationType.Anniversary);
         Assert.DoesNotContain(celebrations!, c => c.MemberName == "Future Person");
 
         var grace = celebrations!.First(c => c.MemberName == "Grace Hopper");
@@ -101,16 +103,24 @@ public class CelebrationsApiTests : IClassFixture<CustomWebApplicationFactory>
         // Birth year/age is protected and redacted for regular members
         Assert.Null(grace.Years);
 
-        // 2. Pastor: receives celebrations WITH full pastoral age insight
+        // 2. Pastor: receives both birthdays WITH age insight AND wedding anniversaries WITH milestone years
         var pastorClient = _factory.CreateClient();
         pastorClient.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
         pastorClient.DefaultRequestHeaders.Add("X-User-Role", "Pastor");
 
         var pastorResp = await pastorClient.GetAsync($"/api/v1/celebrations/today?date={today:yyyy-MM-dd}");
         var pastorCelebrations = await pastorResp.Content.ReadFromJsonAsync<List<CelebrationEventResponse>>();
+        Assert.NotNull(pastorCelebrations);
+
         var pastorGrace = pastorCelebrations!.First(c => c.MemberName == "Grace Hopper");
         Assert.NotNull(pastorGrace.Years);
         Assert.Equal(today.Year - 1985, pastorGrace.Years);
+
+        var pastorDavid = pastorCelebrations!.First(c => c.MemberName == "David Livingstone");
+        Assert.Equal(CelebrationType.Anniversary, pastorDavid.Type);
+        Assert.NotNull(pastorDavid.Years);
+        Assert.Equal(today.Year - 2010, pastorDavid.Years);
+        Assert.True(pastorDavid.CanMessageDirectly);
     }
 
     [Fact]
@@ -309,10 +319,24 @@ public class CelebrationsApiTests : IClassFixture<CustomWebApplicationFactory>
             ShowBirthDayAndMonth = true
         };
 
+        var upcomingAnnivMember = new Member
+        {
+            Id = Guid.NewGuid(),
+            ChurchId = churchId,
+            FirstName = "Upcoming",
+            LastName = "Anniversary",
+            Email = "anniv@church.local",
+            AnniversaryDate = new DateTime(2015, targetDay.Month, targetDay.Day, 0, 0, 0, DateTimeKind.Utc),
+            DirectoryVisibility = DirectoryVisibility.PublicToMembers,
+            ShowBirthDayAndMonth = true
+        };
+
         SeedMember(churchId, nearMember);
         SeedMember(churchId, farMember);
         SeedMember(churchId, privateNearMember);
+        SeedMember(churchId, upcomingAnnivMember);
 
+        // 1. Regular Member: receives near birthday (age redacted), does NOT receive anniversary or private member
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
         client.DefaultRequestHeaders.Add("X-User-Role", "Member");
@@ -323,15 +347,20 @@ public class CelebrationsApiTests : IClassFixture<CustomWebApplicationFactory>
         Assert.Contains(list7Days!, c => c.MemberName == "Near Celebration");
         Assert.DoesNotContain(list7Days!, c => c.MemberName == "Far Celebration");
         Assert.DoesNotContain(list7Days!, c => c.MemberName == "PrivateNear Celebration");
+        Assert.DoesNotContain(list7Days!, c => c.MemberName == "Upcoming Anniversary");
 
         // Verify age redaction on upcoming birthday for regular members
         var near = list7Days!.First(c => c.MemberName == "Near Celebration");
         Assert.Null(near.Years);
 
-        var response2Days = await client.GetAsync($"/api/v1/celebrations/upcoming?days=2&startDate={today:yyyy-MM-dd}");
-        var list2Days = await response2Days.Content.ReadFromJsonAsync<List<CelebrationEventResponse>>();
-        Assert.NotNull(list2Days);
-        Assert.DoesNotContain(list2Days!, c => c.MemberName == "Near Celebration");
+        // 2. Pastor: DOES receive upcoming anniversary
+        var pastorClient = _factory.CreateClient();
+        pastorClient.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
+        pastorClient.DefaultRequestHeaders.Add("X-User-Role", "Pastor");
+
+        var pastorResp = await pastorClient.GetAsync($"/api/v1/celebrations/upcoming?days=7&startDate={today:yyyy-MM-dd}");
+        var pastorList = await pastorResp.Content.ReadFromJsonAsync<List<CelebrationEventResponse>>();
+        Assert.Contains(pastorList!, c => c.MemberName == "Upcoming Anniversary");
     }
 
     [Fact]
