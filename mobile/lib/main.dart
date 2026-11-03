@@ -9,6 +9,7 @@ import 'screens/messages_screen.dart';
 import 'screens/prayer_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/worship_screen.dart';
+import 'services/celebration_api_client.dart';
 import 'services/fellowship_api_client.dart';
 import 'services/member_api_client.dart';
 import 'services/prayer_api_client.dart';
@@ -68,6 +69,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   HttpFellowshipApiClient? _cachedFellowshipClient;
   HttpPrayerApiClient? _cachedPrayerClient;
   HttpMemberApiClient? _cachedMemberClient;
+  HttpCelebrationApiClient? _cachedCelebrationClient;
   String? _cachedSessionKey;
   AuthService? _cachedAuthService;
   String? _cachedBaseUrl;
@@ -173,10 +175,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           client: authClient,
           baseUrl: effectiveBase,
         );
+        _cachedCelebrationClient = HttpCelebrationApiClient(
+          client: authClient,
+          baseUrl: effectiveBase,
+        );
       } else {
         _cachedFellowshipClient = null;
         _cachedPrayerClient = null;
         _cachedMemberClient = null;
+        _cachedCelebrationClient = null;
       }
     }
   }
@@ -201,7 +208,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 
   List<Widget> get _screens => [
-    const HomeScreen(),
+    HomeScreen(
+      celebrationClient: _cachedCelebrationClient,
+      isPastor: _isPastor,
+    ),
     _buildMessagesScreen(),
     _buildPrayerScreen(),
     const WorshipScreen(),
