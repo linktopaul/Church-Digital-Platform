@@ -217,6 +217,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   List<Widget> get _screens => [
     HomeScreen(
       celebrationClient: _cachedCelebrationClient,
+      offeringClient: _cachedOfferingClient,
       isPastor: _isPastor,
     ),
     _buildMessagesScreen(),
