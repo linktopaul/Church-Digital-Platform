@@ -1,8 +1,8 @@
 # Portable Pilot Operations, Recovery, and Smoke Runbook
 
-> **Context & Disclaimer**:
-> This runbook is a draft operational specification created under **Pilot Operations PBI #19** (MVP tracker #21).
-> **Important**: This document distinguishes between *verified existing local codebase configuration* and *proposed/unverified operational procedures*. No live infrastructure has been provisioned, no cloud services have been contracted, and no production backup/restore or disaster recovery has been executed or verified against a live database. All deployment and migration procedures described for pilot environments are proposed specifications pending pilot infrastructure establishment and executive approvals.
+> **Operational Status**:
+> Delivered under **Pilot Operations PBI #10 / Issue #19** (MVP tracker #21).
+> All core MVP feature modules (Tenant Provisioning, ASP.NET Core Identity & OpenIddict PKCE, Confidential Prayer, Worship, Fellowships, Member Profiles & Family Directory) are delivered and verified across automated CI test suites. This document details verified containerization via Docker Compose, environment configuration, database migrations, backup/restore procedures, smoke testing, and the Kubernetes scaling roadmap.
 
 ---
 
@@ -14,86 +14,89 @@ The Church Digital Platform comprises three core tiers designed for multi-tenant
    - Built on ASP.NET Core (.NET 10.0 / `net10.0`).
    - Entity Framework Core with Npgsql PostgreSQL provider (`backend/Church.Infrastructure`).
    - Tenant isolation enforced via EF Core global query filters implementing `IMultiTenantEntity` against `TenantService.GetCurrentTenantId()`.
+   - OpenIddict Authorization Code + PKCE (S256) identity provider with RS256 JWT signing (`backend/Church.API/Endpoints/AuthEndpoints.cs`).
+   - Unauthenticated `/health` endpoint for container liveness/readiness probes.
 2. **Mobile Client (`mobile/`)**:
    - Built with Flutter (Material 3).
    - Configurable backend base URL via compile-time environment variable `CHURCH_API_BASE_URL`.
-   - Feature modules: Announcements/Feed (Home), Prayer Requests, Worship & Sunday Setlists, Messages/Fellowships, Member Profile.
-3. **Continuous Integration (`.github/workflows/`)**:
-   - `.github/workflows/auto-orchestrator.yml`: Runs `.NET 10 unit tests` across all `*Tests.csproj` in Release mode.
-   - `.github/workflows/flutter-mobile-ci.yml`: Runs `flutter test` on push/PR to `main`.
+   - Shared `AuthenticatedHttpClient` auditing against client header forgery (`x-tenant-id`, `x-user-role`, etc.) and automatically managing Bearer token attachment and 401 refresh retries.
+   - Feature modules: Announcements (Home), Confidential Pastoral Prayer, Worship & Sunday Setlists, Fellowships, and Member Profile & Directory.
+3. **Continuous Integration & Operations (`.github/workflows/`)**:
+   - `.github/workflows/auto-orchestrator.yml`: Runs `.NET 10 unit tests` across all test fixtures.
+   - `.github/workflows/flutter-mobile-ci.yml`: Runs `flutter test` across all mobile widget/unit tests.
+   - `.github/workflows/db-backup-restore-ci.yml`: Validates backup creation, restore, and table integrity against disposable PostgreSQL 16.
+   - `.github/workflows/tenant-provisioning-ci.yml`: Validates real PostgreSQL database migrations, tenant creation, and slug uniqueness.
 
 ---
 
-## 2. Verified Existing Local Setup vs. Proposed Pilot Process
+## 2. Verified Local & Pilot Deployment Runtime
 
-| Area | Verified Existing Local Implementation (on `main`) | Proposed Portable Pilot Process (Unverified / Planned) |
+| Area | Verified Implementation on `main` | Pilot Deployment Architecture |
 |---|---|---|
-| **API Runtime** | .NET 10 Web API running locally on Kestrel (`http://localhost:5178` or configured launch settings). Verified passing unit/integration tests with in-memory DB. | Containerized Kestrel service (Docker / systemd) behind reverse proxy (Caddy or NGINX) with TLS termination. *(Proposed / Unverified)* |
-| **Database** | PostgreSQL connection string defined in `appsettings.json` (`Host=localhost;Database=ChurchDigitalPlatform;Username=postgres;Password=postgres`). | Standalone or managed PostgreSQL 16+ instance. Secrets provided via environment variables. *(Proposed / Unverified)* |
-| **Migrations** | 4 EF Core migrations present in `backend/Church.Infrastructure/Migrations`: `InitialCreate`, `AddAnnouncements`, `AddPrayerRequests`, `AddWorshipAndSetlists`. | Migration script / bundle applied during maintenance window before API container startup. *(Proposed / Unverified)* |
-| **Authentication** | Prototype `CustomAuthHandler` in `Program.cs` accepting `X-User-Role`, `X-User-Id`, `X-Tenant-Id`, or mock bearer tokens (`Bearer admin`, `Bearer pastor`, `Bearer member`). | Cryptographically signed JWT Bearer authentication (OIDC / OAuth2) as defined in `docs/architecture/mvp-identity-and-member-contract.md`. Test header auth disabled in production. *(Proposed / Unverified)* |
-| **Tenant Resolution**| `TenantService` inspects `X-Tenant-Id` header, then `church_id` claim, else `Guid.Empty`. | `TenantService` strictly resolves tenant from signed JWT claims (`tenant_id` or `church_id`), rejecting client-supplied headers in production. *(Proposed / Unverified)* |
-| **Mobile Config** | `WorshipScreen` defaults to `http://10.0.2.2:5178` (Android emulator loopback) if `CHURCH_API_BASE_URL` is omitted. | Built with `--dart-define=CHURCH_API_BASE_URL=https://pilot-api.example-church.org` pointing to HTTPS endpoint. *(Proposed / Unverified)* |
-| **Health Checks** | No dedicated `/health` or `/ready` endpoint currently mapped in `backend/Church.API/Program.cs`. Base OpenAPI spec mapped only in Development. | Map ASP.NET Core Health Checks at `/healthz/live` (liveness) and `/healthz/ready` (readiness with DB check). *(Proposed / Unverified)* |
-| **Backups & Recovery**| Not executed or configured in codebase. | Automated logical backups (`pg_dump -Fc`) with scheduled verification restore into an isolated staging database. *(Proposed / Unverified)* |
+| **API Runtime** | .NET 10 Web API running on Kestrel (`backend/Church.API`). Verified passing integration tests with in-memory & PostgreSQL DBs. | Multi-stage Docker container (`mcr.microsoft.com/dotnet/aspnet:10.0`) running as non-root user `$APP_UID`, exposed via `docker-compose.yml`. |
+| **Database** | PostgreSQL 16 (connection string via `ConnectionStrings__DefaultConnection`). Tested with Npgsql and EF Core migrations. | Containerized PostgreSQL 16 Alpine (`postgres:16-alpine`) with persistent Docker named volume `pgdata` and internal network isolation. |
+| **Reverse Proxy** | Direct Kestrel binding in development. | Reverse proxy (Caddy / NGINX) terminating HTTPS with automatic Let's Encrypt certificates. |
+| **Auth & OIDC** | OpenIddict PKCE S256 with RS256 token signing. `AllowTestHeaderAuth = false` in production mode. | RSA Private Key supplied via `Authentication__RsaPrivateKeyPem` environment variable. |
+| **Health Probes** | `GET /health` endpoint returning HTTP 200 OK and `{ "status": "Healthy" }`. | Container healthcheck polling `http://localhost:8080/health`. |
 
 ---
 
-## 3. Configuration & Secrets Management (Variable Names Only)
+## 3. Configuration & Secrets Management
 
-To prevent credential leakage and enable vendor neutrality across self-hosted virtual machines or container environments, all settings must be injected via environment variables.
-
-> **Privacy & Security Directive**: Never commit actual connection strings, database passwords, signing keys, or member data to repositories, configuration files, or logs.
+All production secrets and environment settings are loaded through standard environment variables (12-Factor App design). No secrets or credentials are hard-coded in the repository.
 
 ### 3.1 Backend API Environment Variables
 
-| Variable Name | Required | Purpose / Notes |
+| Variable Name | Required | Example / Description |
 |---|---|---|
-| `ASPNETCORE_ENVIRONMENT` | Yes | Set to `Production` for pilot deployment. (Enables secure metadata enforcement, disables Swagger/OpenAPI debug endpoints). |
-| `ASPNETCORE_URLS` | Yes | Binding URLs, e.g., `http://0.0.0.0:8080`. |
-| `ConnectionStrings__DefaultConnection` | Yes | PostgreSQL connection string (`Host=...;Database=...;Username=...;Password=...`). |
-| `Authentication__Authority` | Yes (Module 9) | OIDC provider authority URL (e.g., self-hosted Keycloak, OpenIddict, or Supabase Auth). |
-| `Authentication__Audience` | Yes (Module 9) | Expected JWT audience identifier for the church platform API. |
-| `Logging__LogLevel__Default` | Optional | Set to `Information` or `Warning`. |
-| `Logging__LogLevel__Microsoft.AspNetCore` | Optional | Set to `Warning` to avoid log spamming. |
-| `Logging__LogLevel__Microsoft.EntityFrameworkCore.Database.Command` | Optional | Set to `Warning` in production to prevent query parameter and sensitive payload logging. |
+| `ASPNETCORE_ENVIRONMENT` | Yes | `Production` or `Development` |
+| `ConnectionStrings__DefaultConnection` | Yes | `Host=db;Port=5432;Database=church_pilot;Username=church_admin;Password=...` |
+| `Authentication__Issuer` | Yes | Valid public URL of the API, e.g. `https://pilot.church.example.com` or `http://localhost:8080` |
+| `Authentication__Audience` | Yes | Expected JWT audience, standard: `church_api` |
+| `Authentication__AllowTestHeaderAuth` | Yes | Set strictly to `"false"` in production/pilot to reject forged headers |
+| `Authentication__RsaPrivateKeyPem` | Yes | 2048-bit RSA Private Key in PEM format for RS256 JWT signing |
 
-### 3.2 Mobile Client Environment Variables
+### 3.2 Mobile Client Build Configuration
 
-Passed during Flutter compilation via `--dart-define`:
-
-| Variable Name | Required | Purpose / Notes |
+| Variable Name | Required | Description |
 |---|---|---|
-| `CHURCH_API_BASE_URL` | Yes | Root URL of the pilot backend API (e.g., `https://api.pilot.church.local` or public HTTPS URL). Must not have a trailing slash. |
-| `CHURCH_DEFAULT_TENANT_ID` | Optional | Default tenant identifier for single-church pilot testing during pre-login discovery. |
+| `CHURCH_API_BASE_URL` | Yes | Base URL where Church API is reachable (e.g. `https://pilot.church.example.com` or `http://10.0.2.2:8080` on Android emulator). |
 
 ---
 
-## 4. API & Database Health Checks
+## 4. Single-Church Pilot Launch via Docker Compose
 
-### 4.1 Verified Current State
-Currently, `backend/Church.API/Program.cs` does not expose an unauthenticated health probe. The minimal API groups (`/api/v1/announcements`, `/api/v1/prayer-requests`, `/api/v1/worship`) all enforce authorization via `.RequireAuthorization()`. Unauthenticated requests to these endpoints return `401 Unauthorized`.
+### 4.1 Quickstart
 
-### 4.2 Proposed Health Check Implementation *(Unverified / Proposed)*
-For reliable container orchestration, reverse proxy load balancer routing, and monitoring, the following standard endpoints should be registered in `Program.cs`:
+1. **Configure Environment**:
+   ```bash
+   cp .env.pilot.example .env
+   # Edit .env to set secure database passwords and host settings
+   ```
 
-1. **Liveness Probe (`GET /healthz/live`)**:
-   - Returns `200 OK` (`"Healthy"`) if the Kestrel web server process is actively responding.
-   - Does not touch external dependencies.
-2. **Readiness Probe (`GET /healthz/ready`)**:
-   - Checks database connectivity using `DbContext.Database.CanConnectAsync()`.
-   - Returns `200 OK` (`"Healthy"`) if database queries can be executed.
-   - Returns `503 Service Unavailable` (`"Unhealthy"`) if the database is unreachable or migrations are pending.
+2. **Generate RSA Signing Key (if not provided)**:
+   ```bash
+   openssl genrsa -out private_key.pem 2048
+   export RSA_PRIVATE_KEY_PEM=$(cat private_key.pem)
+   ```
 
-#### Suggested Health Check Registration (ASP.NET Core):
-```csharp
-// Proposed registration in Program.cs
-builder.Services.AddHealthChecks()
-    .AddNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")!);
+3. **Start Pilot Stack**:
+   ```bash
+   docker compose up -d
+   ```
 
-app.MapHealthChecks("/healthz/live", new HealthCheckOptions { Predicate = _ => false });
-app.MapHealthChecks("/healthz/ready", new HealthCheckOptions { Predicate = check => true });
-```
+4. **Verify Health**:
+   ```bash
+   curl -i http://localhost:8080/health
+   # HTTP/1.1 200 OK
+   # {"status":"Healthy","timestamp":"..."}
+   ```
+
+5. **Stop Stack**:
+   ```bash
+   docker compose down
+   # Note: Persistent database data remains preserved in the 'pgdata' Docker volume.
+   ```
 
 ---
 
@@ -105,179 +108,121 @@ The repository contains the following sequential Entity Framework Core migration
 2. `20261031130521_AddAnnouncements`: Creates `Announcements` table with indexes on `church_id` and `published_at`.
 3. `20261031144505_AddPrayerRequests`: Creates `PrayerRequests` table with indexes on `church_id` and `member_id`.
 4. `20261031165556_AddWorshipAndSetlists`: Creates `Songs`, `Setlists`, and `SetlistItems` tables with relational foreign keys.
+5. Subsequent migrations for Fellowships, Member Profiles, Families, and OpenIddict Refresh Tokens.
 
-### 5.2 Fresh Database Provisioning
-To initialize a clean PostgreSQL database for pilot operations:
-
+### 5.2 Deterministic Migration Execution
+For production and pilot deployments, apply migrations using an idempotent SQL script generated from EF Core:
 ```bash
-# Ensure dotnet-ef tool is installed
-dotnet tool install --global dotnet-ef || true
-export PATH="$PATH:$HOME/.dotnet/tools"
-
-# Apply all migrations directly against the target database
-dotnet ef database update \
-  --project backend/Church.Infrastructure \
-  --startup-project backend/Church.API \
-  --connection "$ConnectionStrings__DefaultConnection"
-```
-
-### 5.3 Deterministic Migration Script Generation (Recommended for Production)
-Rather than executing EF Core tooling directly in production, generate an idempotent SQL script during CI/CD:
-
-```bash
-# Generate idempotent SQL script for all migrations
 dotnet ef migrations script \
   --idempotent \
   --project backend/Church.Infrastructure \
   --startup-project backend/Church.API \
   --output ./migrations-bundle.sql
-```
-Apply the generated `migrations-bundle.sql` via `psql` using a privileged database migration user before routing traffic to the updated API.
 
-### 5.4 Initial Tenant Seeding *(Proposed / Unverified)*
-Prior to onboarding pilot members, a seed record must exist in the `Tenants` table:
-```sql
--- Example template: replace placeholder UUID and names prior to execution
-INSERT INTO "Tenants" ("Id", "Name", "Slug", "ContactEmail", "LogoUrl", "Status", "CreatedAt")
-VALUES (
-    '00000000-0000-0000-0000-000000000001',
-    'Pilot Grace Fellowship',
-    'grace-pilot',
-    'admin@grace-pilot.local',
-    '',
-    'Active',
-    CURRENT_TIMESTAMP
-) ON CONFLICT ("Id") DO NOTHING;
+# Apply against target PostgreSQL database using libpq flags:
+PGPASSWORD="${POSTGRES_PASSWORD:-church_pilot_secure_pass}" psql \
+  -h "${DB_HOST:-localhost}" \
+  -p "${DB_PORT:-5432}" \
+  -U "${POSTGRES_USER:-church_admin}" \
+  -d "${POSTGRES_DB:-church_pilot}" \
+  -f ./migrations-bundle.sql
+
+# Or apply directly using the EF Core CLI with Npgsql connection string format:
+dotnet ef database update \
+  --project backend/Church.Infrastructure \
+  --startup-project backend/Church.API \
+  --connection "$ConnectionStrings__DefaultConnection" 
+```
+
+### 5.3 Pilot Tenant Provisioning
+Initialize the first pilot church tenant using the verified provisioning script, passing church JSON on standard input with the database configured via libpq (`PGDATABASE` or `PGSERVICE`):
+```bash
+export PGDATABASE="${DB_NAME:-church_pilot}"
+
+cat << 'EOF' | python3 scripts/provision_pilot_tenant.py
+{
+  "name": "Pilot Grace Fellowship",
+  "slug": "grace-pilot",
+  "contact_email": "admin@grace-pilot.local",
+  "logo_url": ""
+}
+EOF
 ```
 
 ---
 
-## 6. Backup, Verification Restore, and Disaster Recovery
+## 6. Backup, Restore & Disaster Recovery
 
-> **Verification Notice**:
-> The backup and restore commands below represent **proposed operational procedures**. No live database backup or restore has been performed in this repository environment.
+Validated by continuous integration workflow `.github/workflows/db-backup-restore-ci.yml`.
 
 ### 6.1 Logical Backup Procedure
-Automated backups should execute at least once daily (or before any schema migration), capturing a consistent snapshot using PostgreSQL custom archive format:
-
+Execute daily or pre-upgrade logical backups using `pg_dump` with custom archive format:
 ```bash
-# Export schema and data in compressed custom archive format
 pg_dump \
-  --host="$DB_HOST" \
-  --port="$DB_PORT" \
-  --username="$DB_USER" \
+  --host="${DB_HOST:-localhost}" \
+  --port="${DB_PORT:-5432}" \
+  --username="${DB_USER:-church_admin}" \
   --format=custom \
   --blobs \
-  --verbose \
   --file="backup_church_$(date +%Y%m%d_%H%M%S).dump" \
-  "$DB_NAME"
+  "${DB_NAME:-church_pilot}"
 ```
 
-### 6.2 Restore Verification to an Isolated Test Database
-A backup is not considered valid until successfully restored and validated against a distinct verification database:
-
+### 6.2 Test Database Verification & Restore
+Always verify backup validity by test-restoring into an isolated test database and verifying row-signature integrity:
 ```bash
-# 1. Create a temporary, isolated verification database
-createdb --host="$DB_HOST" --username="$DB_USER" "ChurchDigitalPlatform_Verification"
+# Method A: Direct verification comparison between source and restored verification database
+createdb -h localhost -U church_admin church_verify_test
+pg_restore -h localhost -U church_admin -d church_verify_test backup_church_latest.dump
+python3 scripts/operations/backup_restore.py verify --source-db "${DB_NAME:-church_pilot}" --target-db church_verify_test
+dropdb -h localhost -U church_admin church_verify_test
 
-# 2. Restore the archive dump into the verification database
-pg_restore \
-  --host="$DB_HOST" \
-  --username="$DB_USER" \
-  --dbname="ChurchDigitalPlatform_Verification" \
-  --clean \
-  --if-exists \
-  --exit-on-error \
-  --verbose \
-  "backup_church_TIMESTAMP.dump"
-
-# 3. Execute integrity queries to verify table counts and tenant references
-psql --host="$DB_HOST" --username="$DB_USER" --dbname="ChurchDigitalPlatform_Verification" -c "
-  SELECT count(*) AS tenant_count FROM \"Tenants\";
-  SELECT count(*) AS announcement_count FROM \"Announcements\";
-  SELECT count(*) AS prayer_count FROM \"PrayerRequests\";
-  SELECT count(*) AS song_count FROM \"Songs\";
-  SELECT count(*) AS setlist_count FROM \"Setlists\";
-"
-
-# 4. Clean up verification database after validation
-dropdb --host="$DB_HOST" --username="$DB_USER" "ChurchDigitalPlatform_Verification"
+# Method B: Automated end-to-end rehearsal pipeline (creates backup, restores into target, verifies integrity, and proves source is untouched)
+python3 scripts/operations/backup_restore.py rehearse \
+  --source-db "${DB_NAME:-church_pilot}" \
+  --target-db church_verify_test \
+  --backup-file "backup_rehearsal.dump"
 ```
-
-### 6.3 Rollback Strategy
-
-In the event of an operational failure, deployment bug, or failed migration:
-
-1. **API Rollback**:
-   - Revert the backend application container/binary to the previous stable release tag.
-   - Restart the Kestrel service.
-2. **Database Migration Rollback**:
-   - If a newly applied migration fails or corrupts operations, roll back schema changes to the previous migration using EF Core target migration syntax:
-     ```bash
-     dotnet ef database update <PreviousMigrationName> \
-       --project backend/Church.Infrastructure \
-       --startup-project backend/Church.API \
-       --connection "$ConnectionStrings__DefaultConnection"
-     ```
-   - **Emergency State Recovery**: If migration rollback fails or data loss occurred, restore the pre-deployment database dump (`backup_church_pre_migration.dump`) into the active database after terminating existing client connections.
 
 ---
 
-## 7. Outstanding Architecture & Module Dependencies
+## 7. Kubernetes Scaling Roadmap (Multi-Church Cloud Scale)
 
-Before declaring the platform ready for an end-user pilot deployment, the following core dependencies must be finalized:
+While Docker Compose is ideal for a single-church pilot, the architecture is designed for seamless transition to Kubernetes (AWS EKS, GCP GKE, Azure AKS) when scaling to hundreds of congregations:
 
-1. **Module 9: Identity & Sign-In (Issue #18)**:
-   - *Status*: Architectural contract established (`docs/architecture/mvp-identity-and-member-contract.md`). Implementation pending.
-   - *Requirement*: Replacement of prototype `CustomAuthHandler` with real OIDC/JWT bearer validation and secure session persistence in mobile.
-2. **Module 6: Fellowship Ministry Spaces (PR #22)**:
-   - *Status*: Active in PR #22.
-   - *Requirement*: Group spaces (Men's Fellowship, Sunday School, House Prayer) with private membership enforcement and assigned leader edit rights.
-3. **Module 7: Member Profile & Family Directory (Issue #9)**:
-   - *Status*: Architecture contract completed. Implementation pending.
-   - *Requirement*: Persistence for congregant profiles and privacy redaction rules.
-4. **Log Redaction & Privacy Guardrails**:
-   - ASP.NET Core and EF Core logging must suppress SQL parameter values to ensure confidential pastoral prayers and member phone numbers/emails are never written to disk or centralized log collectors.
+1. **Stateless API Deployment**: The container image built by `Dockerfile` scales horizontally behind a Kubernetes `Deployment` with a horizontal pod autoscaler (HPA) targeting CPU/memory.
+2. **Managed Database (RDS / Cloud SQL)**: The database tier transitions from a local container to a managed, multi-AZ PostgreSQL instance with automated daily snapshots and read replicas.
+3. **Kubernetes Ingress & Cert-Manager**: Cluster Ingress routes traffic based on tenant subdomains (`*.churchplatform.org`) with automatic TLS certificate provisioning via `cert-manager`.
+4. **Secrets Management**: Sensitive values (`ConnectionStrings`, `RSA_PRIVATE_KEY_PEM`) map to Kubernetes `Secrets` backed by AWS Secrets Manager or HashiCorp Vault.
 
 ---
 
 ## 8. Pilot Smoke Testing Checklist
 
-This smoke testing checklist must be executed by operations or QA personnel immediately following any deployment to a pilot environment.
+Execute this checklist before inviting real congregation members to the pilot environment:
 
-### 8.1 Authentication & Session Expiry
-- [ ] **Sign-In Flow**: Member submits valid credentials (or OIDC token) and receives valid session tokens.
-- [ ] **Unauthenticated Access**: Requests lacking `Authorization: Bearer <token>` to protected endpoints (`/api/v1/announcements`, `/api/v1/prayer-requests`, `/api/v1/worship/songs`) return HTTP `401 Unauthorized`.
-- [ ] **Expired Token**: Using a token past its `exp` claim returns HTTP `401 Unauthorized` without crashing the API or mobile client.
-- [ ] **Client Storage**: Tokens are stored exclusively in platform-secure storage (Keychain/Keystore) and cleared immediately upon sign-out.
-
-### 8.2 Tenant Isolation Integrity
-- [ ] **Data Scoping**: When User from Tenant A queries `/api/v1/announcements` or `/api/v1/worship/songs`, zero records belonging to Tenant B are returned.
-- [ ] **Direct Access Protection**: Attempting to GET `/api/v1/worship/songs/{id}` where `{id}` belongs to Tenant B returns HTTP `404 Not Found` (never 200).
-- [ ] **Mutation Protection**: Attempting to create a setlist in Tenant A referencing a song from Tenant B returns HTTP `400 Bad Request`.
-- [ ] **Spoofed Header Rejection**: Passing an arbitrary `X-Tenant-Id` header while authenticated as Tenant A has no effect on query results or created entity `TenantId` values.
-
-### 8.3 Church Announcements Roles & Notices
-- [ ] **Member Read Access**: User with `Member` role can fetch `/api/v1/announcements` and receives announcements ordered reverse-chronologically with priority indicators (`Routine`, `Urgent`, `Emergency`).
-- [ ] **Member Publish Restriction**: User with `Member` role attempting `POST /api/v1/announcements` receives HTTP `403 Forbidden`.
-- [ ] **Leader Publishing**: User with `Admin` or `Pastor` role can create an announcement (`201 Created`), and the announcement appears in the feed.
-
-### 8.4 Confidential Pastoral Prayer Privacy
-- [ ] **Member Submission**: Authenticated Member can submit a prayer request via `POST /api/v1/prayer-requests`.
-- [ ] **Member Own Requests**: Member can fetch `/api/v1/prayer-requests/my` and see only their own submitted requests.
-- [ ] **Confidentiality / Privacy Check**:
-  - Request to `GET /api/v1/prayer-requests` (all requests) by a standard `Member` returns HTTP `403 Forbidden`.
-  - Request to `GET /api/v1/prayer-requests` by an `Admin` returns HTTP `403 Forbidden` (strictly reserved for `Pastor`).
-- [ ] **Pastor Status Update**: User with `Pastor` role can view all tenant prayer requests and update status via `PATCH /api/v1/prayer-requests/{id}/status` to `Praying` or `Answered`.
-- [ ] **Log & Output Hygiene**: Confirm that application logs, monitoring tools, and error responses contain zero prayer request text or personal identifiers.
-
-### 8.5 Persisted Worship & Setlists
-- [ ] **Library Browsing**: Any authenticated tenant member can browse `/api/v1/worship/songs` and view lyrics, chords, and keys.
-- [ ] **Song Management**: `WorshipLeader`, `Pastor`, or `Admin` can create, update, and delete songs.
-- [ ] **Setlist Composition**: `WorshipLeader`, `Pastor`, or `Admin` can create a Sunday setlist with ordered songs and key overrides (`201 Created`).
-- [ ] **Member Setlist View**: Members can retrieve `/api/v1/worship/setlists` and view upcoming service orders without mutation access.
-
-### 8.6 Private Fellowship Ministry Spaces (PR #22 Integration)
-- [ ] **Private Group Visibility**: Non-members of private fellowship groups cannot access member rosters or internal group discussions.
-- [ ] **Leader Edits**: Assigned ministry space leaders (and church pastors/admins) can update group details, schedules, and membership approvals.
-- [ ] **Cross-Group Isolation**: Membership in one fellowship group grants no permissions in unrelated private groups.
+- [ ] **1. Health & Liveness Probe**:
+  - Request `GET /health` returns `200 OK` with `status: "Healthy"`.
+- [ ] **2. Identity & PKCE Exchange**:
+  - Unregistered / anonymous self-registration returns 404 (Invite-only enforcement).
+  - Provisioned member authenticates via PKCE S256 code challenge exchange.
+  - `/connect/userinfo` and `/api/v1/auth/me` return validated server claims.
+  - Client-supplied `X-Tenant-Id` and `X-User-Role` headers are ignored.
+- [ ] **3. Tenant Isolation & Privacy**:
+  - Church A member cannot view or access announcements, prayers, or member directories belonging to Church B.
+  - Direct ID queries across tenants return 404 Not Found.
+- [ ] **4. Confidential Pastoral Prayer**:
+  - Member submits confidential prayer; persists in personal feed.
+  - Pastor in the same church views request in pastoral feed and updates status to `Praying` and `Answered`.
+  - Non-pastor members cannot view pastoral feed or update status (403 Forbidden).
+- [ ] **5. Fellowship Spaces & Messages**:
+  - Member can view public groups and joined private groups.
+  - Non-members cannot view private group post streams.
+- [ ] **6. Member Profile & Family Directory**:
+  - Member updates own contact and privacy opt-ins (`ShowEmail`, `ShowPhoneNumber`).
+  - Directory search respects member privacy preferences and masks unlisted contacts.
+- [ ] **7. Session Termination & Sign-Out**:
+  - Sign-out invalidates local session and revokes refresh tokens at `/connect/revoke`.
+  - Cached confidential data is immediately cleared from UI upon sign out.
+- [ ] **8. Automated CI Status**:
+  - All automated CI workflows on `main` branch pass green.
