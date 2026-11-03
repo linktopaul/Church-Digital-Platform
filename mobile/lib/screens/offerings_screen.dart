@@ -489,6 +489,7 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
             const SizedBox(height: 16),
 
             DropdownButtonFormField<OfferingFundType>(
+              isExpanded: true,
               initialValue: _selectedFund,
               decoration: const InputDecoration(
                 labelText: 'Select Ministry Fund',

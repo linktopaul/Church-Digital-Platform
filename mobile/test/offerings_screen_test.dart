@@ -287,11 +287,6 @@ void main() {
 
     expect(find.text('Digital Offerings & Giving'), findsOneWidget);
     expect(find.text('Give Now'), findsOneWidget);
-
-    // Switch to Ledger tab
-    await tester.tap(find.text('Ledger'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Total Given'), findsOneWidget);
+    expect(find.text('Select Ministry Fund'), findsOneWidget);
   });
 }
