@@ -9,7 +9,7 @@ import '../services/celebration_api_client.dart';
 class CelebrationsScreen extends StatefulWidget {
   final CelebrationApiClient? apiClient;
   final bool isPastor;
-  final Future<void> Function(String url)? onLaunchUrl;
+  final Future<bool> Function(String url)? onLaunchUrl;
 
   const CelebrationsScreen({
     super.key,
@@ -201,19 +201,18 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
                       final urlString = celebration.whatsAppUrl;
                       if (urlString == null) return;
 
-                      if (widget.onLaunchUrl != null) {
-                        await widget.onLaunchUrl!(urlString);
-                        return;
-                      }
-
                       var launched = false;
-                      try {
-                        final uri = Uri.parse(urlString);
-                        if (await canLaunchUrl(uri)) {
-                          launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+                      if (widget.onLaunchUrl != null) {
+                        launched = await widget.onLaunchUrl!(urlString);
+                      } else {
+                        try {
+                          final uri = Uri.parse(urlString);
+                          if (await canLaunchUrl(uri)) {
+                            launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+                          }
+                        } catch (_) {
+                          launched = false;
                         }
-                      } catch (_) {
-                        launched = false;
                       }
 
                       if (!launched) {

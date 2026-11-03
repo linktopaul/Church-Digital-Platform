@@ -6,7 +6,7 @@ import 'placeholder_screen.dart';
 class HomeScreen extends StatelessWidget {
   final CelebrationApiClient? celebrationClient;
   final bool isPastor;
-  final Future<void> Function(String url)? onLaunchUrl;
+  final Future<bool> Function(String url)? onLaunchUrl;
 
   const HomeScreen({
     super.key,

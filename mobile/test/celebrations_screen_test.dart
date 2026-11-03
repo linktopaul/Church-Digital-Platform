@@ -104,7 +104,7 @@ void main() {
   Widget buildTestWidget({
     CelebrationApiClient? client,
     bool isPastor = false,
-    Future<void> Function(String)? onLaunchUrl,
+    Future<bool> Function(String)? onLaunchUrl,
   }) {
     return MaterialApp(
       home: CelebrationsScreen(
@@ -158,6 +158,7 @@ void main() {
       client: client,
       onLaunchUrl: (url) async {
         launchedUrl = url;
+        return true;
       },
     ));
     await tester.pumpAndSettle();
@@ -182,14 +183,17 @@ void main() {
     expect(launchedUrl, 'https://wa.me/15551234567?text=blessing');
   });
 
-  testWidgets('tapping WhatsApp button without onLaunchUrl falls back gracefully', (tester) async {
+  testWidgets('tapping WhatsApp button falls back to clipboard when launch fails', (tester) async {
     final client = FakeCelebrationApiClient(
       todayEvents: sampleToday,
       upcomingEvents: sampleUpcoming,
       templates: sampleTemplates,
     );
 
-    await tester.pumpWidget(buildTestWidget(client: client));
+    await tester.pumpWidget(buildTestWidget(
+      client: client,
+      onLaunchUrl: (url) async => false, // Simulate unhandled URL / launch failure
+    ));
     await tester.pumpAndSettle();
 
     final sendButton = find.byTooltip('Send Blessing');
