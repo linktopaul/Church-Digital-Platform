@@ -32,6 +32,11 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
   List<CelebrationEvent> _upcomingCelebrations = [];
   List<BlessingTemplate> _templates = [];
 
+  static const _monthNames = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -51,6 +56,13 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  String _formatCelebrationDate(DateTime date) {
+    final month = (date.month >= 1 && date.month <= 12)
+        ? _monthNames[date.month - 1]
+        : '';
+    return '$month ${date.day}';
   }
 
   Future<void> _loadCelebrations() async {
@@ -102,6 +114,7 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
     final matchingTemplates = _templates
         .where((t) => t.type == celebration.type)
         .toList();
+    final formattedDate = _formatCelebrationDate(celebration.date);
 
     showModalBottomSheet(
       context: context,
@@ -110,145 +123,156 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 20,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.85,
+            ),
+            child: SingleChildScrollView(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    celebration.type == CelebrationType.birthday
-                        ? Icons.cake
-                        : Icons.favorite,
-                    color: Theme.of(context).colorScheme.primary,
+                  Row(
+                    children: [
+                      Icon(
+                        celebration.type == CelebrationType.birthday
+                            ? Icons.cake
+                            : Icons.favorite,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Bless ${celebration.memberName}',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Bless ${celebration.memberName}',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '$formattedDate • ${celebration.milestoneLabel}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.secondary,
+                          fontWeight: FontWeight.w500,
+                        ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                celebration.milestoneLabel,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.secondary,
-                    ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Scripture Blessing Options:',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 8),
-              if (matchingTemplates.isEmpty)
-                const Text('May the Lord bless and keep you always. (Numbers 6:24)')
-              else
-                ...matchingTemplates.map((template) {
-                  final formattedMessage = template.formatGreeting(celebration.memberName);
-                  return Card(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            template.title,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Scripture Blessing Options:',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  if (matchingTemplates.isEmpty)
+                    const Text('May the Lord bless and keep you always. (Numbers 6:24)')
+                  else
+                    ...matchingTemplates.map((template) {
+                      final formattedMessage = template.formatGreeting(celebration.memberName);
+                      return Card(
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                template.title,
+                                style: const TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(formattedMessage),
+                              const SizedBox(height: 4),
+                              Text(
+                                template.defaultScripture,
+                                style: TextStyle(
+                                  fontStyle: FontStyle.italic,
+                                  fontSize: 12,
+                                  color: Theme.of(context).colorScheme.outline,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 4),
-                          Text(formattedMessage),
-                          const SizedBox(height: 4),
-                          Text(
-                            template.defaultScripture,
-                            style: TextStyle(
-                              fontStyle: FontStyle.italic,
-                              fontSize: 12,
-                              color: Theme.of(context).colorScheme.outline,
-                            ),
-                          ),
-                        ],
+                        ),
+                      );
+                    }),
+                  const SizedBox(height: 16),
+                  if (celebration.canMessageDirectly && celebration.whatsAppUrl != null) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.chat),
+                        label: const Text('Open in WhatsApp'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF25D366),
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () async {
+                          Navigator.pop(ctx);
+                          final urlString = celebration.whatsAppUrl;
+                          if (urlString == null) return;
+
+                          var launched = false;
+                          if (widget.onLaunchUrl != null) {
+                            launched = await widget.onLaunchUrl!(urlString);
+                          } else {
+                            try {
+                              final uri = Uri.parse(urlString);
+                              if (await canLaunchUrl(uri)) {
+                                launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+                              }
+                            } catch (_) {
+                              launched = false;
+                            }
+                          }
+
+                          if (!launched) {
+                            await Clipboard.setData(
+                              ClipboardData(text: urlString),
+                            );
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('WhatsApp blessing link copied to clipboard.'),
+                                ),
+                              );
+                            }
+                          }
+                        },
                       ),
                     ),
-                  );
-                }),
-              const SizedBox(height: 16),
-              if (celebration.canMessageDirectly && celebration.whatsAppUrl != null) ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    icon: const Icon(Icons.chat),
-                    label: const Text('Open in WhatsApp'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF25D366),
-                      foregroundColor: Colors.white,
+                  ] else ...[
+                    const Center(
+                      child: Text(
+                        'Contact details unlisted. Celebrate together in prayer!',
+                        style: TextStyle(fontStyle: FontStyle.italic),
+                      ),
                     ),
-                    onPressed: () async {
-                      Navigator.pop(ctx);
-                      final urlString = celebration.whatsAppUrl;
-                      if (urlString == null) return;
-
-                      var launched = false;
-                      if (widget.onLaunchUrl != null) {
-                        launched = await widget.onLaunchUrl!(urlString);
-                      } else {
-                        try {
-                          final uri = Uri.parse(urlString);
-                          if (await canLaunchUrl(uri)) {
-                            launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-                          }
-                        } catch (_) {
-                          launched = false;
-                        }
-                      }
-
-                      if (!launched) {
-                        await Clipboard.setData(
-                          ClipboardData(text: urlString),
-                        );
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('WhatsApp blessing link copied to clipboard.'),
-                            ),
-                          );
-                        }
-                      }
-                    },
-                  ),
-                ),
-              ] else ...[
-                const Center(
-                  child: Text(
-                    'Contact details unlisted. Celebrate together in prayer!',
-                    style: TextStyle(fontStyle: FontStyle.italic),
-                  ),
-                ),
-              ],
-            ],
+                  ],
+                ],
+              ),
+            ),
           ),
         );
       },
     );
   }
 
-  Widget _buildCelebrationTile(CelebrationEvent celebration) {
+  Widget _buildCelebrationTile(CelebrationEvent celebration, {bool showDate = false}) {
     final isBirthday = celebration.type == CelebrationType.birthday;
     final icon = isBirthday ? Icons.cake : Icons.favorite;
     final color = isBirthday ? Colors.deepPurple : Colors.pink;
+    final subtitleText = showDate
+        ? '${_formatCelebrationDate(celebration.date)} • ${celebration.milestoneLabel}'
+        : celebration.milestoneLabel;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -267,7 +291,7 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
           children: [
             const SizedBox(height: 2),
             Text(
-              celebration.milestoneLabel,
+              subtitleText,
               style: TextStyle(color: color, fontWeight: FontWeight.w500),
             ),
             if (!celebration.canMessageDirectly)
@@ -292,7 +316,11 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
     );
   }
 
-  Widget _buildCelebrationList(List<CelebrationEvent> items, String emptyMessage) {
+  Widget _buildCelebrationList(
+    List<CelebrationEvent> items,
+    String emptyMessage, {
+    bool showDate = false,
+  }) {
     if (items.isEmpty) {
       return Center(
         child: Padding(
@@ -320,7 +348,10 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
       child: ListView.builder(
         padding: const EdgeInsets.symmetric(vertical: 8),
         itemCount: items.length,
-        itemBuilder: (context, index) => _buildCelebrationTile(items[index]),
+        itemBuilder: (context, index) => _buildCelebrationTile(
+          items[index],
+          showDate: showDate,
+        ),
       ),
     );
   }
@@ -373,10 +404,12 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
                     _buildCelebrationList(
                       _todayCelebrations,
                       'No celebrations today. Check back tomorrow!',
+                      showDate: false,
                     ),
                     _buildCelebrationList(
                       _upcomingCelebrations,
                       'No upcoming celebrations this week.',
+                      showDate: true,
                     ),
                   ],
                 ),

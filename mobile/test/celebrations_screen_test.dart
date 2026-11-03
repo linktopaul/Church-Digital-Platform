@@ -99,6 +99,12 @@ void main() {
       template: 'Dear {name}, congratulations on your anniversary!',
       defaultScripture: '1 Corinthians 13:7',
     ),
+    const BlessingTemplate(
+      type: CelebrationType.birthday,
+      title: 'Day of Joy Blessing',
+      template: 'Dear {name}, rejoicing with you on your birthday!',
+      defaultScripture: 'Psalm 118:24',
+    ),
   ];
 
   Widget buildTestWidget({
@@ -146,7 +152,7 @@ void main() {
     expect(find.text('Private Contact'), findsOneWidget);
   });
 
-  testWidgets('tapping WhatsApp button opens blessing preview and calls onLaunchUrl', (tester) async {
+  testWidgets('tapping WhatsApp button opens scrollable blessing preview and calls onLaunchUrl', (tester) async {
     String? launchedUrl;
     final client = FakeCelebrationApiClient(
       todayEvents: sampleToday,
@@ -169,9 +175,11 @@ void main() {
     await tester.tap(sendButton);
     await tester.pumpAndSettle();
 
-    // Modal sheet appears
+    // Modal sheet appears with scroll view and content
     expect(find.text('Bless Grace Hopper'), findsOneWidget);
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
     expect(find.text('Birthday Blessing'), findsOneWidget);
+    expect(find.text('Day of Joy Blessing'), findsOneWidget);
     expect(find.text('Dear Grace Hopper, may the Lord bless you and keep you!'), findsOneWidget);
 
     // Tap Open in WhatsApp
@@ -183,7 +191,7 @@ void main() {
     expect(launchedUrl, 'https://wa.me/15551234567?text=blessing');
   });
 
-  testWidgets('switches to upcoming celebrations tab', (tester) async {
+  testWidgets('switches to upcoming tab and displays celebration date in subtitle', (tester) async {
     final client = FakeCelebrationApiClient(
       todayEvents: sampleToday,
       upcomingEvents: sampleUpcoming,
@@ -198,7 +206,30 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('David Livingstone'), findsOneWidget);
-    expect(find.text('25th Birthday'), findsOneWidget);
+    // Verified date is formatted alongside milestone
+    expect(find.text('Nov 6 • 25th Birthday'), findsOneWidget);
+  });
+
+  testWidgets('blessing modal renders without overflow on a short viewport', (tester) async {
+    tester.view.physicalSize = const Size(800, 450);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    final client = FakeCelebrationApiClient(
+      todayEvents: sampleToday,
+      upcomingEvents: sampleUpcoming,
+      templates: sampleTemplates,
+    );
+
+    await tester.pumpWidget(buildTestWidget(client: client));
+    await tester.pumpAndSettle();
+
+    final sendButton = find.byTooltip('Send Blessing');
+    await tester.tap(sendButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Bless Grace Hopper'), findsOneWidget);
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
   });
 
   testWidgets('shows error view and retries on button tap', (tester) async {
