@@ -119,8 +119,19 @@ dotnet ef migrations script \
   --startup-project backend/Church.API \
   --output ./migrations-bundle.sql
 
-# Apply against target PostgreSQL database
-psql "$ConnectionStrings__DefaultConnection" -f ./migrations-bundle.sql
+# Apply against target PostgreSQL database using libpq flags:
+PGPASSWORD="${POSTGRES_PASSWORD:-church_pilot_secure_pass}" psql \
+  -h "${DB_HOST:-localhost}" \
+  -p "${DB_PORT:-5432}" \
+  -U "${POSTGRES_USER:-church_admin}" \
+  -d "${POSTGRES_DB:-church_pilot}" \
+  -f ./migrations-bundle.sql
+
+# Or apply directly using the EF Core CLI with Npgsql connection string format:
+dotnet ef database update \
+  --project backend/Church.Infrastructure \
+  --startup-project backend/Church.API \
+  --connection "$ConnectionStrings__DefaultConnection" 
 ```
 
 ### 5.3 Pilot Tenant Provisioning
