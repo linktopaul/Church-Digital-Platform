@@ -29,12 +29,25 @@ public static class OfferingEndpoints
             .RequireAuthorization();
 
         // 1. Get Giving Config (UPI ID, payee info, available fund types)
-        group.MapGet("/config", (
+        group.MapGet("/config", async (
             ClaimsPrincipal user,
-            ITenantService tenantService) =>
+            ITenantService tenantService,
+            ApplicationDbContext db,
+            Microsoft.Extensions.Configuration.IConfiguration config) =>
         {
-            var upiId = "churchgiving@upi";
-            var payeeName = "Church Digital Platform";
+            var churchId = ResolveTenantId(tenantService, user);
+            Tenant? tenant = null;
+            if (churchId != Guid.Empty)
+            {
+                tenant = await db.Tenants.FirstOrDefaultAsync(t => t.Id == churchId);
+            }
+
+            var tenantKey = tenant?.Slug ?? churchId.ToString();
+            var upiId = config[$"Giving:{tenantKey}:UpiId"]
+                ?? config[$"Giving:{churchId}:UpiId"]
+                ?? config["Giving:DefaultUpiId"]
+                ?? "churchgiving@upi";
+            var payeeName = tenant?.Name ?? config[$"Giving:{tenantKey}:PayeeName"] ?? "Church Digital Platform";
             var currency = "INR";
 
             return Results.Ok(new ChurchGivingConfigResponse(
@@ -50,7 +63,8 @@ public static class OfferingEndpoints
             RecordContributionRequest request,
             ApplicationDbContext db,
             ITenantService tenantService,
-            ClaimsPrincipal user) =>
+            ClaimsPrincipal user,
+            Microsoft.Extensions.Configuration.IConfiguration config) =>
         {
             if (request.Amount <= 0)
             {
@@ -63,11 +77,17 @@ public static class OfferingEndpoints
                 return Results.BadRequest(new { error = "Tenant context is required." });
             }
 
+            var tenant = await db.Tenants.FirstOrDefaultAsync(t => t.Id == churchId);
+            var tenantKey = tenant?.Slug ?? churchId.ToString();
+            var upiPayeeId = config[$"Giving:{tenantKey}:UpiId"]
+                ?? config[$"Giving:{churchId}:UpiId"]
+                ?? config["Giving:DefaultUpiId"]
+                ?? "churchgiving@upi";
+            var payeeName = tenant?.Name ?? config[$"Giving:{tenantKey}:PayeeName"] ?? "Church Digital Platform";
+
             var (memberId, memberName) = await ResolveMemberIdentityAsync(db, user);
             var currency = string.IsNullOrWhiteSpace(request.Currency) ? "INR" : request.Currency.Trim().ToUpperInvariant();
             var receiptNumber = $"REC-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
-            var upiPayeeId = "churchgiving@upi";
-            var payeeName = "Church Digital Platform";
 
             var initialStatus = string.IsNullOrWhiteSpace(request.TransactionReference)
                 ? ContributionStatus.Pending

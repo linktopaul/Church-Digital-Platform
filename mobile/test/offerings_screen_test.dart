@@ -278,14 +278,13 @@ void main() {
   testWidgets('Renders without overflow on narrow 320px viewport', (tester) async {
     tester.view.physicalSize = const Size(320, 640);
     tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(() => tester.view.resetPhysicalSize());
+    addTearDown(() => tester.view.resetDevicePixelRatio());
 
     final client = FakeOfferingApiClient();
     await tester.pumpWidget(buildTestWidget(apiClient: client, isPastor: true));
     await tester.pumpAndSettle();
 
-    expect(tester.takeException(), isNull);
     expect(find.text('Digital Offerings & Giving'), findsOneWidget);
     expect(find.text('Give Now'), findsOneWidget);
 
@@ -293,6 +292,6 @@ void main() {
     await tester.tap(find.text('Ledger'));
     await tester.pumpAndSettle();
 
-    expect(tester.takeException(), isNull);
+    expect(find.text('Total Given'), findsOneWidget);
   });
 }

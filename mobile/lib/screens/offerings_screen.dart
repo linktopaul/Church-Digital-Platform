@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/offering_models.dart';
 import '../services/offering_api_client.dart';
 
@@ -303,16 +304,27 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
   }
 
   Future<void> _launchUpi(String uri) async {
+    var launched = false;
     if (widget.onLaunchUrl != null) {
-      await widget.onLaunchUrl!(uri);
-      return;
+      launched = await widget.onLaunchUrl!(uri);
+    } else {
+      try {
+        final parsed = Uri.parse(uri);
+        if (await canLaunchUrl(parsed)) {
+          launched = await launchUrl(parsed, mode: LaunchMode.externalApplication);
+        }
+      } catch (_) {
+        launched = false;
+      }
     }
 
-    Clipboard.setData(ClipboardData(text: uri));
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('UPI intent URI copied to clipboard.')),
-      );
+    if (!launched) {
+      Clipboard.setData(ClipboardData(text: uri));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open UPI app. Intent URI copied to clipboard.')),
+        );
+      }
     }
   }
 
@@ -407,7 +419,10 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Digital Offerings & Giving'),
+        title: const Text(
+          'Digital Offerings & Giving',
+          overflow: TextOverflow.ellipsis,
+        ),
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
@@ -547,21 +562,20 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.arrow_forward),
-                        SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
+                  : const FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.arrow_forward),
+                          SizedBox(width: 8),
+                          Text(
                             'Generate UPI Payment & Record',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(fontWeight: FontWeight.bold),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
             ),
           ],
@@ -784,20 +798,27 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
         child: Column(
           children: [
-            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(title, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+            ),
             const SizedBox(height: 4),
-            Text(
-              mainValue,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-                color: color,
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                mainValue,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
               ),
             ),
             const SizedBox(height: 2),
-            Text(subValue, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(subValue, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+            ),
           ],
         ),
       ),
