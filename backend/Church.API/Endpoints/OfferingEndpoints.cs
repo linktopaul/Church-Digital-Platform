@@ -94,6 +94,16 @@ public static class OfferingEndpoints
             }
             var currency = supportedCurrency;
 
+            if (!string.IsNullOrEmpty(request.PaymentNote) && request.PaymentNote.Trim().Length > 500)
+            {
+                return Results.BadRequest(new { error = "Payment note cannot exceed 500 characters." });
+            }
+
+            if (!string.IsNullOrEmpty(request.TransactionReference) && request.TransactionReference.Trim().Length > 100)
+            {
+                return Results.BadRequest(new { error = "Transaction reference cannot exceed 100 characters." });
+            }
+
             string receiptNumber;
             do
             {
@@ -143,7 +153,7 @@ public static class OfferingEndpoints
                 .OrderByDescending(c => c.CreatedAt)
                 .ToListAsync();
 
-            var results = contributions.Select(c => MapToResponse(c, "Church Digital Platform", includeAuditNotes: true)).ToList();
+            var results = contributions.Select(c => MapToResponse(c, "Church Digital Platform", includeAuditNotes: false)).ToList();
             return Results.Ok(results);
         });
 
@@ -206,7 +216,12 @@ public static class OfferingEndpoints
             contribution.VerifiedAt = DateTime.UtcNow;
             if (!string.IsNullOrWhiteSpace(request?.TransactionReference))
             {
-                contribution.TransactionReference = request.TransactionReference.Trim();
+                var tr = request.TransactionReference.Trim();
+                if (tr.Length > 100)
+                {
+                    return Results.BadRequest(new { error = "Transaction reference cannot exceed 100 characters." });
+                }
+                contribution.TransactionReference = tr;
             }
             if (!string.IsNullOrWhiteSpace(request?.VerificationNote))
             {

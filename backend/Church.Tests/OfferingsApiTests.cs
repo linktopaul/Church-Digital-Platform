@@ -395,4 +395,110 @@ public class OfferingsApiTests : IClassFixture<CustomWebApplicationFactory>
         var response = await client.PostAsJsonAsync("/api/v1/offerings/contributions", payload);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
+
+    [Fact]
+    public async Task RecordContribution_PaymentNoteExceedsMaxLength_ReturnsBadRequest()
+    {
+        var churchId = Guid.NewGuid();
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
+        client.DefaultRequestHeaders.Add("X-User-Role", "Member");
+
+        var payload = new RecordContributionRequest(
+            FundType: OfferingFundType.Tithe,
+            Amount: 100m,
+            Currency: "INR",
+            TransactionReference: null,
+            PaymentNote: new string('A', 501)
+        );
+
+        var response = await client.PostAsJsonAsync("/api/v1/offerings/contributions", payload);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task RecordContribution_TransactionReferenceExceedsMaxLength_ReturnsBadRequest()
+    {
+        var churchId = Guid.NewGuid();
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
+        client.DefaultRequestHeaders.Add("X-User-Role", "Member");
+
+        var payload = new RecordContributionRequest(
+            FundType: OfferingFundType.Tithe,
+            Amount: 100m,
+            Currency: "INR",
+            TransactionReference: new string('B', 101),
+            PaymentNote: null
+        );
+
+        var response = await client.PostAsJsonAsync("/api/v1/offerings/contributions", payload);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task VerifyContribution_TransactionReferenceExceedsMaxLength_ReturnsBadRequest()
+    {
+        var churchId = Guid.NewGuid();
+        var contributionId = Guid.NewGuid();
+        SeedContribution(churchId, new Contribution
+        {
+            Id = contributionId,
+            TenantId = churchId,
+            MemberId = Guid.NewGuid(),
+            MemberName = "Test Member",
+            FundType = OfferingFundType.Tithe,
+            Amount = 100m,
+            Currency = "INR",
+            ReceiptNumber = "REC-MAXLEN-TEST",
+            Status = ContributionStatus.Submitted,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
+        client.DefaultRequestHeaders.Add("X-User-Role", "Pastor");
+
+        var verifyPayload = new VerifyContributionRequest(
+            TransactionReference: new string('C', 101),
+            VerificationNote: "Valid note"
+        );
+
+        var response = await client.PostAsJsonAsync($"/api/v1/offerings/{contributionId}/verify", verifyPayload);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task MyContributions_DoesNotExposeAuditNotes()
+    {
+        var churchId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        SeedContribution(churchId, new Contribution
+        {
+            Id = Guid.NewGuid(),
+            TenantId = churchId,
+            MemberId = memberId,
+            MemberName = "Member With Notes",
+            FundType = OfferingFundType.Tithe,
+            Amount = 500m,
+            Currency = "INR",
+            ReceiptNumber = "REC-AUDIT-TEST",
+            Status = ContributionStatus.Verified,
+            VerificationNote = "Confidential pastoral check",
+            CreatedAt = DateTime.UtcNow
+        });
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
+        client.DefaultRequestHeaders.Add("X-User-Role", "Member");
+        client.DefaultRequestHeaders.Add("X-User-Id", memberId.ToString());
+
+        var response = await client.GetAsync("/api/v1/offerings/my-contributions");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var list = await response.Content.ReadFromJsonAsync<List<ContributionResponse>>();
+        Assert.NotNull(list);
+        var item = Assert.Single(list!);
+        Assert.Null(item.VerificationNote);
+    }
 }

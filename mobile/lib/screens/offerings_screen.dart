@@ -367,17 +367,21 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
               const SizedBox(height: 16),
               TextField(
                 controller: utrCtrl,
+                maxLength: 100,
                 decoration: const InputDecoration(
                   labelText: 'Bank Reference / UTR',
                   border: OutlineInputBorder(),
+                  counterText: '',
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: noteCtrl,
+                maxLength: 500,
                 decoration: const InputDecoration(
                   labelText: 'Pastoral Audit Note (Optional)',
                   border: OutlineInputBorder(),
+                  counterText: '',
                 ),
               ),
             ],
@@ -539,23 +543,39 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
 
             TextFormField(
               controller: _noteController,
+              maxLength: 500,
               decoration: const InputDecoration(
                 labelText: 'Giving Note / Thanksgiving Prayer (Optional)',
                 hintText: 'e.g. Thanksgiving for family blessings',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.note_alt_outlined),
+                counterText: '',
               ),
+              validator: (v) {
+                if (v != null && v.trim().length > 500) {
+                  return 'Giving note cannot exceed 500 characters';
+                }
+                return null;
+              },
             ),
             const SizedBox(height: 16),
 
             TextFormField(
               controller: _utrController,
+              maxLength: 100,
               decoration: const InputDecoration(
                 labelText: 'Bank Reference / UTR (Optional)',
                 hintText: 'e.g. UPI Ref 1234567890 if already paid',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.numbers_outlined),
+                counterText: '',
               ),
+              validator: (v) {
+                if (v != null && v.trim().length > 100) {
+                  return 'Reference cannot exceed 100 characters';
+                }
+                return null;
+              },
             ),
             const SizedBox(height: 24),
 
