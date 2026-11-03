@@ -286,6 +286,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
+    expect(find.text('Digital Offerings & Giving'), findsOneWidget);
+    expect(find.text('Give Now'), findsOneWidget);
 
     // Switch to Ledger tab
     await tester.tap(find.text('Ledger'));

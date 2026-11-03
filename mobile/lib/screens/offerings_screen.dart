@@ -410,6 +410,8 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
         title: const Text('Digital Offerings & Giving'),
         bottom: TabBar(
           controller: _tabController,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
           tabs: [
             const Tab(text: 'Give Now'),
             const Tab(text: 'My Giving'),
