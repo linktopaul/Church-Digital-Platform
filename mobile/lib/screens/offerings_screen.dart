@@ -24,15 +24,12 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
 
   // Giving Form State
   ChurchGivingConfig? _config;
-  bool _isLoadingConfig = false;
-  String? _configError;
-  OfferingFundType _selectedFund = OfferingFundType.GeneralOffering;
+  OfferingFundType _selectedFund = OfferingFundType.generalOffering;
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _noteController = TextEditingController();
   final TextEditingController _utrController = TextEditingController();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   bool _isSubmitting = false;
-  Contribution? _lastRecordedContribution;
 
   // My Contributions State
   List<Contribution> _myContributions = [];
@@ -88,27 +85,14 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
     final client = widget.apiClient;
     if (client == null) return;
 
-    setState(() {
-      _isLoadingConfig = true;
-      _configError = null;
-    });
-
     try {
       final config = await client.getGivingConfig();
       if (mounted) {
         setState(() {
           _config = config;
-          _isLoadingConfig = false;
         });
       }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _configError = e.toString();
-          _isLoadingConfig = false;
-        });
-      }
-    }
+    } catch (_) {}
   }
 
   Future<void> _loadMyContributions() async {
@@ -201,7 +185,6 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
 
       if (mounted) {
         setState(() {
-          _lastRecordedContribution = recorded;
           _isSubmitting = false;
           _amountController.clear();
           _noteController.clear();
@@ -299,7 +282,6 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
       return;
     }
 
-    // Fallback: copy to clipboard
     Clipboard.setData(ClipboardData(text: uri));
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -429,7 +411,6 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Giving Header Card
             Card(
               color: Theme.of(context).colorScheme.primaryContainer.withAlpha(60),
               child: Padding(
@@ -464,9 +445,8 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
             ),
             const SizedBox(height: 16),
 
-            // Fund Selector
             DropdownButtonFormField<OfferingFundType>(
-              value: _selectedFund,
+              initialValue: _selectedFund,
               decoration: const InputDecoration(
                 labelText: 'Select Ministry Fund',
                 border: OutlineInputBorder(),
@@ -484,7 +464,6 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
             ),
             const SizedBox(height: 16),
 
-            // Amount Input
             TextFormField(
               controller: _amountController,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -507,7 +486,6 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
             ),
             const SizedBox(height: 16),
 
-            // Optional Note
             TextFormField(
               controller: _noteController,
               decoration: const InputDecoration(
@@ -519,7 +497,6 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
             ),
             const SizedBox(height: 16),
 
-            // Optional Bank Reference / UTR
             TextFormField(
               controller: _utrController,
               decoration: const InputDecoration(
@@ -531,7 +508,6 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
             ),
             const SizedBox(height: 24),
 
-            // Submit Button
             ElevatedButton.icon(
               onPressed: _isSubmitting ? null : _submitContribution,
               icon: _isSubmitting
@@ -689,7 +665,6 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Summary Header Cards
           if (_ledgerSummary != null) ...[
             Row(
               children: [
@@ -724,7 +699,6 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
             const SizedBox(height: 16),
           ],
 
-          // Filter Row
           Row(
             children: [
               const Text('Filter Fund:', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -750,7 +724,6 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
           ),
           const SizedBox(height: 12),
 
-          // Ledger records
           if (_ledgerContributions.isEmpty)
             const Padding(
               padding: EdgeInsets.all(32),

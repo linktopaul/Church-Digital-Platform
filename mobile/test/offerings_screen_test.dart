@@ -63,7 +63,7 @@ class FakeOfferingApiClient implements OfferingApiClient {
       currency: input.currency,
       transactionReference: input.transactionReference,
       upiPayeeId: config.upiId,
-      upiIntentUri: 'upi://pay?pa=${config.upiId}&am=${input.amount:F2}',
+      upiIntentUri: 'upi://pay?pa=${config.upiId}&am=${input.amount.toStringAsFixed(2)}',
       paymentNote: input.paymentNote,
       status: input.transactionReference != null ? ContributionStatus.submitted : ContributionStatus.pending,
       receiptNumber: 'REC-20261103-TEST01',
@@ -228,7 +228,6 @@ void main() {
 
   testWidgets('Pastor mode shows Ledger tab with summary cards and verify action', (tester) async {
     final client = FakeOfferingApiClient(
-      isPastor: true,
       ledgerContributions: [
         Contribution(
           id: 'c-lead-1',

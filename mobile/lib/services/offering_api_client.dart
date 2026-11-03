@@ -230,7 +230,7 @@ class HttpOfferingApiClient implements OfferingApiClient {
     }
 
     if (response.statusCode == 403) {
-      throw const OfferingApiException(
+      throw OfferingApiException(
         'Access denied: Church ledger is restricted to pastoral leadership.',
         statusCode: 403,
         endpoint: endpoint,
@@ -271,7 +271,7 @@ class HttpOfferingApiClient implements OfferingApiClient {
     }
 
     if (response.statusCode == 403) {
-      throw const OfferingApiException(
+      throw OfferingApiException(
         'Access denied: Only pastoral leadership can verify contributions.',
         statusCode: 403,
         endpoint: endpoint,
@@ -300,7 +300,7 @@ class HttpOfferingApiClient implements OfferingApiClient {
     }
 
     if (response.statusCode == 403) {
-      throw const OfferingApiException(
+      throw OfferingApiException(
         'Access denied: Ledger summary is restricted to pastoral leadership.',
         statusCode: 403,
         endpoint: endpoint,

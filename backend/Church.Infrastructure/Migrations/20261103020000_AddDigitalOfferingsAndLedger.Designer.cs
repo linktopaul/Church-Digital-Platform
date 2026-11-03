@@ -2,7 +2,8 @@
 using System;
 using Church.Infrastructure;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -14,7 +15,7 @@ namespace Church.Infrastructure.Migrations
     [Migration("20261103020000_AddDigitalOfferingsAndLedger")]
     partial class AddDigitalOfferingsAndLedger
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -157,6 +158,98 @@ namespace Church.Infrastructure.Migrations
                 });
 
 
+            
+            modelBuilder.Entity("Church.Core.Contribution", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<Guid>("ChurchId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("church_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("currency");
+
+                    b.Property<int>("FundType")
+                        .HasColumnType("integer")
+                        .HasColumnName("fund_type");
+
+                    b.Property<Guid>("MemberId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("member_id");
+
+                    b.Property<string>("MemberName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("member_name");
+
+                    b.Property<string>("PaymentNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("payment_note");
+
+                    b.Property<string>("ReceiptNumber")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("receipt_number");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<string>("TransactionReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("transaction_reference");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpiPayeeId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("upi_payee_id");
+
+                    b.Property<DateTime?>("VerifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("verified_at");
+
+                    b.Property<string>("VerifiedBy")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("verified_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChurchId");
+
+                    b.HasIndex("MemberId");
+
+                    b.HasIndex("ReceiptNumber")
+                        .IsUnique();
+
+                    b.ToTable("Contributions", (string)null);
+                });
+
             modelBuilder.Entity("Church.Core.Family", b =>
                 {
                     b.Property<Guid>("Id")
@@ -937,13 +1030,7 @@ namespace Church.Infrastructure.Migrations
                     b.Navigation("Family");
                 });
 
-            modelBuilder.Entity("Church.Core.Family", b =>
-                {
-                    b.Navigation("Members");
-                });
-
-#pragma warning restore 612, 618
-
+            
             modelBuilder.Entity("Church.Core.Contribution", b =>
                 {
                     b.Property<Guid>("Id")
@@ -991,8 +1078,8 @@ namespace Church.Infrastructure.Migrations
 
                     b.Property<string>("ReceiptNumber")
                         .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
                         .HasColumnName("receipt_number");
 
                     b.Property<int>("Status")
@@ -1027,14 +1114,20 @@ namespace Church.Infrastructure.Migrations
 
                     b.HasIndex("ChurchId");
 
-                    b.HasIndex("ChurchId", "CreatedAt");
+                    b.HasIndex("MemberId");
 
-                    b.HasIndex("ChurchId", "MemberId");
-
-                    b.HasIndex("ChurchId", "Status");
+                    b.HasIndex("ReceiptNumber")
+                        .IsUnique();
 
                     b.ToTable("Contributions", (string)null);
                 });
+
+            modelBuilder.Entity("Church.Core.Family", b =>
+                {
+                    b.Navigation("Members");
+                });
+
+#pragma warning restore 612, 618
         }
     }
 }
