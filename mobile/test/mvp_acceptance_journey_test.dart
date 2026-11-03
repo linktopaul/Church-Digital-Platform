@@ -221,6 +221,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.byType(FloatingActionButton), findsNothing);
+      expect(find.byType(TabBar), findsNothing);
       expect(find.text('All Pastoral Requests'), findsNothing);
     });
 
@@ -234,8 +235,8 @@ void main() {
       ));
       await tester.pump();
 
-      // Verify single tab for member
-      expect(find.text('My Requests'), findsOneWidget);
+      // Verify no pastoral tabs or admin controls for regular member
+      expect(find.byType(TabBar), findsNothing);
       expect(find.text('All Pastoral Requests'), findsNothing);
       expect(find.text('No Submitted Requests'), findsOneWidget);
 
@@ -243,8 +244,8 @@ void main() {
       await tester.tap(find.byType(FloatingActionButton));
       await tester.pumpAndSettle();
 
-      expect(find.text('Submit Prayer Request'), findsOneWidget);
-      expect(find.text('Confidential to Pastors'), findsOneWidget);
+      expect(find.text('Confidential Prayer Request'), findsOneWidget);
+      expect(find.text('This request is strictly confidential and visible only to pastoral staff.'), findsOneWidget);
 
       // Enter confidential prayer request text
       await tester.enterText(
@@ -259,7 +260,7 @@ void main() {
 
       // Verify client call and persisted record
       expect(client.createCallCount, 1);
-      expect(find.text('Submit Prayer Request'), findsNothing); // Sheet dismissed
+      expect(find.text('Confidential Prayer Request'), findsNothing); // Sheet dismissed
       expect(find.text('Please pray for quick recovery from upcoming surgery.'), findsOneWidget);
       expect(find.text('Submitted'), findsOneWidget);
       expect(find.text('Confidential'), findsOneWidget);
@@ -288,7 +289,8 @@ void main() {
       ));
       await tester.pump();
 
-      // Pastoral view shows both tabs
+      // Pastoral view shows both tabs in TabBar
+      expect(find.byType(TabBar), findsOneWidget);
       expect(find.text('My Requests'), findsOneWidget);
       expect(find.text('All Pastoral Requests'), findsOneWidget);
 
@@ -346,6 +348,7 @@ void main() {
 
       expect(find.text('Prayer for college entrance exams.'), findsOneWidget);
       expect(find.byTooltip('Change Status'), findsNothing);
+      expect(find.byType(TabBar), findsNothing);
       expect(find.text('All Pastoral Requests'), findsNothing);
     });
 
@@ -428,6 +431,8 @@ void main() {
       await tester.tap(find.byType(FloatingActionButton));
       await tester.pumpAndSettle();
 
+      expect(find.text('Confidential Prayer Request'), findsOneWidget);
+
       await tester.enterText(
         find.byType(TextField),
         'Urgent medical prayer draft.',
@@ -438,12 +443,12 @@ void main() {
       await tester.tap(find.text('Submit Request'));
       await tester.pumpAndSettle();
 
-      // Verifies error snackbar displayed
+      // Verifies inline error message displayed in sheet
       expect(find.text('Server unreachable during submission'), findsOneWidget);
 
-      // Verifies draft text is NOT lost
+      // Verifies draft text is NOT lost and sheet remained open
       expect(find.text('Urgent medical prayer draft.'), findsOneWidget);
-      expect(find.text('Submit Prayer Request'), findsOneWidget); // Bottom sheet remained open
+      expect(find.text('Confidential Prayer Request'), findsOneWidget); // Bottom sheet remained open
 
       // Verifies no prayer item added to background list
       expect(client.myRequests, isEmpty);
