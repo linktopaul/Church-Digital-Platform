@@ -124,12 +124,18 @@ psql "$ConnectionStrings__DefaultConnection" -f ./migrations-bundle.sql
 ```
 
 ### 5.3 Pilot Tenant Provisioning
-Initialize the first pilot church tenant using the verified provisioning script:
+Initialize the first pilot church tenant using the verified provisioning script, passing church JSON on standard input with the database configured via libpq (`PGDATABASE` or `PGSERVICE`):
 ```bash
-python scripts/provision_pilot_tenant.py \
-  --name "Pilot Grace Fellowship" \
-  --slug "grace-pilot" \
-  --admin-email "admin@grace-pilot.local"
+export PGDATABASE="${DB_NAME:-church_pilot}"
+
+cat << 'EOF' | python3 scripts/provision_pilot_tenant.py
+{
+  "name": "Pilot Grace Fellowship",
+  "slug": "grace-pilot",
+  "contact_email": "admin@grace-pilot.local",
+  "logo_url": ""
+}
+EOF
 ```
 
 ---
@@ -152,12 +158,19 @@ pg_dump \
 ```
 
 ### 6.2 Test Database Verification & Restore
-Always verify backup validity by test-restoring into an isolated test database:
+Always verify backup validity by test-restoring into an isolated test database and verifying row-signature integrity:
 ```bash
+# Method A: Direct verification comparison between source and restored verification database
 createdb -h localhost -U church_admin church_verify_test
 pg_restore -h localhost -U church_admin -d church_verify_test backup_church_latest.dump
-python scripts/operations/backup_restore.py verify --db church_verify_test
+python3 scripts/operations/backup_restore.py verify --source-db "${DB_NAME:-church_pilot}" --target-db church_verify_test
 dropdb -h localhost -U church_admin church_verify_test
+
+# Method B: Automated end-to-end rehearsal pipeline (creates backup, restores into target, verifies integrity, and proves source is untouched)
+python3 scripts/operations/backup_restore.py rehearse \
+  --source-db "${DB_NAME:-church_pilot}" \
+  --target-db church_verify_test \
+  --backup-file "backup_rehearsal.dump"
 ```
 
 ---
