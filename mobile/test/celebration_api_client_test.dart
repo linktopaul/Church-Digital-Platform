@@ -8,10 +8,10 @@ import 'package:church_digital_platform_mobile/services/celebration_api_client.d
 void main() {
   group('HttpCelebrationApiClient', () {
     test('getTodayCelebrations requests correct endpoint and parses items', () async {
-      late http.Request recordedRequest;
+      late http.BaseRequest recordedRequest;
 
       final mockClient = MockClient((request) async {
-        recordedRequest = request as http.Request;
+        recordedRequest = request;
         final responsePayload = [
           {
             'memberId': 'm-1',
@@ -48,10 +48,10 @@ void main() {
     });
 
     test('getUpcomingCelebrations requests with days query param and parses list', () async {
-      late http.Request recordedRequest;
+      late http.BaseRequest recordedRequest;
 
       final mockClient = MockClient((request) async {
-        recordedRequest = request as http.Request;
+        recordedRequest = request;
         final responsePayload = [
           {
             'memberId': 'm-2',
@@ -118,10 +118,10 @@ void main() {
     });
 
     test('triggerDailyScan sends POST to scan-daily and parses result', () async {
-      late http.Request recordedRequest;
+      late http.BaseRequest recordedRequest;
 
       final mockClient = MockClient((request) async {
-        recordedRequest = request as http.Request;
+        recordedRequest = request;
         return http.Response(
           json.encode({
             'date': '2026-11-03T00:00:00Z',
