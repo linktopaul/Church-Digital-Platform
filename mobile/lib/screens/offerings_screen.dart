@@ -243,24 +243,50 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
                   if (contribution.paymentNote != null && contribution.paymentNote!.isNotEmpty)
                     _buildSummaryRow('Note', contribution.paymentNote!),
                   const SizedBox(height: 16),
-                  ElevatedButton.icon(
+                  ElevatedButton(
                     onPressed: () => _launchUpi(contribution.upiIntentUri),
-                    icon: const Icon(Icons.payment),
-                    label: const Text('Open UPI App to Complete Payment'),
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.payment),
+                        SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            'Open UPI App to Complete Payment',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 8),
-                  OutlinedButton.icon(
+                  OutlinedButton(
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: contribution.upiPayeeId));
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text('Copied UPI ID (${contribution.upiPayeeId}) to clipboard!')),
                       );
                     },
-                    icon: const Icon(Icons.copy, size: 18),
-                    label: Text('Copy Church UPI ID (${contribution.upiPayeeId})'),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.copy, size: 18),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            'Copy Church UPI ID (${contribution.upiPayeeId})',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 12),
                   TextButton(
@@ -508,22 +534,33 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
             ),
             const SizedBox(height: 24),
 
-            ElevatedButton.icon(
+            ElevatedButton(
               onPressed: _isSubmitting ? null : _submitContribution,
-              icon: _isSubmitting
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: _isSubmitting
                   ? const SizedBox(
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.arrow_forward),
-              label: Text(
-                _isSubmitting ? 'Recording Giving...' : 'Generate UPI Payment & Record',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
+                  : const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.arrow_forward),
+                        SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            'Generate UPI Payment & Record',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
             ),
           ],
         ),
@@ -745,18 +782,20 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
         child: Column(
           children: [
-            Text(title, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Colors.grey)),
             const SizedBox(height: 4),
             Text(
               mainValue,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 15,
                 fontWeight: FontWeight.bold,
                 color: color,
               ),
             ),
             const SizedBox(height: 2),
-            Text(subValue, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+            Text(subValue, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Colors.grey)),
           ],
         ),
       ),
