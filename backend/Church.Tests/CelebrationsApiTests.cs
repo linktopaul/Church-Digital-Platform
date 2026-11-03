@@ -31,7 +31,7 @@ public class CelebrationsApiTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task TodayCelebrations_ReturnsMatchingBirthdaysAndAnniversaries()
+    public async Task TodayCelebrations_ReturnsMatchingBirthdaysAndAnniversaries_WithAgeRedactionForRegularMembers()
     {
         var churchId = Guid.NewGuid();
         var today = DateTime.UtcNow;
@@ -45,6 +45,7 @@ public class CelebrationsApiTests : IClassFixture<CustomWebApplicationFactory>
             Email = "grace@church.local",
             PhoneNumber = "+15551234567",
             DateOfBirth = new DateTime(1985, today.Month, today.Day, 0, 0, 0, DateTimeKind.Utc),
+            DirectoryVisibility = DirectoryVisibility.PublicToMembers,
             ShowBirthDayAndMonth = true,
             ShowPhoneNumber = true
         };
@@ -57,6 +58,7 @@ public class CelebrationsApiTests : IClassFixture<CustomWebApplicationFactory>
             LastName = "Livingstone",
             Email = "david@church.local",
             AnniversaryDate = new DateTime(2010, today.Month, today.Day, 0, 0, 0, DateTimeKind.Utc),
+            DirectoryVisibility = DirectoryVisibility.PublicToMembers,
             ShowBirthDayAndMonth = true,
             ShowPhoneNumber = false
         };
@@ -69,6 +71,7 @@ public class CelebrationsApiTests : IClassFixture<CustomWebApplicationFactory>
             LastName = "Person",
             Email = "future@church.local",
             DateOfBirth = today.AddMonths(2),
+            DirectoryVisibility = DirectoryVisibility.PublicToMembers,
             ShowBirthDayAndMonth = true
         };
 
@@ -76,6 +79,7 @@ public class CelebrationsApiTests : IClassFixture<CustomWebApplicationFactory>
         SeedMember(churchId, annivMember);
         SeedMember(churchId, otherMonthMember);
 
+        // 1. Regular Member: receives celebrations, but birth year (exact age) is redacted (null)
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
         client.DefaultRequestHeaders.Add("X-User-Role", "Member");
@@ -94,10 +98,23 @@ public class CelebrationsApiTests : IClassFixture<CustomWebApplicationFactory>
         Assert.True(grace.CanMessageDirectly);
         Assert.NotNull(grace.WhatsAppUrl);
         Assert.StartsWith("https://wa.me/15551234567?text=", grace.WhatsAppUrl!);
+        // Birth year/age is protected and redacted for regular members
+        Assert.Null(grace.Years);
+
+        // 2. Pastor: receives celebrations WITH full pastoral age insight
+        var pastorClient = _factory.CreateClient();
+        pastorClient.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
+        pastorClient.DefaultRequestHeaders.Add("X-User-Role", "Pastor");
+
+        var pastorResp = await pastorClient.GetAsync($"/api/v1/celebrations/today?date={today:yyyy-MM-dd}");
+        var pastorCelebrations = await pastorResp.Content.ReadFromJsonAsync<List<CelebrationEventResponse>>();
+        var pastorGrace = pastorCelebrations!.First(c => c.MemberName == "Grace Hopper");
+        Assert.NotNull(pastorGrace.Years);
+        Assert.Equal(today.Year - 1985, pastorGrace.Years);
     }
 
     [Fact]
-    public async Task PrivacyFilter_UnlistedMemberCelebration_HiddenFromRegularMembers_VisibleToPastors()
+    public async Task PrivacyFilter_DirectoryVisibility_PrivateAndLeadersOnlyHiddenFromMembers_VisibleToPastors()
     {
         var churchId = Guid.NewGuid();
         var today = DateTime.UtcNow;
@@ -107,37 +124,66 @@ public class CelebrationsApiTests : IClassFixture<CustomWebApplicationFactory>
             Id = Guid.NewGuid(),
             ChurchId = churchId,
             FirstName = "Private",
-            LastName = "Member",
+            LastName = "Profile",
             Email = "private@church.local",
             DateOfBirth = new DateTime(1990, today.Month, today.Day, 0, 0, 0, DateTimeKind.Utc),
-            ShowBirthDayAndMonth = false // opted out of directory birthday display
+            DirectoryVisibility = DirectoryVisibility.Private,
+            ShowBirthDayAndMonth = true // ShowBirthday enabled, but profile is Private
+        };
+
+        var leadersOnlyMember = new Member
+        {
+            Id = Guid.NewGuid(),
+            ChurchId = churchId,
+            FirstName = "LeadersOnly",
+            LastName = "Profile",
+            Email = "leaders@church.local",
+            DateOfBirth = new DateTime(1988, today.Month, today.Day, 0, 0, 0, DateTimeKind.Utc),
+            DirectoryVisibility = DirectoryVisibility.LeadersOnly,
+            ShowBirthDayAndMonth = true // ShowBirthday enabled, but profile is LeadersOnly
+        };
+
+        var birthdayOptOutMember = new Member
+        {
+            Id = Guid.NewGuid(),
+            ChurchId = churchId,
+            FirstName = "OptOut",
+            LastName = "Birthday",
+            Email = "optout@church.local",
+            DateOfBirth = new DateTime(1991, today.Month, today.Day, 0, 0, 0, DateTimeKind.Utc),
+            DirectoryVisibility = DirectoryVisibility.PublicToMembers,
+            ShowBirthDayAndMonth = false // Profile is Public, but opted out of birthday display
         };
 
         SeedMember(churchId, privateMember);
+        SeedMember(churchId, leadersOnlyMember);
+        SeedMember(churchId, birthdayOptOutMember);
 
-        // 1. Regular Member: should NOT see private member's celebration
+        // 1. Regular Member: should NOT see any of the 3 restricted celebrations
         var memberClient = _factory.CreateClient();
         memberClient.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
         memberClient.DefaultRequestHeaders.Add("X-User-Role", "Member");
-        memberClient.DefaultRequestHeaders.Add("X-User-Id", Guid.NewGuid().ToString());
 
         var memberResponse = await memberClient.GetAsync($"/api/v1/celebrations/today?date={today:yyyy-MM-dd}");
         Assert.Equal(HttpStatusCode.OK, memberResponse.StatusCode);
         var memberCelebrations = await memberResponse.Content.ReadFromJsonAsync<List<CelebrationEventResponse>>();
         Assert.NotNull(memberCelebrations);
-        Assert.DoesNotContain(memberCelebrations!, c => c.MemberName == "Private Member");
+        Assert.DoesNotContain(memberCelebrations!, c => c.MemberName == "Private Profile");
+        Assert.DoesNotContain(memberCelebrations!, c => c.MemberName == "LeadersOnly Profile");
+        Assert.DoesNotContain(memberCelebrations!, c => c.MemberName == "OptOut Birthday");
 
-        // 2. Pastor: CAN see celebration for pastoral care
+        // 2. Pastor: CAN see all 3 celebrations for pastoral care
         var pastorClient = _factory.CreateClient();
         pastorClient.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
         pastorClient.DefaultRequestHeaders.Add("X-User-Role", "Pastor");
-        pastorClient.DefaultRequestHeaders.Add("X-User-Id", Guid.NewGuid().ToString());
 
         var pastorResponse = await pastorClient.GetAsync($"/api/v1/celebrations/today?date={today:yyyy-MM-dd}");
         Assert.Equal(HttpStatusCode.OK, pastorResponse.StatusCode);
         var pastorCelebrations = await pastorResponse.Content.ReadFromJsonAsync<List<CelebrationEventResponse>>();
         Assert.NotNull(pastorCelebrations);
-        Assert.Contains(pastorCelebrations!, c => c.MemberName == "Private Member");
+        Assert.Contains(pastorCelebrations!, c => c.MemberName == "Private Profile");
+        Assert.Contains(pastorCelebrations!, c => c.MemberName == "LeadersOnly Profile");
+        Assert.Contains(pastorCelebrations!, c => c.MemberName == "OptOut Birthday");
     }
 
     [Fact]
@@ -155,6 +201,7 @@ public class CelebrationsApiTests : IClassFixture<CustomWebApplicationFactory>
             Email = "unlisted@church.local",
             PhoneNumber = "+15559876543",
             DateOfBirth = new DateTime(1992, today.Month, today.Day, 0, 0, 0, DateTimeKind.Utc),
+            DirectoryVisibility = DirectoryVisibility.PublicToMembers,
             ShowBirthDayAndMonth = true,
             ShowPhoneNumber = false // Phone is private
         };
@@ -201,6 +248,7 @@ public class CelebrationsApiTests : IClassFixture<CustomWebApplicationFactory>
             LastName = "Member",
             Email = "a@church.local",
             DateOfBirth = new DateTime(1995, today.Month, today.Day, 0, 0, 0, DateTimeKind.Utc),
+            DirectoryVisibility = DirectoryVisibility.PublicToMembers,
             ShowBirthDayAndMonth = true
         };
 
@@ -217,7 +265,7 @@ public class CelebrationsApiTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task UpcomingCelebrations_ReturnsCelebrationsWithinDayWindow()
+    public async Task UpcomingCelebrations_ReturnsCelebrationsWithinDayWindow_AndEnforcesPrivacy()
     {
         var churchId = Guid.NewGuid();
         var today = DateTime.UtcNow.Date;
@@ -233,6 +281,7 @@ public class CelebrationsApiTests : IClassFixture<CustomWebApplicationFactory>
             LastName = "Celebration",
             Email = "near@church.local",
             DateOfBirth = new DateTime(1990, targetDay.Month, targetDay.Day, 0, 0, 0, DateTimeKind.Utc),
+            DirectoryVisibility = DirectoryVisibility.PublicToMembers,
             ShowBirthDayAndMonth = true
         };
 
@@ -244,11 +293,25 @@ public class CelebrationsApiTests : IClassFixture<CustomWebApplicationFactory>
             LastName = "Celebration",
             Email = "far@church.local",
             DateOfBirth = new DateTime(1990, farDay.Month, farDay.Day, 0, 0, 0, DateTimeKind.Utc),
+            DirectoryVisibility = DirectoryVisibility.PublicToMembers,
+            ShowBirthDayAndMonth = true
+        };
+
+        var privateNearMember = new Member
+        {
+            Id = Guid.NewGuid(),
+            ChurchId = churchId,
+            FirstName = "PrivateNear",
+            LastName = "Celebration",
+            Email = "privatenear@church.local",
+            DateOfBirth = new DateTime(1990, targetDay.Month, targetDay.Day, 0, 0, 0, DateTimeKind.Utc),
+            DirectoryVisibility = DirectoryVisibility.Private,
             ShowBirthDayAndMonth = true
         };
 
         SeedMember(churchId, nearMember);
         SeedMember(churchId, farMember);
+        SeedMember(churchId, privateNearMember);
 
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
@@ -259,6 +322,11 @@ public class CelebrationsApiTests : IClassFixture<CustomWebApplicationFactory>
         Assert.NotNull(list7Days);
         Assert.Contains(list7Days!, c => c.MemberName == "Near Celebration");
         Assert.DoesNotContain(list7Days!, c => c.MemberName == "Far Celebration");
+        Assert.DoesNotContain(list7Days!, c => c.MemberName == "PrivateNear Celebration");
+
+        // Verify age redaction on upcoming birthday for regular members
+        var near = list7Days!.First(c => c.MemberName == "Near Celebration");
+        Assert.Null(near.Years);
 
         var response2Days = await client.GetAsync($"/api/v1/celebrations/upcoming?days=2&startDate={today:yyyy-MM-dd}");
         var list2Days = await response2Days.Content.ReadFromJsonAsync<List<CelebrationEventResponse>>();

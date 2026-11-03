@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/celebration_models.dart';
 import '../services/celebration_api_client.dart';
 
@@ -197,11 +198,27 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
                     ),
                     onPressed: () async {
                       Navigator.pop(ctx);
+                      final urlString = celebration.whatsAppUrl;
+                      if (urlString == null) return;
+
                       if (widget.onLaunchUrl != null) {
-                        await widget.onLaunchUrl!(celebration.whatsAppUrl!);
-                      } else {
+                        await widget.onLaunchUrl!(urlString);
+                        return;
+                      }
+
+                      var launched = false;
+                      try {
+                        final uri = Uri.parse(urlString);
+                        if (await canLaunchUrl(uri)) {
+                          launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        }
+                      } catch (_) {
+                        launched = false;
+                      }
+
+                      if (!launched) {
                         await Clipboard.setData(
-                          ClipboardData(text: celebration.whatsAppUrl!),
+                          ClipboardData(text: urlString),
                         );
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(

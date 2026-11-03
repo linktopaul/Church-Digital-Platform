@@ -182,6 +182,27 @@ void main() {
     expect(launchedUrl, 'https://wa.me/15551234567?text=blessing');
   });
 
+  testWidgets('tapping WhatsApp button without onLaunchUrl falls back gracefully', (tester) async {
+    final client = FakeCelebrationApiClient(
+      todayEvents: sampleToday,
+      upcomingEvents: sampleUpcoming,
+      templates: sampleTemplates,
+    );
+
+    await tester.pumpWidget(buildTestWidget(client: client));
+    await tester.pumpAndSettle();
+
+    final sendButton = find.byTooltip('Send Blessing');
+    await tester.tap(sendButton);
+    await tester.pumpAndSettle();
+
+    final whatsappBtn = find.text('Open in WhatsApp');
+    await tester.tap(whatsappBtn);
+    await tester.pumpAndSettle();
+
+    expect(find.text('WhatsApp blessing link copied to clipboard.'), findsOneWidget);
+  });
+
   testWidgets('switches to upcoming celebrations tab', (tester) async {
     final client = FakeCelebrationApiClient(
       todayEvents: sampleToday,

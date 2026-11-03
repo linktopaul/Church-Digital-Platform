@@ -36,10 +36,13 @@ public static class CelebrationEndpoints
             // Query members within tenant boundary (enforced via EF global query filter)
             var membersQuery = db.Members.AsNoTracking();
 
-            // Privacy filter: non-privileged callers only see members who consented to birthday/anniversary display
+            // Privacy filter: non-privileged callers only see members who opted into public directory visibility
+            // AND consented to birthday/anniversary display
             if (!isPrivileged)
             {
-                membersQuery = membersQuery.Where(m => m.ShowBirthDayAndMonth);
+                membersQuery = membersQuery.Where(m =>
+                    m.ShowBirthDayAndMonth &&
+                    m.DirectoryVisibility == DirectoryVisibility.PublicToMembers);
             }
 
             var members = await membersQuery.ToListAsync();
@@ -55,6 +58,10 @@ public static class CelebrationEndpoints
                     m.DateOfBirth.Value.Day == day)
                 {
                     var years = targetDate.Year - m.DateOfBirth.Value.Year;
+                    // Birth year / exact age is only disclosed to privileged callers (Pastor/Admin)
+                    // Regular callers receive null years to protect full date of birth privacy
+                    var exposedYears = isPrivileged && years > 0 ? (int?)years : null;
+
                     var (phone, waUrl, canMessage) = ResolveContactDetails(m, isPrivileged, CelebrationType.Birthday, fullName, years);
                     results.Add(new CelebrationEventResponse(
                         m.Id,
@@ -62,7 +69,7 @@ public static class CelebrationEndpoints
                         m.AvatarUrl,
                         CelebrationType.Birthday,
                         targetDate,
-                        years > 0 ? years : null,
+                        exposedYears,
                         phone,
                         waUrl,
                         canMessage
@@ -107,7 +114,9 @@ public static class CelebrationEndpoints
             var membersQuery = db.Members.AsNoTracking();
             if (!isPrivileged)
             {
-                membersQuery = membersQuery.Where(m => m.ShowBirthDayAndMonth);
+                membersQuery = membersQuery.Where(m =>
+                    m.ShowBirthDayAndMonth &&
+                    m.DirectoryVisibility == DirectoryVisibility.PublicToMembers);
             }
 
             var members = await membersQuery.ToListAsync();
@@ -129,6 +138,9 @@ public static class CelebrationEndpoints
                     dayOffsets.TryGetValue((m.DateOfBirth.Value.Month, m.DateOfBirth.Value.Day), out var bdayInfo))
                 {
                     var years = bdayInfo.Date.Year - m.DateOfBirth.Value.Year;
+                    // Birth year / exact age is suppressed for regular callers
+                    var exposedYears = isPrivileged && years > 0 ? (int?)years : null;
+
                     var (phone, waUrl, canMessage) = ResolveContactDetails(m, isPrivileged, CelebrationType.Birthday, fullName, years);
                     results.Add(new CelebrationEventResponse(
                         m.Id,
@@ -136,7 +148,7 @@ public static class CelebrationEndpoints
                         m.AvatarUrl,
                         CelebrationType.Birthday,
                         bdayInfo.Date,
-                        years > 0 ? years : null,
+                        exposedYears,
                         phone,
                         waUrl,
                         canMessage
