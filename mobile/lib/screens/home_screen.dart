@@ -9,6 +9,7 @@ class HomeScreen extends StatelessWidget {
   final CelebrationApiClient? celebrationClient;
   final OfferingApiClient? offeringClient;
   final bool isPastor;
+  final bool canManageOfferings;
   final Future<bool> Function(String url)? onLaunchUrl;
 
   const HomeScreen({
@@ -16,6 +17,7 @@ class HomeScreen extends StatelessWidget {
     this.celebrationClient,
     this.offeringClient,
     this.isPastor = false,
+    this.canManageOfferings = false,
     this.onLaunchUrl,
   });
 
@@ -116,6 +118,7 @@ class HomeScreen extends StatelessWidget {
                       builder: (context) => OfferingsScreen(
                         apiClient: offeringClient,
                         isPastor: isPastor,
+                        canManageOfferings: canManageOfferings || isPastor,
                         onLaunchUrl: onLaunchUrl,
                       ),
                     ),

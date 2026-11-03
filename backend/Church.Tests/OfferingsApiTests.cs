@@ -373,4 +373,25 @@ public class OfferingsApiTests : IClassFixture<CustomWebApplicationFactory>
         Assert.NotNull(list);
         Assert.DoesNotContain(list!, c => c.ReceiptNumber == "REC-TENANT1-CONFIDENTIAL");
     }
+
+
+    [Fact]
+    public async Task RecordContribution_UnsupportedCurrency_ReturnsBadRequest()
+    {
+        var churchId = Guid.NewGuid();
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
+        client.DefaultRequestHeaders.Add("X-User-Role", "Member");
+
+        var payload = new RecordContributionRequest(
+            FundType: OfferingFundType.Tithe,
+            Amount: 100m,
+            Currency: "USD",
+            TransactionReference: null,
+            PaymentNote: null
+        );
+
+        var response = await client.PostAsJsonAsync("/api/v1/offerings/contributions", payload);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
 }

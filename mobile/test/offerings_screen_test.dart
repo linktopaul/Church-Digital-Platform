@@ -289,4 +289,22 @@ void main() {
     expect(find.text('Give Now'), findsOneWidget);
     expect(find.text('Select Ministry Fund'), findsOneWidget);
   });
+
+
+  testWidgets('Admin role (canManageOfferings) shows Ledger tab for non-pastor admin', (tester) async {
+    final client = FakeOfferingApiClient();
+    await tester.pumpWidget(MaterialApp(
+      home: OfferingsScreen(
+        apiClient: client,
+        isPastor: false,
+        canManageOfferings: true,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ledger'), findsOneWidget);
+    await tester.tap(find.text('Ledger'));
+    await tester.pumpAndSettle();
+    expect(find.text('Total Given'), findsOneWidget);
+  });
 }

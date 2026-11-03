@@ -56,6 +56,12 @@ namespace Church.Infrastructure.Migrations
                 name: "IX_Contributions_church_id_status",
                 table: "Contributions",
                 columns: new[] { "church_id", "status" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Contributions_receipt_number",
+                table: "Contributions",
+                column: "receipt_number",
+                unique: true);
         }
 
         /// <inheritdoc />

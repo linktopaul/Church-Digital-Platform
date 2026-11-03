@@ -7,12 +7,14 @@ import '../services/offering_api_client.dart';
 class OfferingsScreen extends StatefulWidget {
   final OfferingApiClient? apiClient;
   final bool isPastor;
+  final bool canManageOfferings;
   final Future<bool> Function(String url)? onLaunchUrl;
 
   const OfferingsScreen({
     super.key,
     this.apiClient,
     this.isPastor = false,
+    this.canManageOfferings = false,
     this.onLaunchUrl,
   });
 
@@ -44,11 +46,13 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
   String? _ledgerError;
   OfferingFundType? _ledgerFundFilter;
 
+  bool get _hasLedgerAccess => widget.isPastor || widget.canManageOfferings;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(
-      length: widget.isPastor ? 3 : 2,
+      length: _hasLedgerAccess ? 3 : 2,
       vsync: this,
     );
     _tabController.addListener(_handleTabChange);
@@ -69,15 +73,16 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
     if (_tabController.indexIsChanging) return;
     if (_tabController.index == 1) {
       _loadMyContributions();
-    } else if (_tabController.index == 2 && widget.isPastor) {
+    } else if (_tabController.index == 2 && _hasLedgerAccess) {
       _loadLedger();
     }
   }
 
   Future<void> _loadInitialData() async {
     await _loadConfig();
+    if (!mounted) return;
     _loadMyContributions();
-    if (widget.isPastor) {
+    if (_hasLedgerAccess) {
       _loadLedger();
     }
   }
@@ -97,6 +102,7 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
   }
 
   Future<void> _loadMyContributions() async {
+    if (!mounted) return;
     final client = widget.apiClient;
     if (client == null) return;
 
@@ -124,8 +130,9 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
   }
 
   Future<void> _loadLedger() async {
+    if (!mounted) return;
     final client = widget.apiClient;
-    if (client == null || !widget.isPastor) return;
+    if (client == null || !_hasLedgerAccess) return;
 
     setState(() {
       _isLoadingLedger = true;
@@ -430,7 +437,7 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
           tabs: [
             const Tab(text: 'Give Now'),
             const Tab(text: 'My Giving'),
-            if (widget.isPastor)
+            if (_hasLedgerAccess)
               const Tab(text: 'Ledger'),
           ],
         ),
@@ -440,7 +447,7 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
         children: [
           _buildGiveTab(),
           _buildMyGivingTab(),
-          if (widget.isPastor) _buildLedgerTab(),
+          if (_hasLedgerAccess) _buildLedgerTab(),
         ],
       ),
     );

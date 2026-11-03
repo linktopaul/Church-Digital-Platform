@@ -86,8 +86,19 @@ public static class OfferingEndpoints
             var payeeName = tenant?.Name ?? config[$"Giving:{tenantKey}:PayeeName"] ?? "Church Digital Platform";
 
             var (memberId, memberName) = await ResolveMemberIdentityAsync(db, user);
-            var currency = string.IsNullOrWhiteSpace(request.Currency) ? "INR" : request.Currency.Trim().ToUpperInvariant();
-            var receiptNumber = $"REC-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
+            var supportedCurrency = "INR";
+            var requestedCurrency = string.IsNullOrWhiteSpace(request.Currency) ? supportedCurrency : request.Currency.Trim().ToUpperInvariant();
+            if (!string.Equals(requestedCurrency, supportedCurrency, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.BadRequest(new { error = $"Currency '{request.Currency}' is not supported. Supported currency is '{supportedCurrency}'." });
+            }
+            var currency = supportedCurrency;
+
+            string receiptNumber;
+            do
+            {
+                receiptNumber = $"REC-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
+            } while (await db.Contributions.IgnoreQueryFilters().AnyAsync(c => c.ReceiptNumber == receiptNumber));
 
             var initialStatus = string.IsNullOrWhiteSpace(request.TransactionReference)
                 ? ContributionStatus.Pending

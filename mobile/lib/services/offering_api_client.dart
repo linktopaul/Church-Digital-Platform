@@ -93,20 +93,22 @@ class HttpOfferingApiClient implements OfferingApiClient {
 
   Future<http.Response> _executeWithRetry(
     String endpoint,
-    Future<http.Response> Function() requestFn,
-  ) async {
+    Future<http.Response> Function() requestFn, {
+    int? retries,
+  }) async {
+    final effectiveRetries = retries ?? maxRetries;
     var attempts = 0;
     while (true) {
       attempts++;
       try {
         final response = await requestFn();
-        if (response.statusCode >= 500 && attempts <= maxRetries) {
+        if (response.statusCode >= 500 && attempts <= effectiveRetries) {
           await Future.delayed(Duration(milliseconds: 100 * attempts));
           continue;
         }
         return response;
       } on SocketException catch (e) {
-        if (attempts > maxRetries) {
+        if (attempts > effectiveRetries) {
           throw OfferingApiException(
             'Network connection error: ${e.message}',
             endpoint: endpoint,
@@ -114,7 +116,7 @@ class HttpOfferingApiClient implements OfferingApiClient {
         }
         await Future.delayed(Duration(milliseconds: 100 * attempts));
       } on TimeoutException catch (e) {
-        if (attempts > maxRetries) {
+        if (attempts > effectiveRetries) {
           throw OfferingApiException(
             'Request timed out: ${e.message}',
             endpoint: endpoint,
@@ -161,6 +163,7 @@ class HttpOfferingApiClient implements OfferingApiClient {
     final response = await _executeWithRetry(
       endpoint,
       () => _client.post(uri, headers: _buildHeaders(), body: body),
+      retries: 0,
     );
 
     if (response.statusCode == 201 || response.statusCode == 200) {

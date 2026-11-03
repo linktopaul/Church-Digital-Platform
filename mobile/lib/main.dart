@@ -149,6 +149,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     return session.roles.any((r) => r.toLowerCase() == 'pastor');
   }
 
+  bool get _canManageOfferings {
+    final session = _currentSession;
+    if (session == null) return false;
+    return session.roles.any((r) => r.toLowerCase() == 'pastor' || r.toLowerCase() == 'admin');
+  }
+
   void _updateClients() {
     final authService = widget.authService;
     final sessionKey = _isAuthenticated && authService != null
@@ -219,6 +225,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       celebrationClient: _cachedCelebrationClient,
       offeringClient: _cachedOfferingClient,
       isPastor: _isPastor,
+      canManageOfferings: _canManageOfferings,
     ),
     _buildMessagesScreen(),
     _buildPrayerScreen(),
