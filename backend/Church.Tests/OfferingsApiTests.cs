@@ -501,4 +501,24 @@ public class OfferingsApiTests : IClassFixture<CustomWebApplicationFactory>
         var item = Assert.Single(list!);
         Assert.Null(item.VerificationNote);
     }
+
+    [Fact]
+    public async Task RecordContribution_SubCentAmountRoundsToZero_ReturnsBadRequest()
+    {
+        var churchId = Guid.NewGuid();
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Tenant-Id", churchId.ToString());
+        client.DefaultRequestHeaders.Add("X-User-Role", "Member");
+
+        var payload = new RecordContributionRequest(
+            FundType: OfferingFundType.Tithe,
+            Amount: 0.001m,
+            Currency: "INR",
+            TransactionReference: null,
+            PaymentNote: null
+        );
+
+        var response = await client.PostAsJsonAsync("/api/v1/offerings/contributions", payload);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
 }

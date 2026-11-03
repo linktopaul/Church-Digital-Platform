@@ -66,9 +66,10 @@ public static class OfferingEndpoints
             ClaimsPrincipal user,
             Microsoft.Extensions.Configuration.IConfiguration config) =>
         {
-            if (request.Amount <= 0)
+            var roundedAmount = Math.Round(request.Amount, 2, MidpointRounding.AwayFromZero);
+            if (roundedAmount < 0.01m)
             {
-                return Results.BadRequest(new { error = "Contribution amount must be greater than zero." });
+                return Results.BadRequest(new { error = "Contribution amount must be at least 0.01 after currency rounding." });
             }
 
             var churchId = ResolveTenantId(tenantService, user);
@@ -121,7 +122,7 @@ public static class OfferingEndpoints
                 MemberId = memberId,
                 MemberName = memberName,
                 FundType = request.FundType,
-                Amount = Math.Round(request.Amount, 2),
+                Amount = roundedAmount,
                 Currency = currency,
                 TransactionReference = request.TransactionReference?.Trim(),
                 UpiPayeeId = upiPayeeId,

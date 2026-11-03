@@ -172,10 +172,11 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
       return;
     }
 
-    final amount = double.tryParse(_amountController.text.trim()) ?? 0.0;
-    if (amount <= 0) {
+    final parsedAmount = double.tryParse(_amountController.text.trim()) ?? 0.0;
+    final amount = (parsedAmount * 100).round() / 100.0;
+    if (amount < 0.01) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter an amount greater than zero.')),
+        const SnackBar(content: Text('Please enter an amount of at least 0.01.')),
       );
       return;
     }
@@ -535,6 +536,10 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
                 final parsed = double.tryParse(val.trim());
                 if (parsed == null || parsed <= 0) {
                   return 'Enter a valid positive number.';
+                }
+                final rounded = (parsed * 100).round() / 100.0;
+                if (rounded < 0.01) {
+                  return 'Amount must be at least 0.01.';
                 }
                 return null;
               },
