@@ -41,14 +41,22 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _loadCelebrations();
+    if (widget.apiClient != null) {
+      _loadCelebrations();
+    }
   }
 
   @override
   void didUpdateWidget(covariant CelebrationsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.apiClient != widget.apiClient) {
-      _loadCelebrations();
+      _errorMessage = null;
+      _todayCelebrations = [];
+      _upcomingCelebrations = [];
+      _templates = [];
+      if (widget.apiClient != null) {
+        _loadCelebrations();
+      }
     }
   }
 
@@ -63,6 +71,33 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
         ? _monthNames[date.month - 1]
         : '';
     return '$month ${date.day}';
+  }
+
+  String _sanitizeErrorMessage(dynamic e) {
+    if (e is CelebrationApiException) {
+      if (e.statusCode == 401) {
+        return 'Your session has expired. Please sign in again.';
+      }
+      if (e.statusCode == 403) {
+        return 'Access denied. You do not have permission to view celebrations.';
+      }
+      // Avoid leaking raw endpoint bodies or stack traces
+      if (e.message.toLowerCase().contains('401') || e.message.toLowerCase().contains('unauthorized')) {
+        return 'Your session has expired. Please sign in again.';
+      }
+      if (e.message.toLowerCase().contains('403') || e.message.toLowerCase().contains('forbidden')) {
+        return 'Access denied. You do not have permission to view celebrations.';
+      }
+      return e.message;
+    }
+    final str = e.toString().toLowerCase();
+    if (str.contains('401') || str.contains('unauthorized')) {
+      return 'Your session has expired. Please sign in again.';
+    }
+    if (str.contains('403') || str.contains('forbidden') || str.contains('access denied')) {
+      return 'Access denied. You do not have permission to view celebrations.';
+    }
+    return 'Failed to load celebrations. Please try again.';
   }
 
   Future<void> _loadCelebrations() async {
@@ -101,9 +136,7 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = e is CelebrationApiException
-              ? e.message
-              : 'Failed to load celebrations. Please try again.';
+          _errorMessage = _sanitizeErrorMessage(e);
           _isLoading = false;
         });
       }
@@ -322,23 +355,41 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
     bool showDate = false,
   }) {
     if (items.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.cake_outlined, size: 64, color: Theme.of(context).colorScheme.outline),
-              const SizedBox(height: 12),
-              Text(
-                emptyMessage,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.outline,
-                    ),
+      return RefreshIndicator(
+        onRefresh: _loadCelebrations,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.cake_outlined, size: 64, color: Theme.of(context).colorScheme.outline),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No Celebrations Found',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        emptyMessage,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       );
     }
@@ -346,6 +397,7 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
     return RefreshIndicator(
       onRefresh: _loadCelebrations,
       child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(vertical: 8),
         itemCount: items.length,
         itemBuilder: (context, index) => _buildCelebrationTile(
@@ -356,14 +408,84 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
     );
   }
 
+  Widget _buildUnauthenticatedState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.lock_outline,
+              size: 64,
+              color: Theme.of(context).colorScheme.outline,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Sign In Required',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Please sign in to view church celebrations.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 56,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Unable to Load Celebrations',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _errorMessage ?? 'An error occurred while connecting to the celebration service.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _loadCelebrations,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.apiClient == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Celebrations & Blessings')),
-        body: const Center(
-          child: Text('Please sign in to view church celebrations.'),
-        ),
+        body: _buildUnauthenticatedState(),
       );
     }
 
@@ -381,23 +503,7 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _errorMessage!,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.red),
-                      ),
-                      const SizedBox(height: 12),
-                      ElevatedButton(
-                        onPressed: _loadCelebrations,
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                )
+              ? _buildErrorState()
               : TabBarView(
                   controller: _tabController,
                   children: [

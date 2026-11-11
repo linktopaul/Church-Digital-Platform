@@ -56,7 +56,39 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
       vsync: this,
     );
     _tabController.addListener(_handleTabChange);
-    _loadInitialData();
+    if (widget.apiClient != null) {
+      _loadInitialData();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant OfferingsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final clientChanged = oldWidget.apiClient != widget.apiClient;
+    final accessChanged = (oldWidget.isPastor != widget.isPastor) ||
+        (oldWidget.canManageOfferings != widget.canManageOfferings);
+
+    if (accessChanged) {
+      _tabController.removeListener(_handleTabChange);
+      _tabController.dispose();
+      _tabController = TabController(
+        length: _hasLedgerAccess ? 3 : 2,
+        vsync: this,
+      );
+      _tabController.addListener(_handleTabChange);
+    }
+
+    if (clientChanged) {
+      _myContributions = [];
+      _ledgerContributions = [];
+      _ledgerSummary = null;
+      _myGivingError = null;
+      _ledgerError = null;
+      _config = null;
+      if (widget.apiClient != null) {
+        _loadInitialData();
+      }
+    }
   }
 
   @override
@@ -76,6 +108,32 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
     } else if (_tabController.index == 2 && _hasLedgerAccess) {
       _loadLedger();
     }
+  }
+
+  String _sanitizeErrorMessage(dynamic e, {bool isLedger = false}) {
+    if (e is OfferingApiException) {
+      if (e.statusCode == 401) {
+        return 'Your session has expired. Please sign in again.';
+      }
+      if (e.statusCode == 403) {
+        return isLedger
+            ? 'Access denied: Restricted to pastoral leadership or authorized staff.'
+            : 'Access denied: You do not have permission for this action.';
+      }
+      return e.message;
+    }
+    final str = e.toString().toLowerCase();
+    if (str.contains('401') || str.contains('unauthorized')) {
+      return 'Your session has expired. Please sign in again.';
+    }
+    if (str.contains('403') || str.contains('forbidden') || str.contains('access denied')) {
+      return isLedger
+          ? 'Access denied: Restricted to pastoral leadership or authorized staff.'
+          : 'Access denied: You do not have permission for this action.';
+    }
+    return isLedger
+        ? 'Failed to load church contribution ledger. Please check your connection.'
+        : 'Failed to load contribution records. Please check your connection.';
   }
 
   Future<void> _loadInitialData() async {
@@ -122,7 +180,7 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
     } catch (e) {
       if (mounted) {
         setState(() {
-          _myGivingError = e.toString();
+          _myGivingError = _sanitizeErrorMessage(e, isLedger: false);
           _isLoadingMyGiving = false;
         });
       }
@@ -154,7 +212,7 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
     } catch (e) {
       if (mounted) {
         setState(() {
-          _ledgerError = e.toString();
+          _ledgerError = _sanitizeErrorMessage(e, isLedger: true);
           _isLoadingLedger = false;
         });
       }
@@ -167,7 +225,7 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
     final client = widget.apiClient;
     if (client == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Offline: Connect to church service to record giving.')),
+        const SnackBar(content: Text('Your session has expired. Please sign in again.')),
       );
       return;
     }
@@ -206,8 +264,9 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
     } catch (e) {
       if (mounted) {
         setState(() => _isSubmitting = false);
+        final errorText = _sanitizeErrorMessage(e, isLedger: false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to submit contribution: $e')),
+          SnackBar(content: Text(errorText)),
         );
       }
     }
@@ -419,16 +478,59 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
         }
       } catch (e) {
         if (mounted) {
+          final errText = _sanitizeErrorMessage(e, isLedger: true);
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Verification failed: $e')),
+            SnackBar(content: Text(errText)),
           );
         }
       }
     }
   }
 
+  Widget _buildUnauthenticatedState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.lock_outline,
+              size: 64,
+              color: Theme.of(context).colorScheme.outline,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Sign In Required',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Recording offerings, viewing receipts, and managing tithes require an active, authenticated member session.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (widget.apiClient == null) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Digital Offerings & Giving'),
+        ),
+        body: _buildUnauthenticatedState(),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -459,159 +561,163 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
   }
 
   Widget _buildGiveTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Card(
-              color: Theme.of(context).colorScheme.primaryContainer.withAlpha(60),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.qr_code, color: Theme.of(context).colorScheme.primary),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Support the Church Ministry',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _config != null
-                          ? 'UPI ID: ${_config!.upiId} (${_config!.payeeName})'
-                          : 'Give faithfully and cheerfully via UPI instant transfer.',
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            DropdownButtonFormField<OfferingFundType>(
-              isExpanded: true,
-              initialValue: _selectedFund,
-              decoration: const InputDecoration(
-                labelText: 'Select Ministry Fund',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.category_outlined),
-              ),
-              items: OfferingFundType.values.map((fund) {
-                return DropdownMenuItem(
-                  value: fund,
-                  child: Text(fund.displayName),
-                );
-              }).toList(),
-              onChanged: (val) {
-                if (val != null) setState(() => _selectedFund = val);
-              },
-            ),
-            const SizedBox(height: 16),
-
-            TextFormField(
-              controller: _amountController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                labelText: 'Amount (${_config?.currency ?? 'INR'})',
-                hintText: 'e.g. 500.00',
-                border: const OutlineInputBorder(),
-                prefixIcon: const Icon(Icons.currency_rupee),
-              ),
-              validator: (val) {
-                if (val == null || val.trim().isEmpty) {
-                  return 'Please enter an amount.';
-                }
-                final parsed = double.tryParse(val.trim());
-                if (parsed == null || parsed <= 0) {
-                  return 'Enter a valid positive number.';
-                }
-                final rounded = (parsed * 100).round() / 100.0;
-                if (rounded < 0.01) {
-                  return 'Amount must be at least 0.01.';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-
-            TextFormField(
-              controller: _noteController,
-              maxLength: 500,
-              decoration: const InputDecoration(
-                labelText: 'Giving Note / Thanksgiving Prayer (Optional)',
-                hintText: 'e.g. Thanksgiving for family blessings',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.note_alt_outlined),
-                counterText: '',
-              ),
-              validator: (v) {
-                if (v != null && v.trim().length > 500) {
-                  return 'Giving note cannot exceed 500 characters';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-
-            TextFormField(
-              controller: _utrController,
-              maxLength: 100,
-              decoration: const InputDecoration(
-                labelText: 'Bank Reference / UTR (Optional)',
-                hintText: 'e.g. UPI Ref 1234567890 if already paid',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.numbers_outlined),
-                counterText: '',
-              ),
-              validator: (v) {
-                if (v != null && v.trim().length > 100) {
-                  return 'Reference cannot exceed 100 characters';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 24),
-
-            ElevatedButton(
-              onPressed: _isSubmitting ? null : _submitContribution,
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-              child: _isSubmitting
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        mainAxisSize: MainAxisSize.min,
+    return RefreshIndicator(
+      onRefresh: _loadConfig,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Card(
+                color: Theme.of(context).colorScheme.primaryContainer.withAlpha(60),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
-                          Icon(Icons.arrow_forward),
-                          SizedBox(width: 8),
-                          Text(
-                            'Generate UPI Payment & Record',
-                            style: TextStyle(fontWeight: FontWeight.bold),
+                          Icon(Icons.qr_code, color: Theme.of(context).colorScheme.primary),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Support the Church Ministry',
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                            ),
                           ),
                         ],
                       ),
-                    ),
-            ),
-          ],
+                      const SizedBox(height: 8),
+                      Text(
+                        _config != null
+                            ? 'UPI ID: ${_config!.upiId} (${_config!.payeeName})'
+                            : 'Give faithfully and cheerfully via UPI instant transfer.',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              DropdownButtonFormField<OfferingFundType>(
+                isExpanded: true,
+                initialValue: _selectedFund,
+                decoration: const InputDecoration(
+                  labelText: 'Select Ministry Fund',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.category_outlined),
+                ),
+                items: OfferingFundType.values.map((fund) {
+                  return DropdownMenuItem(
+                    value: fund,
+                    child: Text(fund.displayName),
+                  );
+                }).toList(),
+                onChanged: (val) {
+                  if (val != null) setState(() => _selectedFund = val);
+                },
+              ),
+              const SizedBox(height: 16),
+
+              TextFormField(
+                controller: _amountController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText: 'Amount (${_config?.currency ?? 'INR'})',
+                  hintText: 'e.g. 500.00',
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.currency_rupee),
+                ),
+                validator: (val) {
+                  if (val == null || val.trim().isEmpty) {
+                    return 'Please enter an amount.';
+                  }
+                  final parsed = double.tryParse(val.trim());
+                  if (parsed == null || parsed <= 0) {
+                    return 'Enter a valid positive number.';
+                  }
+                  final rounded = (parsed * 100).round() / 100.0;
+                  if (rounded < 0.01) {
+                    return 'Amount must be at least 0.01.';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+
+              TextFormField(
+                controller: _noteController,
+                maxLength: 500,
+                decoration: const InputDecoration(
+                  labelText: 'Giving Note / Thanksgiving Prayer (Optional)',
+                  hintText: 'e.g. Thanksgiving for family blessings',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.note_alt_outlined),
+                  counterText: '',
+                ),
+                validator: (v) {
+                  if (v != null && v.trim().length > 500) {
+                    return 'Giving note cannot exceed 500 characters';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+
+              TextFormField(
+                controller: _utrController,
+                maxLength: 100,
+                decoration: const InputDecoration(
+                  labelText: 'Bank Reference / UTR (Optional)',
+                  hintText: 'e.g. UPI Ref 1234567890 if already paid',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.numbers_outlined),
+                  counterText: '',
+                ),
+                validator: (v) {
+                  if (v != null && v.trim().length > 100) {
+                    return 'Reference cannot exceed 100 characters';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 24),
+
+              ElevatedButton(
+                onPressed: _isSubmitting ? null : _submitContribution,
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: _isSubmitting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.arrow_forward),
+                            SizedBox(width: 8),
+                            Text(
+                              'Generate UPI Payment & Record',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -625,17 +731,29 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
     if (_myGivingError != null) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.symmetric(horizontal: 32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline, color: Colors.red, size: 40),
+              Icon(Icons.error_outline, color: Theme.of(context).colorScheme.error, size: 56),
+              const SizedBox(height: 16),
+              Text(
+                'Unable to Load Giving Records',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              ),
               const SizedBox(height: 8),
-              Text(_myGivingError!, textAlign: TextAlign.center),
-              const SizedBox(height: 12),
-              ElevatedButton(
+              Text(
+                _myGivingError!,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
                 onPressed: _loadMyContributions,
-                child: const Text('Retry'),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
               ),
             ],
           ),
@@ -644,26 +762,39 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
     }
 
     if (_myContributions.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.receipt_long_outlined, size: 48, color: Colors.grey),
-              const SizedBox(height: 12),
-              const Text(
-                'No Contribution Records Yet',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+      return RefreshIndicator(
+        onRefresh: _loadMyContributions,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.receipt_long_outlined, size: 64, color: Theme.of(context).colorScheme.outline),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No Contribution Records Yet',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Your recorded tithes and offerings will appear here with instant receipts.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(height: 6),
-              const Text(
-                'Your recorded tithes and offerings will appear here with instant receipts.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       );
     }
@@ -671,6 +802,7 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
     return RefreshIndicator(
       onRefresh: _loadMyContributions,
       child: ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         itemCount: _myContributions.length,
         separatorBuilder: (_, __) => const SizedBox(height: 10),
@@ -728,17 +860,29 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
     if (_ledgerError != null) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.symmetric(horizontal: 32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline, color: Colors.red, size: 40),
+              Icon(Icons.error_outline, color: Theme.of(context).colorScheme.error, size: 56),
+              const SizedBox(height: 16),
+              Text(
+                'Unable to Load Ledger',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              ),
               const SizedBox(height: 8),
-              Text(_ledgerError!, textAlign: TextAlign.center),
-              const SizedBox(height: 12),
-              ElevatedButton(
+              Text(
+                _ledgerError!,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
                 onPressed: _loadLedger,
-                child: const Text('Retry'),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
               ),
             ],
           ),
@@ -749,6 +893,7 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
     return RefreshIndicator(
       onRefresh: _loadLedger,
       child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
           if (_ledgerSummary != null) ...[
@@ -811,10 +956,13 @@ class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProv
           const SizedBox(height: 12),
 
           if (_ledgerContributions.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(32),
+            Padding(
+              padding: const EdgeInsets.all(32),
               child: Center(
-                child: Text('No contributions found in this filter.'),
+                child: Text(
+                  'No contributions found in this filter.',
+                  style: TextStyle(color: Theme.of(context).colorScheme.outline),
+                ),
               ),
             )
           else

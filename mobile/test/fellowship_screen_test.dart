@@ -10,12 +10,20 @@ import 'package:church_digital_platform_mobile/services/fellowship_api_client.da
 
 class FakeFellowshipApiClient implements FellowshipApiClient {
   List<FellowshipGroupData> groups;
+  bool shouldFailGet;
+  String? failureMessage;
 
-  FakeFellowshipApiClient({List<FellowshipGroupData>? initialGroups})
-      : groups = initialGroups ?? [];
+  FakeFellowshipApiClient({
+    List<FellowshipGroupData>? initialGroups,
+    this.shouldFailGet = false,
+    this.failureMessage,
+  }) : groups = initialGroups ?? [];
 
   @override
   Future<List<FellowshipGroupData>> getFellowshipGroups({FellowshipCategory? category}) async {
+    if (shouldFailGet) {
+      throw Exception(failureMessage ?? 'Error fetching groups');
+    }
     if (category == null || category == FellowshipCategory.all) {
       return List.from(groups);
     }
@@ -140,7 +148,6 @@ class ControllableFellowshipApiClient extends FakeFellowshipApiClient {
   }
 }
 
-
 void main() {
   List<FellowshipGroupData> createSampleGroups() => [
     FellowshipGroupData(
@@ -192,6 +199,22 @@ void main() {
     ),
   ];
 
+  testWidgets('renders unauthenticated state when apiClient is null', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: MessagesScreen(apiClient: null),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sign In Required'), findsOneWidget);
+    expect(
+      find.textContaining('Fellowship spaces and church group messaging require an active, authenticated member session.'),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('createFellowshipFab')), findsNothing);
+  });
+
   testWidgets('MessagesScreen displays fellowship groups loaded from API and filter chips',
       (tester) async {
     final fakeClient = FakeFellowshipApiClient(initialGroups: createSampleGroups());
@@ -211,6 +234,85 @@ void main() {
     expect(find.byKey(const Key('filterChipMens')), findsOneWidget);
     expect(find.byKey(const Key('filterChipSundaySchool')), findsOneWidget);
     expect(find.byKey(const Key('filterChipHousePrayer')), findsOneWidget);
+  });
+
+  testWidgets('pull-to-refresh on empty state reloads groups', (tester) async {
+    final fakeClient = FakeFellowshipApiClient(initialGroups: []);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MessagesScreen(apiClient: fakeClient),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('No Fellowship Spaces Found'), findsOneWidget);
+
+    fakeClient.groups = createSampleGroups();
+    await tester.drag(find.text('No Fellowship Spaces Found'), const Offset(0, 300));
+    await tester.pumpAndSettle();
+
+    expect(find.text("Men's Fellowship Brotherhood"), findsOneWidget);
+  });
+
+  testWidgets('pull-to-refresh on populated list reloads updated groups', (tester) async {
+    final fakeClient = FakeFellowshipApiClient(initialGroups: [
+      createSampleGroups().first,
+    ]);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MessagesScreen(apiClient: fakeClient),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text("Men's Fellowship Brotherhood"), findsOneWidget);
+    expect(find.text('Sunday School - Primary Department'), findsNothing);
+
+    fakeClient.groups = createSampleGroups();
+    await tester.drag(find.text("Men's Fellowship Brotherhood"), const Offset(0, 300));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sunday School - Primary Department'), findsOneWidget);
+  });
+
+  testWidgets('shows user-friendly session expired error on HTTP 401 with functional retry', (tester) async {
+    final fakeClient = FakeFellowshipApiClient(
+      shouldFailGet: true,
+      failureMessage: '401 Unauthorized',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MessagesScreen(apiClient: fakeClient),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Unable to Load Spaces'), findsOneWidget);
+    expect(find.text('Your session has expired. Please sign in again.'), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+
+    fakeClient.shouldFailGet = false;
+    fakeClient.groups = createSampleGroups();
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+
+    expect(find.text("Men's Fellowship Brotherhood"), findsOneWidget);
+  });
+
+  testWidgets('shows user-friendly access denied error on HTTP 403', (tester) async {
+    final fakeClient = FakeFellowshipApiClient(
+      shouldFailGet: true,
+      failureMessage: '403 Forbidden',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MessagesScreen(apiClient: fakeClient),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Unable to Load Spaces'), findsOneWidget);
+    expect(find.text('Access denied. You do not have permission to view fellowship spaces.'), findsOneWidget);
   });
 
   testWidgets('Filter chip narrows down displayed fellowship groups via API',
@@ -347,7 +449,6 @@ void main() {
 
     expect(find.text('Joined'), findsOneWidget);
   });
-
 
   testWidgets('MessagesScreen reloads groups when apiClient is updated via didUpdateWidget',
       (tester) async {
