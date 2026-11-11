@@ -15,6 +15,7 @@ import 'services/announcement_api_client.dart';
 import 'services/fellowship_api_client.dart';
 import 'services/member_api_client.dart';
 import 'services/prayer_api_client.dart';
+import 'services/worship_api_client.dart';
 
 void main() {
   runApp(const ChurchMobileApp());
@@ -74,6 +75,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   HttpCelebrationApiClient? _cachedCelebrationClient;
   HttpOfferingApiClient? _cachedOfferingClient;
   DefaultAnnouncementApiClient? _cachedAnnouncementClient;
+  HttpWorshipApiClient? _cachedWorshipClient;
   String? _cachedSessionKey;
   AuthService? _cachedAuthService;
   String? _cachedBaseUrl;
@@ -157,6 +159,17 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     return session.roles.any((r) => r.toLowerCase() == 'admin');
   }
 
+  bool get _canManageWorship {
+    final session = _currentSession;
+    if (session == null) return false;
+    return session.roles.any(
+      (r) =>
+          r.toLowerCase() == 'pastor' ||
+          r.toLowerCase() == 'admin' ||
+          r.toLowerCase() == 'worshipleader',
+    );
+  }
+
   bool get _canManageOfferings {
     final session = _currentSession;
     if (session == null) return false;
@@ -203,6 +216,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           client: authClient,
           baseUrl: effectiveBase,
         );
+        _cachedWorshipClient = HttpWorshipApiClient(
+          client: authClient,
+          baseUrl: effectiveBase,
+        );
       } else {
         _cachedFellowshipClient = null;
         _cachedPrayerClient = null;
@@ -210,6 +227,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         _cachedCelebrationClient = null;
         _cachedOfferingClient = null;
         _cachedAnnouncementClient = null;
+        _cachedWorshipClient = null;
       }
     }
   }
@@ -244,7 +262,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     ),
     _buildMessagesScreen(),
     _buildPrayerScreen(),
-    const WorshipScreen(),
+    WorshipScreen(
+      apiClient: _cachedWorshipClient,
+      canManageWorship: _canManageWorship,
+    ),
     _buildProfileScreen(),
   ];
 

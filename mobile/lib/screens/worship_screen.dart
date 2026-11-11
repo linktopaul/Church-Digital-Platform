@@ -589,7 +589,8 @@ class _WorshipScreenState extends State<WorshipScreen>
     ValueChanged<SetlistItemData>? onSaved,
   }) {
     if (!widget.canManageWorship) return;
-    final defaultDate = existingSetlist?.serviceDate ??
+    var activeExisting = existingSetlist;
+    var defaultDate = existingSetlist?.serviceDate ??
         DateTime.now().toUtc().add(const Duration(days: 2));
     final titleController =
         TextEditingController(text: existingSetlist?.title ?? '');
@@ -614,146 +615,240 @@ class _WorshipScreenState extends State<WorshipScreen>
           if (item.notes != null && item.notes!.isNotEmpty)
             item.songId: item.notes!,
     };
+
+    bool isLoadingDetail = existingSetlist != null && widget.apiClient != null;
+    bool detailLoadStarted = false;
+    String? detailLoadError;
     String? dialogError;
 
     showDialog(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(
-            existingSetlist == null ? 'Create Sunday Setlist' : 'Edit Setlist',
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  key: const Key('setlistTitleField'),
-                  controller: titleController,
-                  decoration: const InputDecoration(labelText: 'Setlist Title *'),
-                ),
-                TextField(
-                  key: const Key('setlistDateField'),
-                  controller: dateController,
-                  decoration: const InputDecoration(
-                    labelText: 'Service Date (YYYY-MM-DD)',
-                  ),
-                ),
-                TextField(
-                  key: const Key('setlistNotesField'),
-                  controller: notesController,
-                  decoration: const InputDecoration(labelText: 'Service Notes'),
-                  maxLines: 2,
-                ),
-                if (_songs.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Select Songs for Setlist',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 4),
-                  for (final song in _songs)
-                    CheckboxListTile(
-                      key: Key('selectSetlistSong_${song.id}'),
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                      title: Text(song.title),
-                      subtitle: song.defaultKey != null
-                          ? Text('Key ${song.defaultKey}')
-                          : null,
-                      value: selectedSongIds.contains(song.id),
-                      onChanged: (checked) {
-                        setDialogState(() {
-                          if (checked == true) {
-                            if (!selectedSongIds.contains(song.id)) {
-                              selectedSongIds.add(song.id);
-                            }
-                          } else {
-                            selectedSongIds.remove(song.id);
-                          }
-                        });
-                      },
-                    ),
-                ],
-                if (dialogError != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    dialogError!,
-                    key: const Key('setlistFormErrorText'),
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              key: const Key('saveSetlistButton'),
-              onPressed: _savingSetlist
-                  ? null
-                  : () async {
-                      if (titleController.text.trim().isEmpty) return;
-                      final parsedDate =
-                          DateTime.tryParse(dateController.text.trim()) ??
-                              defaultDate;
-                      final items = <SetlistSongInput>[];
-                      for (var i = 0; i < selectedSongIds.length; i++) {
-                        final songId = selectedSongIds[i];
-                        items.add(
-                          SetlistSongInput(
-                            songId: songId,
-                            order: i + 1,
-                            keyOverride: keyOverrides[songId],
-                            notes: itemNotes[songId],
-                          ),
-                        );
-                      }
+        builder: (context, setDialogState) {
+          Future<void> loadSetlistDetail() async {
+            final client = widget.apiClient;
+            if (existingSetlist == null || client == null) return;
+            if (dialogContext.mounted) {
+              setDialogState(() {
+                isLoadingDetail = true;
+                detailLoadError = null;
+              });
+            }
+            try {
+              final fetched = await client.getSetlist(existingSetlist.id);
+              if (!dialogContext.mounted) return;
+              activeExisting = fetched;
+              defaultDate = fetched.serviceDate;
+              titleController.text = fetched.title;
+              dateController.text = _formatDate(fetched.serviceDate);
+              notesController.text = fetched.notes ?? '';
+              selectedSongIds
+                ..clear()
+                ..addAll(fetched.items.map((item) => item.songId));
+              keyOverrides
+                ..clear()
+                ..addEntries(
+                  fetched.items
+                      .where((item) =>
+                          item.keyOverride != null &&
+                          item.keyOverride!.isNotEmpty)
+                      .map((item) => MapEntry(item.songId, item.keyOverride!)),
+                );
+              itemNotes
+                ..clear()
+                ..addEntries(
+                  fetched.items
+                      .where((item) =>
+                          item.notes != null && item.notes!.isNotEmpty)
+                      .map((item) => MapEntry(item.songId, item.notes!)),
+                );
+              setDialogState(() {
+                isLoadingDetail = false;
+                detailLoadError = null;
+              });
+            } catch (error) {
+              if (!dialogContext.mounted) return;
+              setDialogState(() {
+                isLoadingDetail = false;
+                detailLoadError = _formatError(error);
+              });
+            }
+          }
 
-                      setState(() => _savingSetlist = true);
-                      setDialogState(() => dialogError = null);
-                      try {
-                        final saved = await _saveSetlist(
-                          existingSetlist: existingSetlist,
-                          input: SetlistInput(
-                            title: titleController.text.trim(),
-                            serviceDate: parsedDate,
-                            notes: notesController.text.trim().isEmpty
-                                ? null
-                                : notesController.text.trim(),
-                            items: items,
-                          ),
-                        );
-                        onSaved?.call(saved);
-                        if (dialogContext.mounted) {
-                          Navigator.of(dialogContext).pop();
-                        }
-                      } catch (error) {
-                        final msg = _formatError(error);
-                        if (dialogContext.mounted) {
-                          setDialogState(() => dialogError = msg);
-                        }
-                        if (mounted) {
-                          ScaffoldMessenger.of(this.context).showSnackBar(
-                            SnackBar(content: Text(msg)),
+          if (!detailLoadStarted && isLoadingDetail) {
+            detailLoadStarted = true;
+            Future.microtask(loadSetlistDetail);
+          }
+
+          final bool formBlocked = isLoadingDetail || detailLoadError != null;
+
+          return AlertDialog(
+            title: Text(
+              existingSetlist == null ? 'Create Sunday Setlist' : 'Edit Setlist',
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (isLoadingDetail) ...[
+                    const LinearProgressIndicator(),
+                    const SizedBox(height: 8),
+                    const Text('Loading setlist songs...'),
+                    const SizedBox(height: 12),
+                  ],
+                  if (detailLoadError != null) ...[
+                    Text(
+                      detailLoadError!,
+                      key: const Key('setlistDetailErrorText'),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      key: const Key('retrySetlistDetailButton'),
+                      onPressed: loadSetlistDetail,
+                      icon: const Icon(Icons.refresh, size: 16),
+                      label: const Text('Retry loading setlist'),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  TextField(
+                    key: const Key('setlistTitleField'),
+                    controller: titleController,
+                    enabled: !formBlocked,
+                    decoration:
+                        const InputDecoration(labelText: 'Setlist Title *'),
+                  ),
+                  TextField(
+                    key: const Key('setlistDateField'),
+                    controller: dateController,
+                    enabled: !formBlocked,
+                    decoration: const InputDecoration(
+                      labelText: 'Service Date (YYYY-MM-DD)',
+                    ),
+                  ),
+                  TextField(
+                    key: const Key('setlistNotesField'),
+                    controller: notesController,
+                    enabled: !formBlocked,
+                    decoration:
+                        const InputDecoration(labelText: 'Service Notes'),
+                    maxLines: 2,
+                  ),
+                  if (_songs.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Select Songs for Setlist',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 4),
+                    for (final song in _songs)
+                      CheckboxListTile(
+                        key: Key('selectSetlistSong_${song.id}'),
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        title: Text(song.title),
+                        subtitle: song.defaultKey != null
+                            ? Text('Key ${song.defaultKey}')
+                            : null,
+                        value: selectedSongIds.contains(song.id),
+                        onChanged: formBlocked
+                            ? null
+                            : (checked) {
+                                setDialogState(() {
+                                  if (checked == true) {
+                                    if (!selectedSongIds.contains(song.id)) {
+                                      selectedSongIds.add(song.id);
+                                    }
+                                  } else {
+                                    selectedSongIds.remove(song.id);
+                                  }
+                                });
+                              },
+                      ),
+                  ],
+                  if (dialogError != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      dialogError!,
+                      key: const Key('setlistFormErrorText'),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                key: const Key('saveSetlistButton'),
+                onPressed: (_savingSetlist || formBlocked)
+                    ? null
+                    : () async {
+                        if (titleController.text.trim().isEmpty) return;
+                        final parsedDate =
+                            DateTime.tryParse(dateController.text.trim()) ??
+                                defaultDate;
+                        final items = <SetlistSongInput>[];
+                        for (var i = 0; i < selectedSongIds.length; i++) {
+                          final songId = selectedSongIds[i];
+                          items.add(
+                            SetlistSongInput(
+                              songId: songId,
+                              order: i + 1,
+                              keyOverride: keyOverrides[songId],
+                              notes: itemNotes[songId],
+                            ),
                           );
                         }
-                      } finally {
-                        if (mounted) setState(() => _savingSetlist = false);
-                        if (dialogContext.mounted) setDialogState(() {});
-                      }
-                    },
-              child: const Text('Save Setlist'),
-            ),
-          ],
-        ),
+
+                        setState(() => _savingSetlist = true);
+                        setDialogState(() => dialogError = null);
+                        try {
+                          final saved = await _saveSetlist(
+                            existingSetlist: activeExisting,
+                            input: SetlistInput(
+                              title: titleController.text.trim(),
+                              serviceDate: parsedDate,
+                              notes: notesController.text.trim().isEmpty
+                                  ? null
+                                  : notesController.text.trim(),
+                              items: items,
+                            ),
+                          );
+                          onSaved?.call(saved);
+                          if (dialogContext.mounted) {
+                            Navigator.of(dialogContext).pop();
+                          }
+                        } catch (error) {
+                          final msg = _formatError(error);
+                          if (dialogContext.mounted) {
+                            setDialogState(() => dialogError = msg);
+                          }
+                          if (mounted) {
+                            ScaffoldMessenger.of(this.context).showSnackBar(
+                              SnackBar(content: Text(msg)),
+                            );
+                          }
+                        } finally {
+                          if (mounted) setState(() => _savingSetlist = false);
+                          if (dialogContext.mounted) setDialogState(() {});
+                        }
+                      },
+                child: const Text('Save Setlist'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

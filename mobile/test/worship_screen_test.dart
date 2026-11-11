@@ -9,6 +9,8 @@ class FakeWorshipApiClient implements WorshipApiClient {
   List<SetlistItemData> setlists;
   WorshipApiException? getSongsError;
   WorshipApiException? getSetlistsError;
+  WorshipApiException? getSetlistDetailError;
+  SetlistInput? lastUpdatedInput;
   WorshipApiException? mutationError;
 
   int getSongsCalls = 0;
@@ -25,6 +27,7 @@ class FakeWorshipApiClient implements WorshipApiClient {
     List<SetlistItemData>? setlists,
     this.getSongsError,
     this.getSetlistsError,
+    this.getSetlistDetailError,
     this.mutationError,
   })  : songs = List<SongItem>.from(songs ?? const []),
         setlists = List<SetlistItemData>.from(setlists ?? const []);
@@ -101,6 +104,7 @@ class FakeWorshipApiClient implements WorshipApiClient {
 
   @override
   Future<SetlistItemData> getSetlist(String id) async {
+    if (getSetlistDetailError != null) throw getSetlistDetailError!;
     if (getSetlistsError != null) throw getSetlistsError!;
     return setlists.firstWhere(
       (s) => s.id == id,
@@ -153,6 +157,7 @@ class FakeWorshipApiClient implements WorshipApiClient {
   @override
   Future<SetlistItemData> updateSetlist(String id, SetlistInput input) async {
     updateSetlistCalls++;
+    lastUpdatedInput = input;
     if (mutationError != null) throw mutationError!;
     final idx = setlists.indexWhere((s) => s.id == id);
     if (idx == -1) {
@@ -542,4 +547,106 @@ void main() {
       findsWidgets,
     );
   });
+
+  testWidgets('Editing setlist from list loads detail items before allowing save and blocks save on fetch failure',
+      (tester) async {
+    final summarySetlist = SetlistItemData(
+      id: 's-summary',
+      title: 'Summary Setlist',
+      serviceDate: DateTime.utc(2026, 11, 29),
+      notes: 'Original notes',
+      itemCount: 1,
+      items: const [],
+    );
+    final detailedSetlist = SetlistItemData(
+      id: 's-summary',
+      title: 'Summary Setlist',
+      serviceDate: DateTime.utc(2026, 11, 29),
+      notes: 'Original notes',
+      itemCount: 1,
+      items: [
+        SetlistSongItem(
+          songId: '1',
+          title: 'Amazing Grace',
+          lyrics: 'Amazing grace how sweet the sound',
+          chords: '[G] Amazing [C] grace',
+          keyOverride: 'A',
+          order: 1,
+          notes: 'Acoustic intro',
+        ),
+      ],
+    );
+
+    final client = _DetailSplitWorshipClient(
+      songs: sampleSongs,
+      summarySetlist: summarySetlist,
+      detailedSetlist: detailedSetlist,
+      getSetlistDetailError: const WorshipApiException('Failed loading setlist items.'),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: WorshipScreen(
+          apiClient: client,
+          canManageWorship: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Sunday Setlists'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('editSetlistButton_s-summary')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Failed loading setlist items.'), findsOneWidget);
+    final saveBtnBlocked = tester.widget<ElevatedButton>(
+      find.byKey(const Key('saveSetlistButton')),
+    );
+    expect(saveBtnBlocked.onPressed, isNull);
+
+    // Fix error, retry loading setlist details, then edit title only
+    client.getSetlistDetailError = null;
+    await tester.tap(find.byKey(const Key('retrySetlistDetailButton')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const Key('setlistTitleField')),
+      'Summary Setlist (Renamed)',
+    );
+    await tester.tap(find.byKey(const Key('saveSetlistButton')));
+    await tester.pumpAndSettle();
+
+    expect(client.updateSetlistCalls, 1);
+    expect(client.lastUpdatedInput, isNotNull);
+    expect(client.lastUpdatedInput!.items.length, 1);
+    expect(client.lastUpdatedInput!.items.first.songId, '1');
+    expect(client.lastUpdatedInput!.items.first.keyOverride, 'A');
+    expect(client.lastUpdatedInput!.items.first.notes, 'Acoustic intro');
+  });
+}
+
+class _DetailSplitWorshipClient extends FakeWorshipApiClient {
+  final SetlistItemData summarySetlist;
+  final SetlistItemData detailedSetlist;
+
+  _DetailSplitWorshipClient({
+    required super.songs,
+    required this.summarySetlist,
+    required this.detailedSetlist,
+    super.getSetlistDetailError,
+  }) : super(setlists: [detailedSetlist]);
+
+  @override
+  Future<List<SetlistItemData>> getSetlists() async {
+    getSetlistsCalls++;
+    return [summarySetlist];
+  }
+
+  @override
+  Future<SetlistItemData> getSetlist(String id) async {
+    if (getSetlistDetailError != null) throw getSetlistDetailError!;
+    return detailedSetlist;
+  }
 }
