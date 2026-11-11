@@ -1,10 +1,10 @@
 name: Delivery coordinator regression tests
 on:
   pull_request:
-    paths: [".github/delivery/**", ".github/workflows/delivery-coordinator*.yml"]
+    paths: [".github/delivery/**", ".github/workflows/delivery-coordinator*.yml", ".github/workflows/auto-pbi-architect.yml"]
   push:
     branches: [main]
-    paths: [".github/delivery/**"]
+    paths: [".github/delivery/**", ".github/workflows/delivery-coordinator*.yml", ".github/workflows/auto-pbi-architect.yml"]
 permissions:
   contents: read
 jobs:
@@ -19,6 +19,16 @@ jobs:
           node-version: "22"
       - run: node --check .github/delivery/run.cjs
       - run: node --test .github/delivery/*.test.cjs
+      - name: Check backlog script syntax
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const vm = require('node:vm');
+          const workflow = fs.readFileSync('.github/workflows/auto-pbi-architect.yml', 'utf8');
+          const script = workflow.split('script: |\n')[1];
+          if (!script?.trim()) throw new Error('Backlog script is missing');
+          new vm.Script(`(async () => {\n${script}\n})`);
+          NODE
       - name: Validate adopted assignment plan
         run: |
           node - <<'NODE'
