@@ -112,8 +112,8 @@ jobs:
               `You are working in ${owner}/${repo} on GitHub Issue #${issueNumber}: ${issue.title}`,
               '',
               'Follow AGENTS.md in the repository root strictly (including tenant isolation, privacy boundaries, and ownership splits).',
-              'If the issue divides work across agents (for example Jules ownership vs Antigravity ownership), implement ONLY the Antigravity ownership scope and leave other agents\' files untouched.',
-              'Run applicable verification tests before finishing.',
+              'If the issue divides work across agents or specifies an exclusive file ownership list, touch ONLY the files assigned to Antigravity and leave other files untouched.',
+              'Before finishing, run applicable verification locally (for mobile changes: `cd mobile && flutter analyze --fatal-infos && flutter test`; for backend changes: `dotnet test` on the relevant test project).',
               'Do NOT run git commit, git push, or create a pull request yourself; leave your validated changes in the working tree on the checked-out branch so the workflow can commit, push, and open the PR.',
               '',
               '## Issue Body',
@@ -163,7 +163,7 @@ jobs:
           WORK_BRANCH: ${{ steps.prep.outputs.branch }}
         run: |
           set -euo pipefail
-          export PATH="/home/m25c1233.paul/.local/bin:$PATH"
+          export PATH="/home/m25c1233.paul/.local/bin:/home/m25c1233.paul/flutter/bin:$PATH"
 
           git checkout -B "$WORK_BRANCH"
           PROMPT="$(cat "$RUNNER_TEMP/antigravity_prompt.txt")"
