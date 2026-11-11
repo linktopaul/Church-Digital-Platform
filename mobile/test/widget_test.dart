@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:church_digital_platform_mobile/auth/auth_provider.dart';
 import 'package:church_digital_platform_mobile/auth/auth_session.dart';
 import 'package:church_digital_platform_mobile/auth/auth_session_manager.dart';
 import 'package:church_digital_platform_mobile/auth/oidc_configuration.dart';
@@ -642,6 +643,75 @@ void main() {
         await manager.signOut();
         await tester.pumpAndSettle();
 
+        expect(find.byType(WorshipScreen, skipOffstage: false), findsNothing);
+        expect(find.text('Sign In Required'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'dismisses open worship detail route and modal sheet when session refresh is rejected',
+      (tester) async {
+        final mockProvider = MockAuthProvider();
+        mockProvider.refreshException = const TerminalAuthException();
+        final manager = AuthSessionManager(
+          provider: mockProvider,
+          storage: InMemorySecureTokenStorage(),
+        );
+        addTearDown(manager.dispose);
+
+        await manager.setSession(
+          _buildSession(
+            userId: 'leader-1',
+            tenantId: 'tenant-a',
+            roles: const ['WorshipLeader'],
+          ),
+        );
+
+        await tester.pumpWidget(
+          ChurchMobileApp(
+            authService: manager,
+            apiBaseUrl: 'https://api.gracechurch.test',
+          ),
+        );
+
+        // Navigate to Worship tab and open a pushed detail route + modal sheet
+        await tester.tap(find.byIcon(Icons.music_note_outlined));
+        await tester.pump();
+
+        final worshipContext = tester.element(find.byType(WorshipScreen));
+        unawaited(
+          Navigator.of(worshipContext).push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => const Scaffold(
+                body: Center(child: Text('Worship Setlist Detail Overlay')),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Worship Setlist Detail Overlay'), findsOneWidget);
+
+        unawaited(
+          showModalBottomSheet<void>(
+            context: tester.element(find.text('Worship Setlist Detail Overlay')),
+            builder: (_) => const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Worship Song Detail Overlay'),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Worship Song Detail Overlay'), findsOneWidget);
+
+        // Token refresh rejection clears the session asynchronously on sessionStateStream
+        await expectLater(
+          manager.refresh(),
+          throwsA(isA<TerminalAuthException>()),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Worship Song Detail Overlay'), findsNothing);
+        expect(find.text('Worship Setlist Detail Overlay'), findsNothing);
         expect(find.byType(WorshipScreen, skipOffstage: false), findsNothing);
         expect(find.text('Sign In Required'), findsOneWidget);
       },

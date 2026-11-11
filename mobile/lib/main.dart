@@ -138,7 +138,20 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     super.dispose();
   }
 
+  void _dismissAuthenticatedRoutes() {
+    if (!mounted || _isAuthenticated) return;
+    final homeRoute = ModalRoute.of(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isAuthenticated) return;
+      Navigator.maybeOf(context)?.popUntil(
+        (route) =>
+            (homeRoute != null && identical(route, homeRoute)) || route.isFirst,
+      );
+    });
+  }
+
   void _setupAuthService({required bool fromLifecycleHook}) {
+    final wasAuthenticated = _isAuthenticated;
     _sessionSubscription?.cancel();
     _sessionSubscription = null;
     _ownedAuthService?.dispose();
@@ -168,24 +181,33 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final authService = _effectiveAuthService;
     _currentSession = authService?.currentSession;
     _updateClients();
+    if (wasAuthenticated && !_isAuthenticated) {
+      _selectedIndex = 0;
+      _dismissAuthenticatedRoutes();
+    }
 
     _sessionSubscription = authService?.sessionStateStream.listen((session) {
       if (!mounted) return;
+      var lostAuthentication = false;
       setState(() {
-        final wasAuthenticated = _isAuthenticated;
-        if (session != null || wasAuthenticated) {
+        final wasAuthBeforeUpdate = _isAuthenticated;
+        if (session != null || wasAuthBeforeUpdate) {
           _authInitGeneration++;
           _isInitializingSession = false;
           _isSigningIn = false;
           _authErrorMessage = null;
         }
         _currentSession = session;
-        if (wasAuthenticated && !_isAuthenticated) {
+        if (wasAuthBeforeUpdate && !_isAuthenticated) {
+          lostAuthentication = true;
           _signInGeneration++;
           _selectedIndex = 0;
         }
         _updateClients();
       });
+      if (lostAuthentication) {
+        _dismissAuthenticatedRoutes();
+      }
     });
 
     if (authService != null && !_isAuthenticated) {
@@ -308,6 +330,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   Future<void> _handleSignOut() async {
     final authService = _effectiveAuthService;
     if (authService == null) return;
+    final wasAuthenticated = _isAuthenticated;
     try {
       await authService.signOut();
     } finally {
@@ -315,10 +338,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         setState(() {
           _currentSession = authService.currentSession;
           if (!_isAuthenticated) {
+            _isSigningIn = false;
             _selectedIndex = 0;
           }
           _updateClients();
         });
+        if (wasAuthenticated && !_isAuthenticated) {
+          _dismissAuthenticatedRoutes();
+        }
       }
     }
   }
@@ -733,7 +760,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       ),
       body: IndexedStack(
         index: _selectedIndex,
-        children: _screens,
+        children: [
+          for (var i = 0; i < _screens.length; i++)
+            HeroMode(
+              enabled: i == _selectedIndex,
+              child: _screens[i],
+            ),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
