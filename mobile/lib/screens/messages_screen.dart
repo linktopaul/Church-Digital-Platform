@@ -24,7 +24,7 @@ class MessagesScreen extends StatefulWidget {
 }
 
 class _MessagesScreenState extends State<MessagesScreen> {
-  late FellowshipApiClient _apiClient;
+  FellowshipApiClient? _apiClient;
   List<FellowshipGroupData> _groups = [];
   bool _isLoading = false;
   String? _errorMessage;
@@ -35,17 +35,26 @@ class _MessagesScreenState extends State<MessagesScreen> {
   FellowshipCategory _selectedCategory = FellowshipCategory.all;
   String _searchQuery = '';
 
+  FellowshipApiClient? _resolveClient() {
+    if (widget.apiClient != null) return widget.apiClient;
+    if (widget.getAuthToken != null || widget.apiBaseUrl != null) {
+      return HttpFellowshipApiClient(
+        baseUrl: widget.apiBaseUrl,
+        getAuthToken: widget.getAuthToken,
+        currentUserId: widget.currentUserId,
+        currentMemberName: widget.currentMemberName,
+      );
+    }
+    return null;
+  }
+
   @override
   void initState() {
     super.initState();
-    _apiClient = widget.apiClient ??
-        HttpFellowshipApiClient(
-          baseUrl: widget.apiBaseUrl,
-          getAuthToken: widget.getAuthToken,
-          currentUserId: widget.currentUserId,
-          currentMemberName: widget.currentMemberName,
-        );
-    _loadGroups();
+    _apiClient = _resolveClient();
+    if (_apiClient != null) {
+      _loadGroups();
+    }
   }
 
   @override
@@ -54,13 +63,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
     if (oldWidget.apiClient != widget.apiClient ||
         oldWidget.apiBaseUrl != widget.apiBaseUrl ||
         oldWidget.currentUserId != widget.currentUserId) {
-      _apiClient = widget.apiClient ??
-          HttpFellowshipApiClient(
-            baseUrl: widget.apiBaseUrl,
-            getAuthToken: widget.getAuthToken,
-            currentUserId: widget.currentUserId,
-            currentMemberName: widget.currentMemberName,
-          );
+      _apiClient = _resolveClient();
       _sessionGeneration++;
       _sessionGenerationNotifier.value = _sessionGeneration;
       _loadGeneration++;
@@ -74,7 +77,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
           nav.popUntil((route) => route.isFirst);
         }
       });
-      _loadGroups();
+      if (_apiClient != null) {
+        _loadGroups();
+      }
     }
   }
 
@@ -86,7 +91,21 @@ class _MessagesScreenState extends State<MessagesScreen> {
     super.dispose();
   }
 
+  String _sanitizeErrorMessage(dynamic e) {
+    final str = e.toString().toLowerCase();
+    if (str.contains('401') || str.contains('unauthorized')) {
+      return 'Your session has expired. Please sign in again.';
+    }
+    if (str.contains('403') || str.contains('forbidden') || str.contains('access denied')) {
+      return 'Access denied. You do not have permission to view fellowship spaces.';
+    }
+    return 'Failed to load fellowship spaces. Please check your connection.';
+  }
+
   Future<void> _loadGroups() async {
+    final client = _apiClient;
+    if (client == null) return;
+
     final currentGen = ++_loadGeneration;
     setState(() {
       _isLoading = true;
@@ -94,7 +113,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
     });
 
     try {
-      final fetched = await _apiClient.getFellowshipGroups(
+      final fetched = await client.getFellowshipGroups(
         category: _selectedCategory != FellowshipCategory.all ? _selectedCategory : null,
       );
       if (!mounted || currentGen != _loadGeneration) return;
@@ -105,18 +124,20 @@ class _MessagesScreenState extends State<MessagesScreen> {
     } catch (e) {
       if (!mounted || currentGen != _loadGeneration) return;
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = _sanitizeErrorMessage(e);
         _isLoading = false;
       });
     }
   }
 
   void _openGroupDetail(FellowshipGroupData group) {
+    final client = _apiClient;
+    if (client == null) return;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => _FellowshipDetailScreen(
           group: group,
-          apiClient: _apiClient,
+          apiClient: client,
           sessionGenerationListenable: _sessionGenerationNotifier,
           initialSessionGeneration: _sessionGeneration,
           onGroupUpdated: (updated) {
@@ -133,6 +154,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   void _openCreateGroupDialog() {
+    final client = _apiClient;
+    if (client == null) return;
     final nameController = TextEditingController();
     final descriptionController = TextEditingController();
     final scheduleController = TextEditingController();
@@ -206,7 +229,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
               onPressed: () async {
                 if (nameController.text.trim().isEmpty) return;
                 final capturedSession = _sessionGeneration;
-                final client = _apiClient;
                 try {
                   final newGroup = await client.createFellowshipGroup(
                     name: nameController.text.trim(),
@@ -235,8 +257,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
                   if (!mounted || capturedSession != _sessionGeneration || _apiClient != client) {
                     return;
                   }
+                  final errorMsg = _sanitizeMutationError(e, 'Failed to create space');
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to create space: $e')),
+                    SnackBar(content: Text(errorMsg)),
                   );
                   final nav = Navigator.maybeOf(context);
                   if (nav != null && nav.canPop()) {
@@ -250,6 +273,17 @@ class _MessagesScreenState extends State<MessagesScreen> {
         ),
       ),
     );
+  }
+
+  String _sanitizeMutationError(dynamic e, String defaultPrefix) {
+    final str = e.toString().toLowerCase();
+    if (str.contains('401') || str.contains('unauthorized')) {
+      return 'Your session has expired. Please sign in again.';
+    }
+    if (str.contains('403') || str.contains('forbidden')) {
+      return 'Access denied. You do not have permission for this action.';
+    }
+    return '$defaultPrefix. Please try again.';
   }
 
   IconData _getCategoryIcon(FellowshipCategory cat) {
@@ -278,8 +312,121 @@ class _MessagesScreenState extends State<MessagesScreen> {
     }
   }
 
+  Widget _buildUnauthenticatedState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.lock_outline,
+              size: 64,
+              color: Theme.of(context).colorScheme.outline,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Sign In Required',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Fellowship spaces and church group messaging require an active, authenticated member session.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 56,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Unable to Load Spaces',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _errorMessage ?? 'An error occurred while connecting to fellowship spaces.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _loadGroups,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.groups_outlined,
+              size: 64,
+              color: Theme.of(context).colorScheme.outline,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'No Fellowship Spaces Found',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _searchQuery.isNotEmpty
+                  ? 'No fellowship spaces match your search criteria.'
+                  : 'There are currently no fellowship spaces available. Create one to get started!',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_apiClient == null) {
+      return Scaffold(
+        body: _buildUnauthenticatedState(),
+      );
+    }
+
     final filteredGroups = _groups.where((g) {
       if (_selectedCategory != FellowshipCategory.all &&
           g.category != _selectedCategory) {
@@ -379,131 +526,126 @@ class _MessagesScreenState extends State<MessagesScreen> {
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _errorMessage != null
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              _errorMessage!,
-                              style: const TextStyle(color: Colors.red),
-                            ),
-                            const SizedBox(height: 8),
-                            ElevatedButton(
-                              onPressed: _loadGroups,
-                              child: const Text('Retry'),
-                            ),
-                          ],
-                        ),
-                      )
+                    ? _buildErrorState()
                     : filteredGroups.isEmpty
-                        ? const Center(
-                            child: Text(
-                              'No fellowship spaces found.',
-                              style: TextStyle(color: Colors.grey),
+                        ? RefreshIndicator(
+                            onRefresh: _loadGroups,
+                            child: CustomScrollView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              slivers: [
+                                SliverFillRemaining(
+                                  hasScrollBody: false,
+                                  child: _buildEmptyState(),
+                                ),
+                              ],
                             ),
                           )
-                        : ListView.builder(
-                            key: const Key('fellowshipListView'),
-                            itemCount: filteredGroups.length,
-                            itemBuilder: (context, index) {
-                              final group = filteredGroups[index];
-                              return Card(
-                                margin: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 6),
-                                child: ListTile(
-                                  key: Key('groupItem_${group.id}'),
-                                  leading: CircleAvatar(
-                                    backgroundColor: Theme.of(context)
-                                        .colorScheme
-                                        .primaryContainer,
-                                    child: Icon(
-                                      _getCategoryIcon(group.category),
-                                      color: Theme.of(context)
+                        : RefreshIndicator(
+                            onRefresh: _loadGroups,
+                            child: ListView.builder(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              key: const Key('fellowshipListView'),
+                              itemCount: filteredGroups.length,
+                              itemBuilder: (context, index) {
+                                final group = filteredGroups[index];
+                                return Card(
+                                  margin: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 6),
+                                  child: ListTile(
+                                    key: Key('groupItem_${group.id}'),
+                                    leading: CircleAvatar(
+                                      backgroundColor: Theme.of(context)
                                           .colorScheme
-                                          .onPrimaryContainer,
+                                          .primaryContainer,
+                                      child: Icon(
+                                        _getCategoryIcon(group.category),
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onPrimaryContainer,
+                                      ),
                                     ),
-                                  ),
-                                  title: Text(
-                                    group.name,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                                  subtitle: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        _getCategoryLabel(group.category),
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .primary,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        group.description,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(fontSize: 13),
-                                      ),
-                                      if (group.meetingSchedule != null) ...[
-                                        const SizedBox(height: 4),
-                                        Row(
-                                          children: [
-                                            const Icon(Icons.access_time,
-                                                size: 14, color: Colors.grey),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              group.meetingSchedule!,
-                                              style: const TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors.grey),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                  trailing: Column(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.center,
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: group.isUserMember
-                                              ? Colors.green.shade50
-                                              : Colors.grey.shade100,
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                        ),
-                                        child: Text(
-                                          group.isUserMember ? 'Joined' : 'Join',
+                                    title: Text(
+                                      group.name,
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.bold),
+                                    ),
+                                    subtitle: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          _getCategoryLabel(group.category),
                                           style: TextStyle(
-                                            color: group.isUserMember
-                                                ? Colors.green.shade800
-                                                : Colors.grey.shade700,
                                             fontSize: 12,
-                                            fontWeight: FontWeight.bold,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primary,
+                                            fontWeight: FontWeight.w600,
                                           ),
                                         ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        '${group.memberCount} members',
-                                        style: const TextStyle(
-                                            fontSize: 11, color: Colors.grey),
-                                      ),
-                                    ],
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          group.description,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(fontSize: 13),
+                                        ),
+                                        if (group.meetingSchedule != null) ...[
+                                          const SizedBox(height: 4),
+                                          Row(
+                                            children: [
+                                              const Icon(Icons.access_time,
+                                                  size: 14, color: Colors.grey),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                group.meetingSchedule!,
+                                                style: const TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.grey),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    trailing: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: group.isUserMember
+                                                ? Colors.green.shade50
+                                                : Colors.grey.shade100,
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                          ),
+                                          child: Text(
+                                            group.isUserMember ? 'Joined' : 'Join',
+                                            style: TextStyle(
+                                              color: group.isUserMember
+                                                  ? Colors.green.shade800
+                                                  : Colors.grey.shade700,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '${group.memberCount} members',
+                                          style: const TextStyle(
+                                              fontSize: 11, color: Colors.grey),
+                                        ),
+                                      ],
+                                    ),
+                                    onTap: () => _openGroupDetail(group),
                                   ),
-                                  onTap: () => _openGroupDetail(group),
-                                ),
-                              );
-                            },
+                                );
+                              },
+                            ),
                           ),
           ),
         ],
@@ -765,73 +907,91 @@ class _FellowshipDetailScreenState extends State<_FellowshipDetailScreen>
                   children: [
                     Expanded(
                       child: _currentGroup.posts.isEmpty
-                          ? const Center(
-                              child: Text(
-                                'No messages yet. Start the conversation!',
-                                style: TextStyle(color: Colors.grey),
-                              ),
-                            )
-                          : ListView.builder(
-                              key: const Key('postsListView'),
-                              padding: const EdgeInsets.all(12),
-                              itemCount: _currentGroup.posts.length,
-                              itemBuilder: (context, index) {
-                                final post = _currentGroup.posts[index];
-                                return Card(
-                                  margin: const EdgeInsets.only(bottom: 12),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            CircleAvatar(
-                                              radius: 14,
-                                              child: Text(
-                                                post.authorName.isNotEmpty
-                                                    ? post.authorName[0]
-                                                    : '?',
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              post.authorName,
-                                              style: const TextStyle(
-                                                  fontWeight: FontWeight.bold),
-                                            ),
-                                            const Spacer(),
-                                            const Icon(Icons.schedule,
-                                                size: 14, color: Colors.grey),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              'Recent',
-                                              style: const TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors.grey),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          post.title,
-                                          style: const TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          post.content,
-                                          style:
-                                              const TextStyle(fontSize: 14),
-                                        ),
-                                      ],
+                          ? RefreshIndicator(
+                              onRefresh: _fetchDetail,
+                              child: CustomScrollView(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                slivers: [
+                                  SliverFillRemaining(
+                                    hasScrollBody: false,
+                                    child: Center(
+                                      child: Text(
+                                        'No messages yet. Start the conversation!',
+                                        style: TextStyle(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .outline),
+                                      ),
                                     ),
                                   ),
-                                );
-                              },
+                                ],
+                              ),
+                            )
+                          : RefreshIndicator(
+                              onRefresh: _fetchDetail,
+                              child: ListView.builder(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                key: const Key('postsListView'),
+                                padding: const EdgeInsets.all(12),
+                                itemCount: _currentGroup.posts.length,
+                                itemBuilder: (context, index) {
+                                  final post = _currentGroup.posts[index];
+                                  return Card(
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(12),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              CircleAvatar(
+                                                radius: 14,
+                                                child: Text(
+                                                  post.authorName.isNotEmpty
+                                                      ? post.authorName[0]
+                                                      : '?',
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                post.authorName,
+                                                style: const TextStyle(
+                                                    fontWeight: FontWeight.bold),
+                                              ),
+                                              const Spacer(),
+                                              const Icon(Icons.schedule,
+                                                  size: 14, color: Colors.grey),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                'Recent',
+                                                style: const TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.grey),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            post.title,
+                                            style: const TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            post.content,
+                                            style:
+                                                const TextStyle(fontSize: 14),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
                     ),
                     if (_currentGroup.isUserMember)
@@ -851,67 +1011,70 @@ class _FellowshipDetailScreenState extends State<_FellowshipDetailScreen>
                 ),
 
                 // Tab 2: About & Members
-                ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    Text(
-                      'About this Fellowship',
-                      style:
-                          Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(_currentGroup.description),
-                    const Divider(height: 32),
-                    if (_currentGroup.leaderName != null) ...[
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.person),
-                        title: const Text('Fellowship Leader'),
-                        subtitle: Text(_currentGroup.leaderName!),
+                RefreshIndicator(
+                  onRefresh: _fetchDetail,
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      Text(
+                        'About this Fellowship',
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
                       ),
-                    ],
-                    if (_currentGroup.meetingSchedule != null) ...[
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.calendar_today),
-                        title: const Text('Meeting Schedule'),
-                        subtitle: Text(_currentGroup.meetingSchedule!),
-                      ),
-                    ],
-                    if (_currentGroup.location != null) ...[
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.place),
-                        title: const Text('Meeting Location'),
-                        subtitle: Text(_currentGroup.location!),
-                      ),
-                    ],
-                    const Divider(height: 32),
-                    Text(
-                      'Members (${_currentGroup.members.length})',
-                      style:
-                          Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                    ),
-                    const SizedBox(height: 8),
-                    ..._currentGroup.members.map(
-                      (m) => ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: CircleAvatar(
-                          radius: 14,
-                          child: Text(m.isNotEmpty ? m[0] : '?'),
+                      const SizedBox(height: 8),
+                      Text(_currentGroup.description),
+                      const Divider(height: 32),
+                      if (_currentGroup.leaderName != null) ...[
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.person),
+                          title: const Text('Fellowship Leader'),
+                          subtitle: Text(_currentGroup.leaderName!),
                         ),
-                        title: Text(m),
+                      ],
+                      if (_currentGroup.meetingSchedule != null) ...[
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.calendar_today),
+                          title: const Text('Meeting Schedule'),
+                          subtitle: Text(_currentGroup.meetingSchedule!),
+                        ),
+                      ],
+                      if (_currentGroup.location != null) ...[
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.place),
+                          title: const Text('Meeting Location'),
+                          subtitle: Text(_currentGroup.location!),
+                        ),
+                      ],
+                      const Divider(height: 32),
+                      Text(
+                        'Members (${_currentGroup.members.length})',
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      ..._currentGroup.members.map(
+                        (m) => ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: CircleAvatar(
+                            radius: 14,
+                            child: Text(m.isNotEmpty ? m[0] : '?'),
+                          ),
+                          title: Text(m),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
     );
   }
 }
-

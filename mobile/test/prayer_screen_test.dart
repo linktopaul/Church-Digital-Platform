@@ -223,6 +223,32 @@ void main() {
     expect(find.text('Recovered after retry'), findsOneWidget);
   });
 
+  testWidgets('shows user-friendly session expired error on HTTP 401', (tester) async {
+    final fakeClient = FakePrayerApiClient(
+      shouldFailGetMy: true,
+      failureMessage: '401',
+    );
+
+    await tester.pumpWidget(createWidgetUnderTest(apiClient: fakeClient));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Unable to Load Requests'), findsOneWidget);
+    expect(find.text('Your session has expired. Please sign in again.'), findsOneWidget);
+  });
+
+  testWidgets('shows user-friendly access denied error on HTTP 403', (tester) async {
+    final fakeClient = FakePrayerApiClient(
+      shouldFailGetMy: true,
+      failureMessage: '403',
+    );
+
+    await tester.pumpWidget(createWidgetUnderTest(apiClient: fakeClient));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Unable to Load Requests'), findsOneWidget);
+    expect(find.text('Access denied: You do not have permission for this pastoral prayer action.'), findsOneWidget);
+  });
+
   testWidgets('submits new prayer request and updates UI on success', (tester) async {
     final fakeClient = FakePrayerApiClient();
 
@@ -395,7 +421,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Shows error SnackBar
-    expect(find.text('Forbidden status change'), findsOneWidget);
+    expect(find.text('Access denied: You do not have permission for this pastoral prayer action.'), findsOneWidget);
     // Status in list remains Submitted
     expect(find.text('Submitted'), findsOneWidget);
     expect(find.text('Answered'), findsNothing);
