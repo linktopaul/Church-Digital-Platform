@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/offering_models.dart';
 import '../services/offering_api_client.dart';
+import '../theme/app_theme.dart';
 
 class OfferingsScreen extends StatefulWidget {
   final OfferingApiClient? apiClient;
@@ -572,32 +573,45 @@ class _OfferingsScreenState extends State<OfferingsScreen> with TickerProviderSt
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Card(
-                color: Theme.of(context).colorScheme.primaryContainer.withAlpha(60),
+                color: SanctuaryColors.sageSoft,
                 child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Column(
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Icon(Icons.qr_code, color: Theme.of(context).colorScheme.primary),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.qr_code_2, color: SanctuaryColors.sage),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
                               'Support the Church Ministry',
                               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
+                                    fontWeight: FontWeight.w700,
+                                    color: SanctuaryColors.ink,
                                   ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _config != null
-                            ? 'UPI ID: ${_config!.upiId} (${_config!.payeeName})'
-                            : 'Give faithfully and cheerfully via UPI instant transfer.',
-                        style: const TextStyle(fontSize: 13),
+                            const SizedBox(height: 4),
+                            Text(
+                              _config != null
+                                  ? 'UPI ID: ${_config!.upiId} (${_config!.payeeName})'
+                                  : 'Give faithfully and cheerfully via UPI instant transfer.',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: SanctuaryColors.inkMuted,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -631,7 +645,6 @@ class _OfferingsScreenState extends State<OfferingsScreen> with TickerProviderSt
                 decoration: InputDecoration(
                   labelText: 'Amount (${_config?.currency ?? 'INR'})',
                   hintText: 'e.g. 500.00',
-                  border: const OutlineInputBorder(),
                   prefixIcon: const Icon(Icons.currency_rupee),
                 ),
                 validator: (val) {
@@ -649,15 +662,29 @@ class _OfferingsScreenState extends State<OfferingsScreen> with TickerProviderSt
                   return null;
                 },
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [500, 1000, 2500, 5000]
+                    .map(
+                      (preset) => ActionChip(
+                        label: Text('₹$preset'),
+                        onPressed: () {
+                          _amountController.text = '$preset';
+                        },
+                      ),
+                    )
+                    .toList(),
+              ),
+              const SizedBox(height: 14),
 
               TextFormField(
                 controller: _noteController,
                 maxLength: 500,
                 decoration: const InputDecoration(
-                  labelText: 'Giving Note / Thanksgiving Prayer (Optional)',
+                  labelText: 'Note / Thanksgiving (Optional)',
                   hintText: 'e.g. Thanksgiving for family blessings',
-                  border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.note_alt_outlined),
                   counterText: '',
                 ),
@@ -676,7 +703,6 @@ class _OfferingsScreenState extends State<OfferingsScreen> with TickerProviderSt
                 decoration: const InputDecoration(
                   labelText: 'Bank Reference / UTR (Optional)',
                   hintText: 'e.g. UPI Ref 1234567890 if already paid',
-                  border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.numbers_outlined),
                   counterText: '',
                 ),
@@ -809,7 +835,6 @@ class _OfferingsScreenState extends State<OfferingsScreen> with TickerProviderSt
         itemBuilder: (ctx, index) {
           final item = _myContributions[index];
           return Card(
-            elevation: 1,
             child: ListTile(
               leading: CircleAvatar(
                 backgroundColor: _getStatusColor(item.status).withAlpha(40),
@@ -974,7 +999,6 @@ class _OfferingsScreenState extends State<OfferingsScreen> with TickerProviderSt
 
   Widget _buildSummaryCard(String title, String mainValue, String subValue, Color color) {
     return Card(
-      elevation: 2,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
         child: Column(

@@ -8,6 +8,7 @@ import 'announcement_composer_screen.dart';
 import 'celebrations_screen.dart';
 import 'offerings_screen.dart';
 import 'placeholder_screen.dart';
+import '../theme/app_theme.dart';
 
 class HomeScreen extends StatefulWidget {
   final AnnouncementApiClient? announcementClient;
@@ -123,53 +124,78 @@ class _HomeScreenState extends State<HomeScreen> {
         onRefresh: _fetchAnnouncements,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
           children: [
-            Card(
-              elevation: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [SanctuaryColors.navy, SanctuaryColors.navyDeep],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.church_outlined, color: Colors.white),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.home, color: Theme.of(context).colorScheme.primary),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Welcome to Church Digital Platform',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                          ),
+                        Text(
+                          'Church Sanctuary',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Weekly updates, celebrations, and ministry giving.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Colors.white.withValues(alpha: 0.85),
+                              ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    const Text('Church announcements and updates will appear here.'),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
             if (widget.celebrationClient != null) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               Card(
-                color: Theme.of(context).colorScheme.primaryContainer.withAlpha(80),
-                elevation: 1,
                 child: ListTile(
-                  leading: const CircleAvatar(
-                    backgroundColor: Colors.purple,
-                    child: Icon(Icons.cake, color: Colors.white),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  leading: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: SanctuaryColors.goldSoft,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.cake_outlined, color: SanctuaryColors.gold),
                   ),
                   title: const Text(
                     'Celebrations & Blessings',
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                    style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                   subtitle: const Text(
-                    'Celebrate member birthdays and anniversaries with scripture blessings.',
+                    'Share birthdays, anniversaries & scripture blessings.',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                  trailing: const Icon(Icons.chevron_right, color: SanctuaryColors.inkMuted),
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
@@ -185,23 +211,29 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
             if (widget.offeringClient != null) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               Card(
-                color: Theme.of(context).colorScheme.primaryContainer.withAlpha(80),
-                elevation: 1,
                 child: ListTile(
-                  leading: const CircleAvatar(
-                    backgroundColor: Colors.teal,
-                    child: Icon(Icons.volunteer_activism, color: Colors.white),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  leading: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: SanctuaryColors.sageSoft,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.volunteer_activism_outlined, color: SanctuaryColors.sage),
                   ),
                   title: const Text(
                     'Digital Offerings & Giving',
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                    style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                   subtitle: const Text(
-                    'Support the church ministry with secure UPI giving and instant receipts.',
+                    'Give securely via UPI and view receipts.',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                  trailing: const Icon(Icons.chevron_right, color: SanctuaryColors.inkMuted),
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
@@ -218,44 +250,57 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
             if (widget.announcementClient != null) ...[
-              const SizedBox(height: 24),
-              Text(
-                'Announcements',
-                style: Theme.of(context).textTheme.titleLarge,
+              const SizedBox(height: 22),
+              SanctuarySectionHeader(
+                title: 'Announcements',
+                trailing: _announcements.isNotEmpty
+                    ? SanctuaryStatusBadge(
+                        label: '${_announcements.length}',
+                        foregroundColor: SanctuaryColors.navy,
+                        backgroundColor: SanctuaryColors.navySoft,
+                      )
+                    : null,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               if (_isLoading && _announcements.isEmpty)
-                const Center(child: Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: CircularProgressIndicator(),
-                ))
-              else if (_error != null && _announcements.isEmpty)
-                Center(
+                const Center(
                   child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      children: [
-                        Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                        const SizedBox(height: 8),
-                        ElevatedButton(
-                          onPressed: _fetchAnnouncements,
-                          child: const Text('Retry'),
-                        ),
-                      ],
-                    ),
+                    padding: EdgeInsets.all(24.0),
+                    child: CircularProgressIndicator(),
+                  ),
+                )
+              else if (_error != null && _announcements.isEmpty)
+                SanctuaryEmptyState(
+                  icon: Icons.cloud_off_outlined,
+                  title: 'Unable to Load Announcements',
+                  description: _error!,
+                  accentColor: Theme.of(context).colorScheme.error,
+                  accentBackground: Theme.of(context).colorScheme.errorContainer,
+                  action: FilledButton.icon(
+                    onPressed: _fetchAnnouncements,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
                   ),
                 )
               else if (_announcements.isEmpty)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(32.0),
-                    child: Text('No announcements yet.'),
-                  ),
+                const SanctuaryEmptyState(
+                  icon: Icons.campaign_outlined,
+                  title: 'All Caught Up',
+                  description: 'No announcements yet.',
                 )
               else
                 ..._announcements.map((announcement) {
+                  final isEmergency = announcement.priority == AnnouncementPriority.emergency;
+                  final isUrgent = announcement.priority == AnnouncementPriority.urgent;
+                  final badgeFg = isEmergency
+                      ? const Color(0xFF991B1B)
+                      : (isUrgent ? const Color(0xFF9A5B13) : SanctuaryColors.navy);
+                  final badgeBg = isEmergency
+                      ? const Color(0xFFFEE2E2)
+                      : (isUrgent ? SanctuaryColors.goldSoft : SanctuaryColors.navySoft);
+
                   return Card(
-                    margin: const EdgeInsets.only(bottom: 8),
+                    margin: const EdgeInsets.only(bottom: 10),
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
@@ -267,46 +312,51 @@ class _HomeScreenState extends State<HomeScreen> {
                               Expanded(
                                 child: Text(
                                   announcement.title,
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 16,
+                                    color: SanctuaryColors.ink,
+                                    height: 1.3,
+                                  ),
                                 ),
                               ),
                               if (announcement.priority != AnnouncementPriority.routine) ...[
                                 const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: announcement.priority == AnnouncementPriority.emergency
-                                      ? Colors.red.shade100
-                                      : Colors.orange.shade100,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    announcement.priority.displayName,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      color: announcement.priority == AnnouncementPriority.emergency
-                                        ? Colors.red.shade900
-                                        : Colors.orange.shade900,
-                                    ),
-                                  ),
+                                SanctuaryStatusBadge(
+                                  label: announcement.priority.displayName,
+                                  foregroundColor: badgeFg,
+                                  backgroundColor: badgeBg,
                                 ),
-                              ]
+                              ],
                             ],
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            DateFormat.yMMMd().add_jm().format(announcement.publishedAt.toLocal()),
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey.shade600),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              const Icon(Icons.schedule, size: 13, color: SanctuaryColors.inkMuted),
+                              const SizedBox(width: 4),
+                              Text(
+                                DateFormat.yMMMd().add_jm().format(announcement.publishedAt.toLocal()),
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: SanctuaryColors.inkMuted,
+                                    ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 8),
-                          Text(announcement.content),
+                          const SizedBox(height: 10),
+                          Text(
+                            announcement.content,
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: SanctuaryColors.ink.withValues(alpha: 0.9),
+                                  height: 1.45,
+                                ),
+                          ),
                         ],
                       ),
                     ),
                   );
                 }),
-            ]
+            ],
           ],
         ),
       ),

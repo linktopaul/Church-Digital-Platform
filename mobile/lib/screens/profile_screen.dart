@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../auth/auth_session_manager.dart';
 import '../models/member_models.dart';
 import '../services/member_api_client.dart';
+import '../theme/app_theme.dart';
 
 /// Screen for viewing and managing member profile, privacy rules, and church directory.
 ///
@@ -605,7 +606,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   Widget _buildFamilyCard(MemberProfile profile) {
     if (_isLoadingFamily && _familyData == null) {
       return Card(
-        elevation: 1,
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Row(
@@ -625,7 +625,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
     if (_familyErrorMessage != null) {
       return Card(
-        elevation: 1,
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
@@ -664,7 +663,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     final members = family?.members ?? [];
 
     return Card(
-      elevation: 1,
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -780,15 +778,25 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       padding: const EdgeInsets.all(16.0),
       child: Column(
         children: [
-          CircleAvatar(
-            radius: 40,
-            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-            child: Text(
-              initials.toUpperCase(),
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: SanctuaryColors.gold.withValues(alpha: 0.45),
+                width: 2,
+              ),
+            ),
+            child: CircleAvatar(
+              radius: 38,
+              backgroundColor: SanctuaryColors.navySoft,
+              child: Text(
+                initials.toUpperCase(),
+                style: const TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
+                  color: SanctuaryColors.navy,
+                ),
               ),
             ),
           ),
@@ -815,7 +823,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             const SizedBox(height: 12),
           ],
           Card(
-            elevation: 1,
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -854,7 +861,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           ),
           const SizedBox(height: 12),
           Card(
-            elevation: 1,
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -927,11 +933,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         Padding(
           padding: const EdgeInsets.all(12.0),
           child: TextField(
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               hintText: 'Search members by name or family...',
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              prefixIcon: Icon(Icons.search),
+              isDense: true,
             ),
             onSubmitted: (val) {
               final trimmed = val.trim();
@@ -1045,12 +1050,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     return Scaffold(
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(48),
-        child: TabBar(
+        child: ColoredBox(
+          color: SanctuaryColors.surfaceCard,
+          child: TabBar(
           controller: _tabController,
           tabs: const [
             Tab(text: 'My Profile', icon: Icon(Icons.person, size: 20)),
             Tab(text: 'Directory', icon: Icon(Icons.people, size: 20)),
           ],
+          ),
         ),
       ),
       body: TabBarView(

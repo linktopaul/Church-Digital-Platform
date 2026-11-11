@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/fellowship_models.dart';
 import '../services/fellowship_api_client.dart';
+import '../theme/app_theme.dart';
 
 class MessagesScreen extends StatefulWidget {
   final FellowshipApiClient? apiClient;
@@ -506,16 +507,10 @@ class _MessagesScreenState extends State<MessagesScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             child: TextField(
               key: const Key('searchFellowshipField'),
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 hintText: 'Search fellowship spaces...',
-                prefixIcon: const Icon(Icons.search),
+                prefixIcon: Icon(Icons.search),
                 isDense: true,
-                filled: true,
-                fillColor: Colors.grey.shade100,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
               ),
               onChanged: (val) => setState(() => _searchQuery = val),
             ),
@@ -544,24 +539,29 @@ class _MessagesScreenState extends State<MessagesScreen> {
                             onRefresh: _loadGroups,
                             child: ListView.builder(
                               physics: const AlwaysScrollableScrollPhysics(),
+                              padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
                               key: const Key('fellowshipListView'),
                               itemCount: filteredGroups.length,
                               itemBuilder: (context, index) {
                                 final group = filteredGroups[index];
                                 return Card(
-                                  margin: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 6),
+                                  margin: const EdgeInsets.only(bottom: 10),
                                   child: ListTile(
                                     key: Key('groupItem_${group.id}'),
-                                    leading: CircleAvatar(
-                                      backgroundColor: Theme.of(context)
-                                          .colorScheme
-                                          .primaryContainer,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 8,
+                                    ),
+                                    leading: Container(
+                                      width: 44,
+                                      height: 44,
+                                      decoration: BoxDecoration(
+                                        color: SanctuaryColors.navySoft,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
                                       child: Icon(
                                         _getCategoryIcon(group.category),
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onPrimaryContainer,
+                                        color: SanctuaryColors.navy,
                                       ),
                                     ),
                                     title: Text(

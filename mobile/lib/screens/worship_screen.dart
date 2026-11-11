@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/worship_models.dart';
 import '../services/worship_api_client.dart';
+import '../theme/app_theme.dart';
 
 class WorshipScreen extends StatefulWidget {
   final WorshipApiClient? apiClient;
@@ -1037,11 +1038,9 @@ class _WorshipScreenState extends State<WorshipScreen>
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(48),
         child: ColoredBox(
-          color: Theme.of(context).colorScheme.surface,
+          color: SanctuaryColors.surfaceCard,
           child: TabBar(
             controller: _tabController,
-            labelColor: Theme.of(context).colorScheme.primary,
-            unselectedLabelColor: Colors.grey,
             tabs: const [
               Tab(
                 iconMargin: EdgeInsets.zero,
@@ -1081,16 +1080,10 @@ class _WorshipScreenState extends State<WorshipScreen>
                       padding: const EdgeInsets.all(12.0),
                       child: TextField(
                         key: const Key('songSearchField'),
-                        decoration: InputDecoration(
+                        decoration: const InputDecoration(
                           hintText: 'Search songs by title or artist...',
-                          prefixIcon: const Icon(Icons.search),
+                          prefixIcon: Icon(Icons.search),
                           isDense: true,
-                          filled: true,
-                          fillColor: Colors.grey.shade100,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
                         ),
                         onChanged: (val) {
                           setState(() => _searchQuery = val);
@@ -1143,101 +1136,90 @@ class _WorshipScreenState extends State<WorshipScreen>
                                     )
                                   : ListView.separated(
                                       key: const Key('songsListView'),
+                                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 96),
                                       itemCount: filteredSongs.length,
                                       separatorBuilder: (_, __) =>
-                                          const Divider(height: 1),
+                                          const SizedBox(height: 8),
                                       itemBuilder: (context, index) {
                                         final song = filteredSongs[index];
-                                        return ListTile(
-                                          key: Key('songItem_${song.id}'),
-                                          title: Text(
-                                            song.title,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w600,
+                                        return Card(
+                                          child: ListTile(
+                                            key: Key('songItem_${song.id}'),
+                                            contentPadding: const EdgeInsets.symmetric(
+                                              horizontal: 14,
+                                              vertical: 4,
                                             ),
-                                          ),
-                                          subtitle: Text(
-                                            song.artist ?? 'Traditional',
-                                            style:
-                                                const TextStyle(fontSize: 13),
-                                          ),
-                                          trailing: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              if (song.defaultKey != null)
-                                                Container(
-                                                  padding: const EdgeInsets
-                                                      .symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 4,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.blue.shade50,
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                      6,
+                                            leading: Container(
+                                              width: 40,
+                                              height: 40,
+                                              decoration: BoxDecoration(
+                                                color: SanctuaryColors.navySoft,
+                                                borderRadius: BorderRadius.circular(10),
+                                              ),
+                                              child: const Icon(
+                                                Icons.music_note_outlined,
+                                                color: SanctuaryColors.navy,
+                                                size: 20,
+                                              ),
+                                            ),
+                                            title: Text(
+                                              song.title,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            subtitle: Padding(
+                                              padding: const EdgeInsets.only(top: 4),
+                                              child: Wrap(
+                                                spacing: 8,
+                                                runSpacing: 4,
+                                                crossAxisAlignment: WrapCrossAlignment.center,
+                                                children: [
+                                                  Text(
+                                                    song.artist ?? 'Traditional',
+                                                    style: const TextStyle(
+                                                      fontSize: 13,
+                                                      color: SanctuaryColors.inkMuted,
                                                     ),
                                                   ),
-                                                  child: Text(
-                                                    'Key ${song.defaultKey}',
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      color:
-                                                          Colors.blue.shade800,
-                                                      fontWeight:
-                                                          FontWeight.bold,
+                                                  if (song.defaultKey != null)
+                                                    SanctuaryStatusBadge(
+                                                      label: 'Key ${song.defaultKey}',
+                                                      foregroundColor: SanctuaryColors.navy,
+                                                      backgroundColor: SanctuaryColors.navySoft,
                                                     ),
-                                                  ),
-                                                ),
-                                              if (song.tempoBpm != null) ...[
-                                                const SizedBox(width: 6),
-                                                Text(
-                                                  '${song.tempoBpm} BPM',
-                                                  style: const TextStyle(
-                                                    fontSize: 12,
-                                                    color: Colors.grey,
-                                                  ),
-                                                ),
-                                              ],
-                                              if (widget.canManageWorship) ...[
-                                                IconButton(
-                                                  key: Key(
-                                                    'editSongButton_${song.id}',
-                                                  ),
-                                                  icon: const Icon(
-                                                    Icons.edit_outlined,
-                                                    size: 20,
-                                                  ),
-                                                  tooltip: 'Edit Song',
-                                                  onPressed: () =>
-                                                      _openSongFormDialog(
-                                                    existingSong: song,
-                                                  ),
-                                                ),
-                                                IconButton(
-                                                  key: Key(
-                                                    'deleteSongButton_${song.id}',
-                                                  ),
-                                                  icon: const Icon(
-                                                    Icons.delete_outline,
-                                                    size: 20,
-                                                  ),
-                                                  tooltip: 'Delete Song',
-                                                  onPressed: () =>
-                                                      _confirmAndDeleteSong(
-                                                    song,
-                                                  ),
-                                                ),
-                                              ] else ...[
-                                                const SizedBox(width: 8),
-                                                const Icon(
-                                                  Icons.chevron_right,
-                                                  color: Colors.grey,
-                                                ),
-                                              ],
-                                            ],
+                                                  if (song.tempoBpm != null)
+                                                    Text(
+                                                      '${song.tempoBpm} BPM',
+                                                      style: const TextStyle(
+                                                        fontSize: 12,
+                                                        color: SanctuaryColors.inkMuted,
+                                                      ),
+                                                    ),
+                                                ],
+                                              ),
+                                            ),
+                                            trailing: widget.canManageWorship
+                                                ? Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      IconButton(
+                                                        key: Key('editSongButton_${song.id}'),
+                                                        icon: const Icon(Icons.edit_outlined, size: 20),
+                                                        tooltip: 'Edit Song',
+                                                        onPressed: () => _openSongFormDialog(existingSong: song),
+                                                      ),
+                                                      IconButton(
+                                                        key: Key('deleteSongButton_${song.id}'),
+                                                        icon: const Icon(Icons.delete_outline, size: 20),
+                                                        tooltip: 'Delete Song',
+                                                        onPressed: () => _confirmAndDeleteSong(song),
+                                                      ),
+                                                    ],
+                                                  )
+                                                : const Icon(Icons.chevron_right, color: SanctuaryColors.inkMuted),
+                                            onTap: () => _openSongDetail(song),
                                           ),
-                                          onTap: () => _openSongDetail(song),
                                         );
                                       },
                                     ),
@@ -1290,106 +1272,111 @@ class _WorshipScreenState extends State<WorshipScreen>
                               )
                             : ListView.builder(
                                 key: const Key('setlistsListView'),
+                                padding: const EdgeInsets.fromLTRB(12, 10, 12, 96),
                                 itemCount: _setlists.length,
                                 itemBuilder: (context, index) {
                                   final setlist = _setlists[index];
                                   final formattedDate =
                                       _formatDate(setlist.serviceDate);
                                   return Card(
-                                    margin: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 6,
-                                    ),
-                                    child: ListTile(
+                                    margin: const EdgeInsets.only(bottom: 10),
+                                    child: InkWell(
                                       key: Key('setlistItem_${setlist.id}'),
-                                      leading: CircleAvatar(
-                                        backgroundColor: Theme.of(context)
-                                            .colorScheme
-                                            .primaryContainer,
-                                        child: Icon(
-                                          Icons.calendar_month,
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .onPrimaryContainer,
-                                        ),
-                                      ),
-                                      title: Text(
-                                        setlist.title,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      subtitle: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          const SizedBox(height: 2),
-                                          Text('Service Date: $formattedDate'),
-                                          if (setlist.notes != null)
-                                            Text(
-                                              setlist.notes!,
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.black54,
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                      trailing: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 4,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: Colors.green.shade50,
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                            ),
-                                            child: Text(
-                                              '${setlist.effectiveItemCount} songs',
-                                              style: TextStyle(
-                                                color: Colors.green.shade800,
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          ),
-                                          if (widget.canManageWorship) ...[
-                                            IconButton(
-                                              key: Key(
-                                                'editSetlistButton_${setlist.id}',
-                                              ),
-                                              icon: const Icon(
-                                                Icons.edit_outlined,
-                                                size: 20,
-                                              ),
-                                              tooltip: 'Edit Setlist',
-                                              onPressed: () =>
-                                                  _openSetlistFormDialog(
-                                                existingSetlist: setlist,
-                                              ),
-                                            ),
-                                            IconButton(
-                                              key: Key(
-                                                'deleteSetlistButton_${setlist.id}',
-                                              ),
-                                              icon: const Icon(
-                                                Icons.delete_outline,
-                                                size: 20,
-                                              ),
-                                              tooltip: 'Delete Setlist',
-                                              onPressed: () =>
-                                                  _confirmAndDeleteSetlist(
-                                                setlist,
-                                              ),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
+                                      borderRadius: BorderRadius.circular(16),
                                       onTap: () => _openSetlistDetail(setlist),
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(14),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Container(
+                                                  width: 40,
+                                                  height: 40,
+                                                  decoration: BoxDecoration(
+                                                    color: SanctuaryColors.goldSoft,
+                                                    borderRadius: BorderRadius.circular(10),
+                                                  ),
+                                                  child: const Icon(
+                                                    Icons.calendar_month_outlined,
+                                                    color: SanctuaryColors.gold,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(
+                                                        setlist.title,
+                                                        style: const TextStyle(
+                                                          fontSize: 15,
+                                                          fontWeight: FontWeight.w700,
+                                                          color: SanctuaryColors.ink,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 2),
+                                                      Text(
+                                                        'Service Date: $formattedDate',
+                                                        style: const TextStyle(
+                                                          fontSize: 13,
+                                                          color: SanctuaryColors.inkMuted,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                SanctuaryStatusBadge(
+                                                  label: '${setlist.effectiveItemCount} songs',
+                                                  foregroundColor: SanctuaryColors.sage,
+                                                  backgroundColor: SanctuaryColors.sageSoft,
+                                                ),
+                                              ],
+                                            ),
+                                            if (setlist.notes != null || widget.canManageWorship) ...[
+                                              const SizedBox(height: 10),
+                                              Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: setlist.notes != null
+                                                        ? Text(
+                                                            setlist.notes!,
+                                                            maxLines: 2,
+                                                            overflow: TextOverflow.ellipsis,
+                                                            style: const TextStyle(
+                                                              fontSize: 12.5,
+                                                              color: SanctuaryColors.inkMuted,
+                                                            ),
+                                                          )
+                                                        : const SizedBox.shrink(),
+                                                  ),
+                                                  if (widget.canManageWorship) ...[
+                                                    IconButton(
+                                                      key: Key('editSetlistButton_${setlist.id}'),
+                                                      icon: const Icon(Icons.edit_outlined, size: 20),
+                                                      tooltip: 'Edit Setlist',
+                                                      visualDensity: VisualDensity.compact,
+                                                      onPressed: () => _openSetlistFormDialog(
+                                                        existingSetlist: setlist,
+                                                      ),
+                                                    ),
+                                                    IconButton(
+                                                      key: Key('deleteSetlistButton_${setlist.id}'),
+                                                      icon: const Icon(Icons.delete_outline, size: 20),
+                                                      tooltip: 'Delete Setlist',
+                                                      visualDensity: VisualDensity.compact,
+                                                      onPressed: () => _confirmAndDeleteSetlist(setlist),
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
                                     ),
                                   );
                                 },
