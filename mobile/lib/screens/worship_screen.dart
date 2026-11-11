@@ -378,7 +378,7 @@ class _WorshipScreenState extends State<WorshipScreen>
     }
   }
 
-  void _openSongDetail(SongItem song) {
+  void _openSongDetail(SongItem song, {bool isSetlistPreview = false}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -387,6 +387,7 @@ class _WorshipScreenState extends State<WorshipScreen>
       ),
       builder: (sheetContext) => _SongDetailSheet(
         song: song,
+        isSetlistPreview: isSetlistPreview,
         apiClient: widget.apiClient,
         canManageWorship: widget.canManageWorship,
         onEdit: widget.canManageWorship
@@ -418,7 +419,7 @@ class _WorshipScreenState extends State<WorshipScreen>
           setlist: setlist,
           apiClient: widget.apiClient,
           canManageWorship: widget.canManageWorship,
-          onSongTap: (songItem) => _openSongDetail(songItem),
+          onSongTap: (songItem, {isSetlistPreview = true}) => _openSongDetail(songItem, isSetlistPreview: isSetlistPreview),
           onSetlistLoaded: (loadedSetlist) {
             if (!mounted) return;
             setState(() {
@@ -599,22 +600,17 @@ class _WorshipScreenState extends State<WorshipScreen>
     final notesController =
         TextEditingController(text: existingSetlist?.notes ?? '');
 
-    final selectedSongIds = <String>[
+    final selectedItems = <SetlistSongInput>[
       if (existingSetlist != null)
-        ...existingSetlist.items.map((item) => item.songId),
+        ...existingSetlist.items.map(
+          (item) => SetlistSongInput(
+            songId: item.songId,
+            order: item.order,
+            keyOverride: item.keyOverride,
+            notes: item.notes,
+          ),
+        ),
     ];
-    final keyOverrides = <String, String>{
-      if (existingSetlist != null)
-        for (final item in existingSetlist.items)
-          if (item.keyOverride != null && item.keyOverride!.isNotEmpty)
-            item.songId: item.keyOverride!,
-    };
-    final itemNotes = <String, String>{
-      if (existingSetlist != null)
-        for (final item in existingSetlist.items)
-          if (item.notes != null && item.notes!.isNotEmpty)
-            item.songId: item.notes!,
-    };
 
     bool isLoadingDetail = existingSetlist != null && widget.apiClient != null;
     bool detailLoadStarted = false;
@@ -642,25 +638,17 @@ class _WorshipScreenState extends State<WorshipScreen>
               titleController.text = fetched.title;
               dateController.text = _formatDate(fetched.serviceDate);
               notesController.text = fetched.notes ?? '';
-              selectedSongIds
+              selectedItems
                 ..clear()
-                ..addAll(fetched.items.map((item) => item.songId));
-              keyOverrides
-                ..clear()
-                ..addEntries(
-                  fetched.items
-                      .where((item) =>
-                          item.keyOverride != null &&
-                          item.keyOverride!.isNotEmpty)
-                      .map((item) => MapEntry(item.songId, item.keyOverride!)),
-                );
-              itemNotes
-                ..clear()
-                ..addEntries(
-                  fetched.items
-                      .where((item) =>
-                          item.notes != null && item.notes!.isNotEmpty)
-                      .map((item) => MapEntry(item.songId, item.notes!)),
+                ..addAll(
+                  fetched.items.map(
+                    (item) => SetlistSongInput(
+                      songId: item.songId,
+                      order: item.order,
+                      keyOverride: item.keyOverride,
+                      notes: item.notes,
+                    ),
+                  ),
                 );
               setDialogState(() {
                 isLoadingDetail = false;
@@ -754,17 +742,22 @@ class _WorshipScreenState extends State<WorshipScreen>
                         subtitle: song.defaultKey != null
                             ? Text('Key ${song.defaultKey}')
                             : null,
-                        value: selectedSongIds.contains(song.id),
+                        value: selectedItems.any((item) => item.songId == song.id),
                         onChanged: formBlocked
                             ? null
                             : (checked) {
                                 setDialogState(() {
                                   if (checked == true) {
-                                    if (!selectedSongIds.contains(song.id)) {
-                                      selectedSongIds.add(song.id);
+                                    if (!selectedItems.any((item) => item.songId == song.id)) {
+                                      selectedItems.add(
+                                        SetlistSongInput(
+                                          songId: song.id,
+                                          order: selectedItems.length + 1,
+                                        ),
+                                      );
                                     }
                                   } else {
-                                    selectedSongIds.remove(song.id);
+                                    selectedItems.removeWhere((item) => item.songId == song.id);
                                   }
                                 });
                               },
@@ -795,21 +788,19 @@ class _WorshipScreenState extends State<WorshipScreen>
                     ? null
                     : () async {
                         if (titleController.text.trim().isEmpty) return;
-                        final parsedDate =
-                            DateTime.tryParse(dateController.text.trim()) ??
-                                defaultDate;
-                        final items = <SetlistSongInput>[];
-                        for (var i = 0; i < selectedSongIds.length; i++) {
-                          final songId = selectedSongIds[i];
-                          items.add(
+                        final parsedDate = SetlistInput.parseUtcCalendarDate(
+                          dateController.text,
+                          defaultDate,
+                        );
+                        final items = <SetlistSongInput>[
+                          for (var i = 0; i < selectedItems.length; i++)
                             SetlistSongInput(
-                              songId: songId,
+                              songId: selectedItems[i].songId,
                               order: i + 1,
-                              keyOverride: keyOverrides[songId],
-                              notes: itemNotes[songId],
+                              keyOverride: selectedItems[i].keyOverride,
+                              notes: selectedItems[i].notes,
                             ),
-                          );
-                        }
+                        ];
 
                         setState(() => _savingSetlist = true);
                         setDialogState(() => dialogError = null);
@@ -1285,6 +1276,7 @@ class _WorshipScreenState extends State<WorshipScreen>
 
 class _SongDetailSheet extends StatefulWidget {
   final SongItem song;
+  final bool isSetlistPreview;
   final WorshipApiClient? apiClient;
   final bool canManageWorship;
   final ValueChanged<SongItem>? onEdit;
@@ -1292,6 +1284,7 @@ class _SongDetailSheet extends StatefulWidget {
 
   const _SongDetailSheet({
     required this.song,
+    this.isSetlistPreview = false,
     this.apiClient,
     this.canManageWorship = false,
     this.onEdit,
@@ -1304,18 +1297,38 @@ class _SongDetailSheet extends StatefulWidget {
 
 class _SongDetailSheetState extends State<_SongDetailSheet> {
   late SongItem _song;
+  SongItem? _canonicalSong;
   bool _showChords = true;
   bool _loadingDetail = false;
+  bool _loadingCanonicalForEdit = false;
+  String? _editError;
 
   @override
   void initState() {
     super.initState();
     _song = widget.song;
     if (widget.apiClient != null &&
-        _song.lyrics.isEmpty &&
-        _song.chords.isEmpty) {
+        ((_song.lyrics.isEmpty && _song.chords.isEmpty) ||
+            widget.isSetlistPreview)) {
       _fetchSongDetail();
     }
+  }
+
+  SongItem _mergeSetlistDisplay(SongItem fetched) {
+    if (!widget.isSetlistPreview) {
+      return fetched;
+    }
+    return SongItem(
+      id: fetched.id,
+      churchId: fetched.churchId,
+      title: fetched.title,
+      artist: fetched.artist,
+      defaultKey: widget.song.defaultKey ?? fetched.defaultKey,
+      tempoBpm: fetched.tempoBpm,
+      lyrics: fetched.lyrics.isNotEmpty ? fetched.lyrics : _song.lyrics,
+      chords: fetched.chords.isNotEmpty ? fetched.chords : _song.chords,
+      createdAt: fetched.createdAt,
+    );
   }
 
   Future<void> _fetchSongDetail() async {
@@ -1325,14 +1338,48 @@ class _SongDetailSheetState extends State<_SongDetailSheet> {
     try {
       final fetched = await client.getSong(_song.id);
       if (!mounted) return;
+      _canonicalSong = fetched;
       setState(() {
-        _song = fetched;
+        _song = _mergeSetlistDisplay(fetched);
         _loadingDetail = false;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() => _loadingDetail = false);
     }
+  }
+
+  Future<void> _handleEditTap() async {
+    final onEdit = widget.onEdit;
+    if (onEdit == null) return;
+    SongItem targetSong = _canonicalSong ?? _song;
+    if (widget.isSetlistPreview && _canonicalSong == null) {
+      final client = widget.apiClient;
+      if (client == null) {
+        setState(() => _editError = 'Unable to load library song defaults.');
+        return;
+      }
+      setState(() {
+        _loadingCanonicalForEdit = true;
+        _editError = null;
+      });
+      try {
+        final fetched = await client.getSong(_song.id);
+        if (!mounted) return;
+        _canonicalSong = fetched;
+        targetSong = fetched;
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _loadingCanonicalForEdit = false;
+          _editError = 'Could not load library song defaults before editing.';
+        });
+        return;
+      }
+      setState(() => _loadingCanonicalForEdit = false);
+    }
+    if (!mounted) return;
+    onEdit(targetSong);
   }
 
   @override
@@ -1390,7 +1437,7 @@ class _SongDetailSheetState extends State<_SongDetailSheet> {
                       key: const Key('editSongDetailButton'),
                       icon: const Icon(Icons.edit_outlined),
                       tooltip: 'Edit Song',
-                      onPressed: () => widget.onEdit!(_song),
+                      onPressed: _loadingCanonicalForEdit ? null : _handleEditTap,
                     ),
                   if (widget.canManageWorship && widget.onDelete != null)
                     IconButton(
@@ -1432,6 +1479,17 @@ class _SongDetailSheetState extends State<_SongDetailSheet> {
                   ),
                 ],
               ),
+              if (_editError != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _editError!,
+                  key: const Key('songDetailEditErrorText'),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
               const Divider(height: 24),
               Expanded(
                 child: _loadingDetail
@@ -1474,7 +1532,7 @@ class _SetlistDetailScreen extends StatefulWidget {
   final SetlistItemData setlist;
   final WorshipApiClient? apiClient;
   final bool canManageWorship;
-  final ValueChanged<SongItem> onSongTap;
+  final void Function(SongItem song, {bool isSetlistPreview}) onSongTap;
   final ValueChanged<SetlistItemData>? onSetlistLoaded;
   final void Function(
     SetlistItemData currentSetlist,
@@ -1689,6 +1747,7 @@ class _SetlistDetailScreenState extends State<_SetlistDetailScreen> {
                                       lyrics: item.lyrics,
                                       chords: item.chords,
                                     ),
+                                    isSetlistPreview: true,
                                   );
                                 },
                               );

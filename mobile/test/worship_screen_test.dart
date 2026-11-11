@@ -11,6 +11,7 @@ class FakeWorshipApiClient implements WorshipApiClient {
   WorshipApiException? getSetlistsError;
   WorshipApiException? getSetlistDetailError;
   SetlistInput? lastUpdatedInput;
+  SongInput? lastUpdatedSongInput;
   WorshipApiException? mutationError;
 
   int getSongsCalls = 0;
@@ -71,6 +72,7 @@ class FakeWorshipApiClient implements WorshipApiClient {
   @override
   Future<SongItem> updateSong(String id, SongInput input) async {
     updateSongCalls++;
+    lastUpdatedSongInput = input;
     if (mutationError != null) throw mutationError!;
     final index = songs.indexWhere((s) => s.id == id);
     if (index == -1) {
@@ -624,6 +626,136 @@ void main() {
     expect(client.lastUpdatedInput!.items.first.songId, '1');
     expect(client.lastUpdatedInput!.items.first.keyOverride, 'A');
     expect(client.lastUpdatedInput!.items.first.notes, 'Acoustic intro');
+  });
+
+  testWidgets('Editing canonical song from a setlist override preserves library defaultKey', (tester) async {
+    final overrideSetlist = SetlistItemData(
+      id: 's-override',
+      title: 'Sunday Override Service',
+      serviceDate: DateTime.utc(2026, 11, 22),
+      items: [
+        SetlistSongItem(
+          songId: '1',
+          title: 'Amazing Grace',
+          artist: 'John Newton',
+          defaultKey: 'G',
+          keyOverride: 'A',
+          tempoBpm: 72,
+          lyrics: 'Amazing grace how sweet the sound',
+          chords: '[A] Amazing [D] grace',
+          order: 1,
+          notes: 'Modulate up',
+        ),
+      ],
+    );
+    final client = FakeWorshipApiClient(
+      songs: sampleSongs,
+      setlists: [overrideSetlist],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: WorshipScreen(
+          apiClient: client,
+          canManageWorship: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Sunday Setlists'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sunday Override Service'));
+    await tester.pumpAndSettle();
+
+    // Performance view shows override key A
+    expect(find.text('Key A'), findsOneWidget);
+    await tester.tap(find.text('Amazing Grace'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Key: A'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('editSongDetailButton')));
+    await tester.pumpAndSettle();
+
+    // Edit form must prefill canonical library defaultKey ('G'), not 'A'
+    final keyField = tester.widget<TextField>(find.byKey(const Key('addSongKeyField')));
+    expect(keyField.controller?.text, 'G');
+
+    await tester.enterText(find.byKey(const Key('addSongTitleField')), 'Amazing Grace (Hymnal)');
+    await tester.tap(find.byKey(const Key('saveSongButton')));
+    await tester.pumpAndSettle();
+
+    expect(client.updateSongCalls, 1);
+    expect(client.lastUpdatedSongInput!.defaultKey, 'G');
+  });
+
+  testWidgets('Editing setlist preserves distinct metadata across repeated song occurrences', (tester) async {
+    final repeatedSetlist = SetlistItemData(
+      id: 's-repeat',
+      title: 'Repeated Song Service',
+      serviceDate: DateTime.utc(2026, 11, 29),
+      itemCount: 2,
+      items: const [],
+    );
+    final repeatedDetail = SetlistItemData(
+      id: 's-repeat',
+      title: 'Repeated Song Service',
+      serviceDate: DateTime.utc(2026, 11, 29),
+      itemCount: 2,
+      items: [
+        SetlistSongItem(
+          songId: '1',
+          title: 'Amazing Grace',
+          defaultKey: 'G',
+          keyOverride: 'A',
+          lyrics: 'Verse 1',
+          chords: '[A]',
+          order: 1,
+          notes: 'Opening',
+        ),
+        SetlistSongItem(
+          songId: '1',
+          title: 'Amazing Grace',
+          defaultKey: 'G',
+          keyOverride: 'C',
+          lyrics: 'Chorus reprise',
+          chords: '[C]',
+          order: 2,
+          notes: 'Benediction reprise',
+        ),
+      ],
+    );
+    final client = _DetailSplitWorshipClient(
+      songs: sampleSongs,
+      summarySetlist: repeatedSetlist,
+      detailedSetlist: repeatedDetail,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: WorshipScreen(
+          apiClient: client,
+          canManageWorship: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Sunday Setlists'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('editSetlistButton_s-repeat')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(const Key('setlistTitleField')), 'Repeated Song Service v2');
+    await tester.tap(find.byKey(const Key('saveSetlistButton')));
+    await tester.pumpAndSettle();
+
+    expect(client.lastUpdatedInput, isNotNull);
+    expect(client.lastUpdatedInput!.items.length, 2);
+    expect(client.lastUpdatedInput!.items[0].keyOverride, 'A');
+    expect(client.lastUpdatedInput!.items[0].notes, 'Opening');
+    expect(client.lastUpdatedInput!.items[1].keyOverride, 'C');
+    expect(client.lastUpdatedInput!.items[1].notes, 'Benediction reprise');
   });
 }
 

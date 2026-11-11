@@ -452,6 +452,39 @@ class SetlistInput {
     this.items = const [],
   });
 
+  static DateTime parseUtcCalendarDate(String raw, DateTime fallback) {
+    final trimmed = raw.trim();
+    final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(trimmed);
+    if (match != null) {
+      final year = int.parse(match.group(1)!);
+      final month = int.parse(match.group(2)!);
+      final day = int.parse(match.group(3)!);
+      final candidate = DateTime.utc(year, month, day);
+      if (candidate.year == year &&
+          candidate.month == month &&
+          candidate.day == day) {
+        return candidate;
+      }
+      return DateTime.utc(fallback.year, fallback.month, fallback.day);
+    }
+    final parsed = DateTime.tryParse(trimmed);
+    if (parsed == null) {
+      return DateTime.utc(fallback.year, fallback.month, fallback.day);
+    }
+    return parsed.isUtc
+        ? parsed
+        : DateTime.utc(
+            parsed.year,
+            parsed.month,
+            parsed.day,
+            parsed.hour,
+            parsed.minute,
+            parsed.second,
+            parsed.millisecond,
+            parsed.microsecond,
+          );
+  }
+
   factory SetlistInput.fromJson(Map<String, dynamic> json) {
     final rawItems = json['items'];
     return SetlistInput(
@@ -471,9 +504,21 @@ class SetlistInput {
   }
 
   Map<String, dynamic> toJson() {
+    final utcDate = serviceDate.isUtc
+        ? serviceDate
+        : DateTime.utc(
+            serviceDate.year,
+            serviceDate.month,
+            serviceDate.day,
+            serviceDate.hour,
+            serviceDate.minute,
+            serviceDate.second,
+            serviceDate.millisecond,
+            serviceDate.microsecond,
+          );
     return {
       'title': title,
-      'serviceDate': serviceDate.toUtc().toIso8601String(),
+      'serviceDate': utcDate.toIso8601String(),
       'notes': notes,
       'items': items.map((i) => i.toJson()).toList(),
     };

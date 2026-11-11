@@ -145,6 +145,21 @@ void main() {
       expect(roundTrip.items.first.title, 'Amazing Grace');
       expect(roundTrip.items.first.effectiveKey, 'Ab');
     });
+
+    test('SetlistInput.parseUtcCalendarDate and toJson preserve calendar day in UTC', () {
+      final parsed = SetlistInput.parseUtcCalendarDate(
+        '2026-11-15',
+        DateTime.utc(2026, 1, 1),
+      );
+      expect(parsed.isUtc, isTrue);
+      expect(parsed, DateTime.utc(2026, 11, 15));
+
+      final localLikeInput = SetlistInput(
+        title: 'Morning Worship',
+        serviceDate: DateTime(2026, 11, 15),
+      );
+      expect(localLikeInput.toJson()['serviceDate'], '2026-11-15T00:00:00.000Z');
+    });
   });
 
   group('HttpWorshipApiClient', () {
