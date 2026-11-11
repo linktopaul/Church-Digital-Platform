@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/worship_models.dart';
 import '../services/worship_api_client.dart';
@@ -28,10 +29,12 @@ class _WorshipScreenState extends State<WorshipScreen>
   String _searchQuery = '';
 
   bool _loadingSongs = false;
+  bool _hasLoadedSongs = false;
   String? _songLoadError;
   bool _savingSong = false;
 
   bool _loadingSetlists = false;
+  bool _hasLoadedSetlists = false;
   String? _setlistLoadError;
   bool _savingSetlist = false;
 
@@ -53,6 +56,8 @@ class _WorshipScreenState extends State<WorshipScreen>
 
     _songs = List<SongItem>.from(widget.initialSongs ?? const []);
     _setlists = List<SetlistItemData>.from(widget.initialSetlists ?? const []);
+    _hasLoadedSongs = widget.initialSongs != null;
+    _hasLoadedSetlists = widget.initialSetlists != null;
 
     if (widget.apiClient != null) {
       if (widget.initialSongs == null) {
@@ -76,7 +81,9 @@ class _WorshipScreenState extends State<WorshipScreen>
       _songLoadError = null;
       _setlistLoadError = null;
       _loadingSongs = false;
+      _hasLoadedSongs = widget.initialSongs != null;
       _loadingSetlists = false;
+      _hasLoadedSetlists = widget.initialSetlists != null;
       _savingSong = false;
       _savingSetlist = false;
 
@@ -137,6 +144,7 @@ class _WorshipScreenState extends State<WorshipScreen>
       }
       setState(() {
         _songs = songs;
+        _hasLoadedSongs = true;
         _loadingSongs = false;
       });
     } catch (error) {
@@ -175,6 +183,7 @@ class _WorshipScreenState extends State<WorshipScreen>
       }
       setState(() {
         _setlists = setlists;
+        _hasLoadedSetlists = true;
         _loadingSetlists = false;
       });
     } catch (error) {
@@ -218,6 +227,7 @@ class _WorshipScreenState extends State<WorshipScreen>
       );
     }
 
+    final shouldReloadSongs = !_hasLoadedSongs || _loadingSongs;
     _songsLoadGeneration++;
     setState(() {
       _loadingSongs = false;
@@ -227,6 +237,9 @@ class _WorshipScreenState extends State<WorshipScreen>
         _songs = _songs.map((s) => s.id == saved.id ? saved : s).toList();
       }
     });
+    if (shouldReloadSongs) {
+      unawaited(_loadSongs());
+    }
     return saved;
   }
 
@@ -310,6 +323,7 @@ class _WorshipScreenState extends State<WorshipScreen>
       );
     }
 
+    final shouldReloadSetlists = !_hasLoadedSetlists || _loadingSetlists;
     _setlistsLoadGeneration++;
     setState(() {
       _loadingSetlists = false;
@@ -319,6 +333,9 @@ class _WorshipScreenState extends State<WorshipScreen>
         _setlists = _setlists.map((s) => s.id == saved.id ? saved : s).toList();
       }
     });
+    if (shouldReloadSetlists) {
+      unawaited(_loadSetlists());
+    }
     return saved;
   }
 
@@ -457,9 +474,13 @@ class _WorshipScreenState extends State<WorshipScreen>
     if (!widget.canManageWorship) return;
     final titleController = TextEditingController(text: existingSong?.title ?? '');
     final artistController = TextEditingController(text: existingSong?.artist ?? '');
-    final keyController = TextEditingController(text: existingSong?.defaultKey ?? 'G');
+    final keyController = TextEditingController(
+      text: existingSong == null ? 'G' : (existingSong.defaultKey ?? ''),
+    );
     final tempoController = TextEditingController(
-      text: existingSong?.tempoBpm?.toString() ?? '72',
+      text: existingSong == null
+          ? '72'
+          : (existingSong.tempoBpm?.toString() ?? ''),
     );
     final lyricsController = TextEditingController(text: existingSong?.lyrics ?? '');
     final chordsController = TextEditingController(text: existingSong?.chords ?? '');

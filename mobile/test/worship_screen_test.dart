@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:church_digital_platform_mobile/models/worship_models.dart';
@@ -757,6 +758,104 @@ void main() {
     expect(client.lastUpdatedInput!.items[1].keyOverride, 'C');
     expect(client.lastUpdatedInput!.items[1].notes, 'Benediction reprise');
   });
+
+  testWidgets('Editing song preserves absent defaultKey and tempoBpm as null', (tester) async {
+    final minimalSong = SongItem(
+      id: 'song-min',
+      title: 'Chorus Only',
+      artist: null,
+      defaultKey: null,
+      tempoBpm: null,
+      lyrics: 'Hallelujah',
+      chords: '',
+    );
+    final client = FakeWorshipApiClient(
+      songs: [minimalSong],
+      setlists: const [],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: WorshipScreen(
+          apiClient: client,
+          canManageWorship: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Chorus Only'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('editSongDetailButton')));
+    await tester.pumpAndSettle();
+
+    final keyField = tester.widget<TextField>(find.byKey(const Key('addSongKeyField')));
+    final tempoField = tester.widget<TextField>(find.byKey(const Key('addSongTempoField')));
+    expect(keyField.controller?.text, isEmpty);
+    expect(tempoField.controller?.text, isEmpty);
+
+    await tester.enterText(find.byKey(const Key('addSongTitleField')), 'Chorus Updated');
+    await tester.tap(find.byKey(const Key('saveSongButton')));
+    await tester.pumpAndSettle();
+
+    expect(client.updateSongCalls, 1);
+    expect(client.lastUpdatedSongInput!.defaultKey, isNull);
+    expect(client.lastUpdatedSongInput!.tempoBpm, isNull);
+  });
+
+  testWidgets('Creating song while initial fetch is pending reloads full library', (tester) async {
+    final firstLoadCompleter = Completer<List<SongItem>>();
+    final client = _DeferredFirstLoadWorshipClient(
+      firstLoadCompleter: firstLoadCompleter,
+      libraryAfterCreate: sampleSongs,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: WorshipScreen(
+          apiClient: client,
+          canManageWorship: true,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Open Add Song while initial getSongs() is still pending
+    await tester.tap(find.byKey(const Key('addSongFab')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    await tester.enterText(find.byKey(const Key('addSongTitleField')), 'New Praise Song');
+    await tester.tap(find.byKey(const Key('saveSongButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Release stale initial fetch; second reload should populate existing library + created song
+    firstLoadCompleter.complete(const []);
+    await tester.pumpAndSettle();
+
+    expect(client.getSongsCalls, greaterThanOrEqualTo(2));
+    expect(find.text('New Praise Song'), findsOneWidget);
+    expect(find.text('Amazing Grace'), findsOneWidget);
+  });
+}
+
+class _DeferredFirstLoadWorshipClient extends FakeWorshipApiClient {
+  final Completer<List<SongItem>> firstLoadCompleter;
+
+  _DeferredFirstLoadWorshipClient({
+    required this.firstLoadCompleter,
+    required List<SongItem> libraryAfterCreate,
+  }) : super(songs: libraryAfterCreate, setlists: const []);
+
+  @override
+  Future<List<SongItem>> getSongs() async {
+    getSongsCalls++;
+    if (getSongsCalls == 1) {
+      return firstLoadCompleter.future;
+    }
+    return List<SongItem>.from(songs);
+  }
 }
 
 class _DetailSplitWorshipClient extends FakeWorshipApiClient {
