@@ -91,6 +91,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   bool _isSigningIn = false;
   bool _lastFailureWasSignIn = false;
   int _authInitGeneration = 0;
+  int _signInGeneration = 0;
 
   HttpFellowshipApiClient? _cachedFellowshipClient;
   HttpPrayerApiClient? _cachedPrayerClient;
@@ -146,6 +147,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     _authErrorMessage = null;
     _isSigningIn = false;
     _lastFailureWasSignIn = false;
+    _signInGeneration++;
 
     if (widget.authService == null) {
       try {
@@ -174,10 +176,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         if (session != null || wasAuthenticated) {
           _authInitGeneration++;
           _isInitializingSession = false;
+          _isSigningIn = false;
           _authErrorMessage = null;
         }
         _currentSession = session;
         if (wasAuthenticated && !_isAuthenticated) {
+          _signInGeneration++;
           _selectedIndex = 0;
         }
         _updateClients();
@@ -246,7 +250,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       return;
     }
 
-    final generation = ++_authInitGeneration;
+    final generation = ++_signInGeneration;
     _lastFailureWasSignIn = true;
     setState(() {
       _isSigningIn = true;
@@ -268,7 +272,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         }
       }
       if (!mounted ||
-          generation != _authInitGeneration ||
+          generation != _signInGeneration ||
           !identical(authService, _effectiveAuthService)) {
         return;
       }
@@ -278,7 +282,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         _updateClients();
       });
     } catch (error) {
-      if (!mounted || !identical(authService, _effectiveAuthService)) {
+      if (!mounted ||
+          generation != _signInGeneration ||
+          !identical(authService, _effectiveAuthService)) {
         return;
       }
       setState(() {

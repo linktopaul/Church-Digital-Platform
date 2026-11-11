@@ -416,6 +416,95 @@ void main() {
         }
       },
     );
+
+    testWidgets(
+      'supports full interactive Sign-In -> Sign-Out -> Sign-In cycle without leaving Sign-In button busy',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        try {
+          final oidcConfig = _testOidcConfig();
+          final storage = InMemorySecureTokenStorage();
+
+          final provider = OpenIddictAuthProvider(
+            configuration: oidcConfig,
+            storage: storage,
+            appAuth: _FakeAppAuth(),
+            httpClient: MockClient((request) async {
+              if (request.url.path.endsWith('openid-configuration')) {
+                return http.Response(
+                  jsonEncode({
+                    'issuer': oidcConfig.issuer.toString(),
+                    'code_challenge_methods_supported': ['S256'],
+                    'authorization_endpoint':
+                        '${oidcConfig.issuer}/connect/authorize',
+                    'token_endpoint': '${oidcConfig.issuer}/connect/token',
+                    'userinfo_endpoint': '${oidcConfig.issuer}/connect/userinfo',
+                    'revocation_endpoint': '${oidcConfig.issuer}/connect/revocation',
+                  }),
+                  200,
+                );
+              }
+              if (request.url.path.endsWith('userinfo')) {
+                return http.Response(
+                  jsonEncode({
+                    'sub': 'sub-1',
+                    'member_id': 'member-1',
+                    'tenant_id': 'tenant-1',
+                    'roles': ['Member'],
+                    'email': 'member@church.test',
+                    'name': 'Test Member',
+                  }),
+                  200,
+                );
+              }
+              if (request.url.path.endsWith('revocation')) {
+                return http.Response('', 200);
+              }
+              throw StateError('Unexpected URL ${request.url}');
+            }),
+          );
+          addTearDown(provider.close);
+
+          final manager = AuthSessionManager(provider: provider, storage: storage);
+          addTearDown(manager.dispose);
+
+          await tester.pumpWidget(ChurchMobileApp(authService: manager));
+          await tester.pump();
+
+          // First interactive Sign-In
+          await tester.tap(find.byKey(const Key('sign_in_button')));
+          await tester.pump();
+          await tester.pump();
+
+          expect(find.byType(NavigationBar), findsOneWidget);
+          expect(find.text('Sign In Required'), findsNothing);
+
+          // Sign out back to gate
+          await tester.tap(find.byKey(const Key('app_bar_sign_out_button')));
+          await tester.pumpAndSettle();
+
+          expect(find.byType(NavigationBar), findsNothing);
+          expect(find.text('Sign In Required'), findsOneWidget);
+          expect(find.text('Signing In...'), findsNothing);
+          expect(find.text('Sign In'), findsOneWidget);
+
+          final signInButton = tester.widget<FilledButton>(
+            find.byKey(const Key('sign_in_button')),
+          );
+          expect(signInButton.onPressed, isNotNull);
+
+          // Second interactive Sign-In succeeds cleanly
+          await tester.tap(find.byKey(const Key('sign_in_button')));
+          await tester.pump();
+          await tester.pump();
+
+          expect(find.byType(NavigationBar), findsOneWidget);
+          expect(find.text('Sign In Required'), findsNothing);
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      },
+    );
   });
 
   group('Authenticated navigation, session switch, Sign-Out & WorshipScreen wiring', () {
