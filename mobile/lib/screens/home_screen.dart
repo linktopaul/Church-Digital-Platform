@@ -71,7 +71,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _handlePublish(CreateAnnouncementInput input) async {
-    if (widget.announcementClient == null) return;
+    if (widget.announcementClient == null) {
+      throw StateError('Announcement client is not initialized.');
+    }
     await widget.announcementClient!.publishAnnouncement(input);
   }
 
