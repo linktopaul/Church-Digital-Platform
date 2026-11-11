@@ -838,6 +838,102 @@ void main() {
     expect(find.text('New Praise Song'), findsOneWidget);
     expect(find.text('Amazing Grace'), findsOneWidget);
   });
+
+  testWidgets('Switching apiClient while Add Song dialog is open blocks saving into new tenant',
+      (tester) async {
+    final clientA = FakeWorshipApiClient(songs: const [], setlists: const []);
+    final clientB = FakeWorshipApiClient(songs: const [], setlists: const []);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: WorshipScreen(
+          apiClient: clientA,
+          canManageWorship: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('addSongFab')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('addSongTitleField')), 'Tenant A Draft Song');
+
+    // Simulate tenant/session switch while dialog remains open
+    await tester.pumpWidget(
+      MaterialApp(
+        home: WorshipScreen(
+          apiClient: clientB,
+          canManageWorship: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('saveSongButton')));
+    await tester.pumpAndSettle();
+
+    expect(clientA.createSongCalls, 0);
+    expect(clientB.createSongCalls, 0);
+    expect(find.byKey(const Key('songFormErrorText')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.textContaining('Session changed while editor was open'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Switching apiClient while Add Setlist dialog is open blocks saving into new tenant',
+      (tester) async {
+    final clientA = FakeWorshipApiClient(songs: const [], setlists: const []);
+    final clientB = FakeWorshipApiClient(songs: const [], setlists: const []);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: WorshipScreen(
+          apiClient: clientA,
+          canManageWorship: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Sunday Setlists'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('addSetlistFab')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('setlistTitleField')),
+      'Tenant A Service',
+    );
+
+    // Simulate tenant/session switch while dialog remains open
+    await tester.pumpWidget(
+      MaterialApp(
+        home: WorshipScreen(
+          apiClient: clientB,
+          canManageWorship: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('saveSetlistButton')));
+    await tester.pumpAndSettle();
+
+    expect(clientA.createSetlistCalls, 0);
+    expect(clientB.createSetlistCalls, 0);
+    expect(find.byKey(const Key('setlistFormErrorText')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.textContaining('Session changed while editor was open'),
+      ),
+      findsOneWidget,
+    );
+  });
 }
 
 class _DeferredFirstLoadWorshipClient extends FakeWorshipApiClient {

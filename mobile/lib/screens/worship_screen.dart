@@ -203,9 +203,20 @@ class _WorshipScreenState extends State<WorshipScreen>
   Future<SongItem> _saveSong({
     SongItem? existingSong,
     required SongInput input,
+    WorshipApiClient? expectedClient,
+    int? expectedSession,
   }) async {
     final client = widget.apiClient;
     final capturedSession = _sessionGeneration;
+
+    if ((expectedSession != null && expectedSession != _sessionGeneration) ||
+        (expectedSession != null && !identical(expectedClient, client)) ||
+        !widget.canManageWorship) {
+      throw const WorshipApiException(
+        'Session changed while editor was open. Please reopen and try again.',
+        statusCode: 401,
+      );
+    }
 
     if (client == null) {
       throw const WorshipApiException(
@@ -267,7 +278,13 @@ class _WorshipScreenState extends State<WorshipScreen>
       ),
     );
 
-    if (confirmed != true || !mounted) return;
+    if (confirmed != true ||
+        !mounted ||
+        capturedSession != _sessionGeneration ||
+        !identical(widget.apiClient, client) ||
+        !widget.canManageWorship) {
+      return;
+    }
 
     try {
       await client.deleteSong(song.id);
@@ -299,9 +316,20 @@ class _WorshipScreenState extends State<WorshipScreen>
   Future<SetlistItemData> _saveSetlist({
     SetlistItemData? existingSetlist,
     required SetlistInput input,
+    WorshipApiClient? expectedClient,
+    int? expectedSession,
   }) async {
     final client = widget.apiClient;
     final capturedSession = _sessionGeneration;
+
+    if ((expectedSession != null && expectedSession != _sessionGeneration) ||
+        (expectedSession != null && !identical(expectedClient, client)) ||
+        !widget.canManageWorship) {
+      throw const WorshipApiException(
+        'Session changed while editor was open. Please reopen and try again.',
+        statusCode: 401,
+      );
+    }
 
     if (client == null) {
       throw const WorshipApiException(
@@ -366,7 +394,13 @@ class _WorshipScreenState extends State<WorshipScreen>
       ),
     );
 
-    if (confirmed != true || !mounted) return;
+    if (confirmed != true ||
+        !mounted ||
+        capturedSession != _sessionGeneration ||
+        !identical(widget.apiClient, client) ||
+        !widget.canManageWorship) {
+      return;
+    }
 
     try {
       await client.deleteSetlist(setlist.id);
@@ -430,15 +464,21 @@ class _WorshipScreenState extends State<WorshipScreen>
   }
 
   void _openSetlistDetail(SetlistItemData setlist) {
+    final capturedClient = widget.apiClient;
+    final capturedSession = _sessionGeneration;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (routeContext) => _SetlistDetailScreen(
           setlist: setlist,
-          apiClient: widget.apiClient,
+          apiClient: capturedClient,
           canManageWorship: widget.canManageWorship,
           onSongTap: (songItem, {isSetlistPreview = true}) => _openSongDetail(songItem, isSetlistPreview: isSetlistPreview),
           onSetlistLoaded: (loadedSetlist) {
-            if (!mounted) return;
+            if (!mounted ||
+                capturedSession != _sessionGeneration ||
+                !identical(widget.apiClient, capturedClient)) {
+              return;
+            }
             setState(() {
               _setlists = _setlists
                   .map((s) => s.id == loadedSetlist.id ? loadedSetlist : s)
@@ -472,6 +512,8 @@ class _WorshipScreenState extends State<WorshipScreen>
 
   void _openSongFormDialog({SongItem? existingSong}) {
     if (!widget.canManageWorship) return;
+    final capturedClient = widget.apiClient;
+    final capturedSession = _sessionGeneration;
     final titleController = TextEditingController(text: existingSong?.title ?? '');
     final artistController = TextEditingController(text: existingSong?.artist ?? '');
     final keyController = TextEditingController(
@@ -567,6 +609,8 @@ class _WorshipScreenState extends State<WorshipScreen>
                       try {
                         await _saveSong(
                           existingSong: existingSong,
+                          expectedClient: capturedClient,
+                          expectedSession: capturedSession,
                           input: SongInput(
                             title: titleController.text.trim(),
                             artist: artistController.text.trim().isEmpty
@@ -611,6 +655,8 @@ class _WorshipScreenState extends State<WorshipScreen>
     ValueChanged<SetlistItemData>? onSaved,
   }) {
     if (!widget.canManageWorship) return;
+    final capturedClient = widget.apiClient;
+    final capturedSession = _sessionGeneration;
     var activeExisting = existingSetlist;
     var defaultDate = existingSetlist?.serviceDate ??
         DateTime.now().toUtc().add(const Duration(days: 2));
@@ -645,6 +691,17 @@ class _WorshipScreenState extends State<WorshipScreen>
           Future<void> loadSetlistDetail() async {
             final client = widget.apiClient;
             if (existingSetlist == null || client == null) return;
+            if (capturedSession != _sessionGeneration ||
+                !identical(client, capturedClient)) {
+              if (dialogContext.mounted) {
+                setDialogState(() {
+                  isLoadingDetail = false;
+                  detailLoadError =
+                      'Session changed while editor was open. Please reopen and try again.';
+                });
+              }
+              return;
+            }
             if (dialogContext.mounted) {
               setDialogState(() {
                 isLoadingDetail = true;
@@ -653,7 +710,12 @@ class _WorshipScreenState extends State<WorshipScreen>
             }
             try {
               final fetched = await client.getSetlist(existingSetlist.id);
-              if (!dialogContext.mounted) return;
+              if (!dialogContext.mounted ||
+                  !mounted ||
+                  capturedSession != _sessionGeneration ||
+                  !identical(widget.apiClient, capturedClient)) {
+                return;
+              }
               activeExisting = fetched;
               defaultDate = fetched.serviceDate;
               titleController.text = fetched.title;
@@ -676,7 +738,12 @@ class _WorshipScreenState extends State<WorshipScreen>
                 detailLoadError = null;
               });
             } catch (error) {
-              if (!dialogContext.mounted) return;
+              if (!dialogContext.mounted ||
+                  !mounted ||
+                  capturedSession != _sessionGeneration ||
+                  !identical(widget.apiClient, capturedClient)) {
+                return;
+              }
               setDialogState(() {
                 isLoadingDetail = false;
                 detailLoadError = _formatError(error);
@@ -828,6 +895,8 @@ class _WorshipScreenState extends State<WorshipScreen>
                         try {
                           final saved = await _saveSetlist(
                             existingSetlist: activeExisting,
+                            expectedClient: capturedClient,
+                            expectedSession: capturedSession,
                             input: SetlistInput(
                               title: titleController.text.trim(),
                               serviceDate: parsedDate,
