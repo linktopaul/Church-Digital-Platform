@@ -19,6 +19,7 @@ import 'services/member_api_client.dart';
 import 'services/offering_api_client.dart';
 import 'services/prayer_api_client.dart';
 import 'services/worship_api_client.dart';
+import 'theme/app_theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,12 +45,7 @@ class ChurchMobileApp extends StatelessWidget {
     return MaterialApp(
       title: 'Church Digital Platform',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF385A80),
-        ),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.light(),
       home: MainNavigationScreen(
         authService: authService,
         oidcConfiguration: oidcConfiguration,
@@ -536,199 +532,246 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Church Digital Platform'),
-      ),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
-            child: Card(
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(color: colorScheme.outlineVariant),
+        title: const Row(
+          children: [
+            Icon(Icons.church_outlined, color: SanctuaryColors.navy, size: 22),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Church Digital Platform',
+                overflow: TextOverflow.ellipsis,
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.lock_outline,
-                      size: 40,
-                      color: colorScheme.primary,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Sign In Required',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Sign in with your church member account to access announcements, fellowship messages, confidential prayer, worship setlists, and the member directory.',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.campaign_outlined,
-                          size: 18,
-                          color: colorScheme.primary,
-                        ),
-                        const SizedBox(width: 4),
-                        Text('Announcements', style: theme.textTheme.labelSmall),
-                        const SizedBox(width: 12),
-                        Icon(
-                          Icons.favorite_border,
-                          size: 18,
-                          color: colorScheme.primary,
-                        ),
-                        const SizedBox(width: 4),
-                        Text('Prayer', style: theme.textTheme.labelSmall),
-                        const SizedBox(width: 12),
-                        Icon(
-                          Icons.library_music_outlined,
-                          size: 18,
-                          color: colorScheme.primary,
-                        ),
-                        const SizedBox(width: 4),
-                        Text('Worship', style: theme.textTheme.labelSmall),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Container(
-                      key: const Key('auth_discovery_status'),
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Server: $_effectiveBaseUrl',
-                            style: theme.textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(22),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 68,
+                        height: 68,
+                        decoration: BoxDecoration(
+                          color: SanctuaryColors.navySoft,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: SanctuaryColors.gold.withValues(alpha: 0.45),
+                            width: 1.5,
                           ),
-                          const SizedBox(height: 2),
-                          if (oidcConfig != null) ...[
-                            Text(
-                              'Identity Provider: ${oidcConfig.issuer}',
-                              style: theme.textTheme.bodySmall,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Discovery: ${oidcConfig.discoveryUri}',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ] else if (_effectiveAuthService != null) ...[
-                            Text(
-                              'Identity Provider: Configured',
-                              style: theme.textTheme.bodySmall,
-                            ),
-                          ] else ...[
-                            Text(
-                              'Identity Provider: Not configured',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                            if (_configErrorMessage != null) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                _configErrorMessage!,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ],
+                        ),
+                        child: const Icon(
+                          Icons.lock_outline,
+                          size: 32,
+                          color: SanctuaryColors.navy,
+                        ),
                       ),
-                    ),
-                    if (_isInitializingSession) ...[
-                      const SizedBox(height: 12),
-                      const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          key: Key('session_restoration_spinner'),
-                          strokeWidth: 2.5,
+                      const SizedBox(height: 14),
+                      Text(
+                        'Sign In Required',
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: SanctuaryColors.ink,
                         ),
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Restoring session...',
-                        style: theme.textTheme.bodySmall,
+                        'Sign in with your church member account to access announcements, fellowship messages, confidential prayer, worship setlists, and the member directory.',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: SanctuaryColors.inkMuted,
+                          height: 1.4,
+                        ),
                       ),
-                    ],
-                    if (_authErrorMessage != null) ...[
-                      const SizedBox(height: 10),
-                      Container(
-                        key: const Key('auth_error_banner'),
+                      const SizedBox(height: 14),
+                      const Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        alignment: WrapAlignment.center,
+                        children: [
+                          SanctuaryStatusBadge(
+                            label: 'Announcements',
+                            icon: Icons.campaign_outlined,
+                            foregroundColor: SanctuaryColors.navy,
+                            backgroundColor: SanctuaryColors.navySoft,
+                          ),
+                          SanctuaryStatusBadge(
+                            label: 'Prayer',
+                            icon: Icons.favorite_border,
+                            foregroundColor: SanctuaryColors.plum,
+                            backgroundColor: SanctuaryColors.plumSoft,
+                          ),
+                          SanctuaryStatusBadge(
+                            label: 'Worship',
+                            icon: Icons.library_music_outlined,
+                            foregroundColor: SanctuaryColors.gold,
+                            backgroundColor: SanctuaryColors.goldSoft,
+                          ),
+                        ],
+                      ),
+                      if (_isInitializingSession) ...[
+                        const SizedBox(height: 16),
+                        const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            key: Key('session_restoration_spinner'),
+                            strokeWidth: 2.5,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Restoring session...',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: SanctuaryColors.inkMuted,
+                          ),
+                        ),
+                      ],
+                      if (_authErrorMessage != null) ...[
+                        const SizedBox(height: 14),
+                        Container(
+                          key: const Key('auth_error_banner'),
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: colorScheme.errorContainer,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    Icons.error_outline,
+                                    color: colorScheme.onErrorContainer,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _authErrorMessage!,
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: colorScheme.onErrorContainer,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: OutlinedButton.icon(
+                                  key: const Key('retry_auth_button'),
+                                  onPressed: isBusy ? null : _retryAuth,
+                                  icon: const Icon(Icons.refresh, size: 16),
+                                  label: const Text('Retry'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 18),
+                      SizedBox(
                         width: double.infinity,
-                        padding: const EdgeInsets.all(10),
+                        child: FilledButton.icon(
+                          key: const Key('sign_in_button'),
+                          onPressed: isBusy ? null : _handleSignIn,
+                          icon: const Icon(Icons.login),
+                          label: Text(_isSigningIn ? 'Signing In...' : 'Sign In'),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Container(
+                        key: const Key('auth_discovery_status'),
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
                         decoration: BoxDecoration(
-                          color: colorScheme.errorContainer,
+                          color: SanctuaryColors.stone,
                           borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: SanctuaryColors.borderSoft),
                         ),
                         child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Icon(
-                                  Icons.error_outline,
-                                  color: colorScheme.onErrorContainer,
-                                  size: 18,
+                                const Icon(
+                                  Icons.verified_user_outlined,
+                                  size: 14,
+                                  color: SanctuaryColors.inkMuted,
                                 ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    _authErrorMessage!,
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: colorScheme.onErrorContainer,
-                                    ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Secure Church Connection',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: SanctuaryColors.inkMuted,
                                   ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 6),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: OutlinedButton.icon(
-                                key: const Key('retry_auth_button'),
-                                onPressed: isBusy ? null : _retryAuth,
-                                icon: const Icon(Icons.refresh, size: 16),
-                                label: const Text('Retry'),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Server: $_effectiveBaseUrl',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: SanctuaryColors.inkMuted,
                               ),
                             ),
+                            if (oidcConfig != null) ...[
+                              Text(
+                                'Identity Provider: ${oidcConfig.issuer}',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: SanctuaryColors.inkMuted,
+                                ),
+                              ),
+                              Text(
+                                'Discovery: ${oidcConfig.discoveryUri}',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: SanctuaryColors.inkMuted.withValues(alpha: 0.85),
+                                ),
+                              ),
+                            ] else if (_effectiveAuthService != null) ...[
+                              Text(
+                                'Identity Provider: Configured',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: SanctuaryColors.inkMuted,
+                                ),
+                              ),
+                            ] else ...[
+                              Text(
+                                'Identity Provider: Not configured',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: SanctuaryColors.inkMuted,
+                                ),
+                              ),
+                              if (_configErrorMessage != null) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  _configErrorMessage!,
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: SanctuaryColors.inkMuted,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ],
                         ),
                       ),
                     ],
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        key: const Key('sign_in_button'),
-                        onPressed: isBusy ? null : _handleSignIn,
-                        icon: const Icon(Icons.login),
-                        label: Text(_isSigningIn ? 'Signing In...' : 'Sign In'),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -768,38 +811,45 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             ),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) {
-          setState(() => _selectedIndex = index);
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Home',
+      bottomNavigationBar: Container(
+        decoration: const BoxDecoration(
+          border: Border(
+            top: BorderSide(color: SanctuaryColors.borderSoft, width: 1),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.chat_bubble_outline),
-            selectedIcon: Icon(Icons.chat_bubble),
-            label: 'Messages',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.favorite_border),
-            selectedIcon: Icon(Icons.favorite),
-            label: 'Prayer',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.music_note_outlined),
-            selectedIcon: Icon(Icons.music_note),
-            label: 'Worship',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-        ],
+        ),
+        child: NavigationBar(
+          selectedIndex: _selectedIndex,
+          onDestinationSelected: (index) {
+            setState(() => _selectedIndex = index);
+          },
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home),
+              label: 'Home',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.chat_bubble_outline),
+              selectedIcon: Icon(Icons.chat_bubble),
+              label: 'Messages',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.favorite_border),
+              selectedIcon: Icon(Icons.favorite),
+              label: 'Prayer',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.music_note_outlined),
+              selectedIcon: Icon(Icons.music_note),
+              label: 'Worship',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.person_outline),
+              selectedIcon: Icon(Icons.person),
+              label: 'Profile',
+            ),
+          ],
+        ),
       ),
     );
   }
