@@ -24,7 +24,12 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        manifestPlaceholders["appAuthRedirectScheme"] = "com.church.app"
+        val redirectScheme = (project.findProperty("appAuthRedirectScheme") as String?)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: System.getenv("CHURCH_AUTH_REDIRECT_SCHEME")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "com.church.app"
+        manifestPlaceholders["appAuthRedirectScheme"] = redirectScheme
     }
 
     buildTypes {
