@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'auth_provider.dart';
 import 'auth_session.dart';
+import 'oidc_configuration.dart';
+import 'openiddict_auth_provider.dart';
+import 'platform_secure_token_storage.dart';
 import 'secure_token_storage.dart';
 
 /// Defines the contract for managing authentication lifecycle within the Flutter app.
@@ -43,6 +46,7 @@ abstract class AuthService {
 class AuthSessionManager implements AuthService {
   final AuthProvider _provider;
   final SecureTokenStorage _storage;
+  final bool _ownsProvider;
   final _sessionController = StreamController<AuthSession?>.broadcast();
   AuthSession? _currentSession;
   AuthSession? _pendingRotatedSession;
@@ -54,8 +58,64 @@ class AuthSessionManager implements AuthService {
   Future<AuthSession>? _refreshing;
   Future<void> _storageTail = Future<void>.value();
 
-  AuthSessionManager({required AuthProvider provider, required SecureTokenStorage storage})
-      : _provider = provider, _storage = storage;
+  AuthSessionManager({
+    required AuthProvider provider,
+    required SecureTokenStorage storage,
+    bool ownsProvider = false,
+  })  : _provider = provider,
+        _storage = storage,
+        _ownsProvider = ownsProvider;
+
+  /// Creates the default production [AuthSessionManager] wired with
+  /// [OpenIddictAuthProvider] and [PlatformSecureTokenStorage].
+  factory AuthSessionManager.production({
+    OidcConfiguration? configuration,
+  }) {
+    final resolvedConfig = configuration ?? OidcConfiguration.fromEnvironment();
+    final storage = PlatformSecureTokenStorage(configuration: resolvedConfig);
+    final provider = OpenIddictAuthProvider(
+      configuration: resolvedConfig,
+      storage: storage,
+    );
+    return AuthSessionManager(
+      provider: provider,
+      storage: storage,
+      ownsProvider: true,
+    );
+  }
+
+  /// Exposes the underlying [AuthProvider].
+  AuthProvider get provider => _provider;
+
+  /// Exposes the underlying [SecureTokenStorage].
+  SecureTokenStorage get storage => _storage;
+
+  /// Returns the active [OidcConfiguration] when backed by [OpenIddictAuthProvider].
+  OidcConfiguration? get oidcConfiguration {
+    final provider = _provider;
+    if (provider is OpenIddictAuthProvider) {
+      return provider.configuration;
+    }
+    return null;
+  }
+
+  /// Indicates whether the underlying provider supports interactive native OIDC sign-in.
+  bool get supportsInteractiveSignIn => _provider is OpenIddictAuthProvider;
+
+  /// Launches the interactive OIDC Authorization Code + PKCE sign-in flow
+  /// when backed by [OpenIddictAuthProvider].
+  Future<AuthSession> signInInteractively() {
+    if (_disposed) {
+      return Future.error(StateError('Authentication service is disposed'));
+    }
+    final provider = _provider;
+    if (provider is OpenIddictAuthProvider) {
+      return provider.authorizeAndSignIn(this);
+    }
+    return Future.error(
+      UnsupportedError('Configured authentication provider does not support interactive OIDC sign-in'),
+    );
+  }
 
   @override
   Stream<AuthSession?> get sessionStateStream => _sessionController.stream;
@@ -240,12 +300,16 @@ class AuthSessionManager implements AuthService {
 
   @override
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
     ++_generation;
     _pendingRotatedSession = null;
     _identity = Object();
     if (_provider is CancelableAuthProvider) {
       (_provider as CancelableAuthProvider).cancelPendingAuthorization();
+    }
+    if (_ownsProvider && _provider is OpenIddictAuthProvider) {
+      _provider.close();
     }
     _sessionController.close();
   }
