@@ -114,6 +114,7 @@ public sealed class JwtTokenService : IDisposable
             ? configured
             : new[]
             {
+                "com.church.app:/oauthredirect",
                 "com.church.app://oauthredirect",
                 "http://localhost/callback",
                 "https://localhost/callback"

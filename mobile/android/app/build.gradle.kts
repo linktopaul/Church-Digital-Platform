@@ -1,0 +1,52 @@
+plugins {
+    id("com.android.application")
+    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    id("dev.flutter.flutter-gradle-plugin")
+}
+
+android {
+    namespace = "com.church.church_digital_platform_mobile"
+    compileSdk = flutter.compileSdkVersion
+    ndkVersion = flutter.ndkVersion
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    defaultConfig {
+        applicationId = "com.church.app"
+        minSdk = maxOf(flutter.minSdkVersion, 24)
+        targetSdk = flutter.targetSdkVersion
+        // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
+        // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
+        // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
+        // flag during build.
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+        val redirectScheme = (project.findProperty("appAuthRedirectScheme") as String?)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: System.getenv("CHURCH_AUTH_REDIRECT_SCHEME")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "com.church.app"
+        manifestPlaceholders["appAuthRedirectScheme"] = redirectScheme
+    }
+
+    buildTypes {
+        release {
+            // Signing with the debug keys as fallback until production keystore secrets are configured,
+            // so `flutter build apk --release` outputs an installable APK in CI.
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+
+flutter {
+    source = "../.."
+}

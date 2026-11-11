@@ -9,6 +9,32 @@ on:
       - "mobile/**"
       - ".github/workflows/flutter-mobile-ci.yml"
   workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: "Backend API base URL (CHURCH_API_BASE_URL, e.g. https://api.church.example.com)"
+        required: false
+        default: ""
+        type: string
+      auth_issuer:
+        description: "OIDC issuer HTTPS URL (CHURCH_AUTH_ISSUER; defaults to vars.CHURCH_AUTH_ISSUER or HTTPS api_base_url)"
+        required: false
+        default: ""
+        type: string
+      auth_client_id:
+        description: "OIDC public client ID (CHURCH_AUTH_CLIENT_ID)"
+        required: false
+        default: ""
+        type: string
+      auth_redirect_uri:
+        description: "OIDC redirect URI (CHURCH_AUTH_REDIRECT_URI)"
+        required: false
+        default: ""
+        type: string
+      auth_scopes:
+        description: "Space-separated OIDC scopes (CHURCH_AUTH_SCOPES)"
+        required: false
+        default: ""
+        type: string
 
 concurrency:
   group: flutter-pr-${{ github.event.pull_request.number || github.ref }}
@@ -42,3 +68,159 @@ jobs:
 
       - name: Run tests
         run: flutter test
+
+  android-apk-verify:
+    name: Android APK compile check
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect Android or CI workflow changes
+        id: changes
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          if git diff --name-only "${BASE_SHA}" HEAD -- | grep -Eq '^(mobile/android/|mobile/pubspec\.(yaml|lock)$|\.github/workflows/flutter-mobile-ci\.yml$)'; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Java 17
+        if: steps.changes.outputs.should_build == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        if: steps.changes.outputs.should_build == 'true'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        if: steps.changes.outputs.should_build == 'true'
+        run: flutter pub get
+
+      - name: Verify Android APK compilation (smoke defines, not uploaded)
+        if: steps.changes.outputs.should_build == 'true'
+        env:
+          CHURCH_AUTH_REDIRECT_SCHEME: "com.church.app"
+        run: |
+          flutter build apk --release \
+            --dart-define=CHURCH_API_BASE_URL="https://ci-verify.invalid" \
+            --dart-define=CHURCH_AUTH_ISSUER="https://ci-verify.invalid" \
+            --dart-define=CHURCH_AUTH_CLIENT_ID="church_mobile_app" \
+            --dart-define=CHURCH_AUTH_REDIRECT_URI="com.church.app:/oauthredirect" \
+            --dart-define=CHURCH_AUTH_SCOPES="openid profile email offline_access roles church_api" \
+            --dart-define=CHURCH_AUTH_MEMBER_ID_CLAIM="member_id" \
+            --dart-define=CHURCH_AUTH_TENANT_ID_CLAIM="tenant_id" \
+            --dart-define=CHURCH_AUTH_ROLES_CLAIM="roles"
+          test -s build/app/outputs/flutter-apk/app-release.apk
+
+  android-apk:
+    name: Build Android APK
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate API and OIDC build configuration
+        id: config
+        env:
+          API_BASE_URL: ${{ inputs.api_base_url || vars.CHURCH_API_BASE_URL }}
+          AUTH_ISSUER: ${{ inputs.auth_issuer || vars.CHURCH_AUTH_ISSUER }}
+          AUTH_CLIENT_ID: ${{ inputs.auth_client_id || vars.CHURCH_AUTH_CLIENT_ID || 'church_mobile_app' }}
+          AUTH_REDIRECT_URI: ${{ inputs.auth_redirect_uri || vars.CHURCH_AUTH_REDIRECT_URI || 'com.church.app:/oauthredirect' }}
+          AUTH_SCOPES: ${{ inputs.auth_scopes || vars.CHURCH_AUTH_SCOPES || 'openid profile email offline_access roles church_api' }}
+          AUTH_MEMBER_ID_CLAIM: ${{ vars.CHURCH_AUTH_MEMBER_ID_CLAIM || 'member_id' }}
+          AUTH_TENANT_ID_CLAIM: ${{ vars.CHURCH_AUTH_TENANT_ID_CLAIM || 'tenant_id' }}
+          AUTH_ROLES_CLAIM: ${{ vars.CHURCH_AUTH_ROLES_CLAIM || 'roles' }}
+        run: |
+          if [ -z "${AUTH_ISSUER}" ] && [[ "${API_BASE_URL}" =~ ^https:// ]]; then
+            AUTH_ISSUER="${API_BASE_URL%/}"
+          fi
+          if [ -z "${API_BASE_URL}" ] && [ -n "${AUTH_ISSUER}" ]; then
+            API_BASE_URL="${AUTH_ISSUER%/}"
+          fi
+          if [ -z "${AUTH_ISSUER}" ] || ! [[ "${AUTH_ISSUER}" =~ ^https://[^/?#]+ ]]; then
+            echo "::error::Missing or non-HTTPS CHURCH_AUTH_ISSUER. Configure repository variables CHURCH_AUTH_ISSUER (or HTTPS CHURCH_API_BASE_URL), or pass auth_issuer / api_base_url via workflow_dispatch."
+            exit 1
+          fi
+          if [ -z "${AUTH_REDIRECT_URI}" ] || ! [[ "${AUTH_REDIRECT_URI}" =~ ^[a-zA-Z][a-zA-Z0-9+.-]*: ]]; then
+            echo "::error::Invalid CHURCH_AUTH_REDIRECT_URI '${AUTH_REDIRECT_URI}'."
+            exit 1
+          fi
+          REDIRECT_SCHEME="${AUTH_REDIRECT_URI%%:*}"
+          {
+            echo "api_base_url=${API_BASE_URL%/}"
+            echo "auth_issuer=${AUTH_ISSUER}"
+            echo "auth_client_id=${AUTH_CLIENT_ID}"
+            echo "auth_redirect_uri=${AUTH_REDIRECT_URI}"
+            echo "auth_redirect_scheme=${REDIRECT_SCHEME}"
+            echo "auth_scopes=${AUTH_SCOPES}"
+            echo "auth_member_id_claim=${AUTH_MEMBER_ID_CLAIM}"
+            echo "auth_tenant_id_claim=${AUTH_TENANT_ID_CLAIM}"
+            echo "auth_roles_claim=${AUTH_ROLES_CLAIM}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build release APK
+        env:
+          API_BASE_URL: ${{ steps.config.outputs.api_base_url }}
+          AUTH_ISSUER: ${{ steps.config.outputs.auth_issuer }}
+          AUTH_CLIENT_ID: ${{ steps.config.outputs.auth_client_id }}
+          AUTH_REDIRECT_URI: ${{ steps.config.outputs.auth_redirect_uri }}
+          CHURCH_AUTH_REDIRECT_SCHEME: ${{ steps.config.outputs.auth_redirect_scheme }}
+          AUTH_SCOPES: ${{ steps.config.outputs.auth_scopes }}
+          AUTH_MEMBER_ID_CLAIM: ${{ steps.config.outputs.auth_member_id_claim }}
+          AUTH_TENANT_ID_CLAIM: ${{ steps.config.outputs.auth_tenant_id_claim }}
+          AUTH_ROLES_CLAIM: ${{ steps.config.outputs.auth_roles_claim }}
+        run: |
+          DART_DEFINES=(
+            "--dart-define=CHURCH_AUTH_ISSUER=${AUTH_ISSUER}"
+            "--dart-define=CHURCH_AUTH_CLIENT_ID=${AUTH_CLIENT_ID}"
+            "--dart-define=CHURCH_AUTH_REDIRECT_URI=${AUTH_REDIRECT_URI}"
+            "--dart-define=CHURCH_AUTH_SCOPES=${AUTH_SCOPES}"
+            "--dart-define=CHURCH_AUTH_MEMBER_ID_CLAIM=${AUTH_MEMBER_ID_CLAIM}"
+            "--dart-define=CHURCH_AUTH_TENANT_ID_CLAIM=${AUTH_TENANT_ID_CLAIM}"
+            "--dart-define=CHURCH_AUTH_ROLES_CLAIM=${AUTH_ROLES_CLAIM}"
+          )
+          if [ -n "${API_BASE_URL}" ]; then
+            DART_DEFINES+=("--dart-define=CHURCH_API_BASE_URL=${API_BASE_URL}")
+          fi
+          flutter build apk --release "${DART_DEFINES[@]}"
+          test -s build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Upload Android APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: church-digital-platform-android-apk
+          path: mobile/build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
