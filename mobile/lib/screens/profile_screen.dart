@@ -526,6 +526,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   Future<void> _confirmAndSignOut() async {
     final auth = widget.authService;
     if (auth == null) return;
+    final capturedSessionGen = _sessionGeneration;
+    final capturedSessionIdentity = auth.sessionIdentity;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -548,6 +550,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
 
     if (confirmed == true && mounted) {
+      if (capturedSessionGen != _sessionGeneration ||
+          !identical(widget.authService, auth) ||
+          auth.sessionIdentity != capturedSessionIdentity) {
+        return;
+      }
       // Clear sensitive profile/family/directory state immediately
       setState(() {
         _resetSessionState();

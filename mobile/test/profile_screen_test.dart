@@ -122,6 +122,7 @@ class FakeMemberApiClient implements MemberApiClient {
 
 class MockAuthService implements AuthService {
   int signOutCount = 0;
+  Object _identity = Object();
   AuthSession? _currentSession;
   final _sessionController = StreamController<AuthSession?>.broadcast();
 
@@ -134,7 +135,7 @@ class MockAuthService implements AuthService {
   AuthSession? get currentSession => _currentSession;
 
   @override
-  Object? get sessionIdentity => Object();
+  Object? get sessionIdentity => _identity;
 
   @override
   Future<AuthSession?> initialize() async => _currentSession;
@@ -148,6 +149,7 @@ class MockAuthService implements AuthService {
 
   @override
   Future<void> setSession(AuthSession session) async {
+    _identity = Object();
     _currentSession = session;
     _sessionController.add(session);
   }
@@ -158,6 +160,7 @@ class MockAuthService implements AuthService {
   @override
   Future<void> signOut() async {
     signOutCount++;
+    _identity = Object();
     _currentSession = null;
     _sessionController.add(null);
   }
@@ -621,5 +624,81 @@ void main() {
 
     expect(find.text('New Family Member'), findsOneWidget);
     expect(find.text('Old Family Member'), findsNothing);
+  });
+
+  testWidgets('aborts sign-out confirmation if authService sessionIdentity changes while dialog is open', (tester) async {
+    await tester.pumpWidget(createSubject(
+      client: fakeClient,
+      authService: mockAuthService,
+    ));
+    await tester.pumpAndSettle();
+
+    final signOutButton = find.text('Sign Out');
+    await tester.ensureVisible(signOutButton);
+    await tester.tap(signOutButton);
+    await tester.pumpAndSettle();
+
+    // Simulate in-place replacement of the active session while confirmation dialog is open
+    await mockAuthService.setSession(
+      AuthSession(
+        accessToken: 'new-token',
+        userId: 'user-2',
+        tenantId: 'ten-1',
+        roles: const ['Member'],
+        expiresAt: DateTime.now().add(const Duration(hours: 1)),
+      ),
+    );
+    await tester.pump();
+
+    final confirmButton = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.widgetWithText(FilledButton, 'Sign Out'),
+    );
+    await tester.tap(confirmButton);
+    await tester.pumpAndSettle();
+
+    expect(mockAuthService.signOutCount, 0);
+    expect(find.text('Sarah Connor'), findsOneWidget);
+  });
+
+  testWidgets('aborts sign-out confirmation if apiClient or authService changes while dialog is open', (tester) async {
+    await tester.pumpWidget(createSubject(
+      client: fakeClient,
+      authService: mockAuthService,
+    ));
+    await tester.pumpAndSettle();
+
+    final signOutButton = find.text('Sign Out');
+    await tester.ensureVisible(signOutButton);
+    await tester.tap(signOutButton);
+    await tester.pumpAndSettle();
+
+    final replacementClient = FakeMemberApiClient(
+      myProfile: const MemberProfile(
+        id: 'mem-2',
+        tenantId: 'ten-2',
+        firstName: 'David',
+        lastName: 'King',
+        email: 'david@church.local',
+      ),
+    );
+    final replacementAuth = MockAuthService();
+
+    await tester.pumpWidget(createSubject(
+      client: replacementClient,
+      authService: replacementAuth,
+    ));
+    await tester.pumpAndSettle();
+
+    final confirmButton = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.widgetWithText(FilledButton, 'Sign Out'),
+    );
+    await tester.tap(confirmButton);
+    await tester.pumpAndSettle();
+
+    expect(mockAuthService.signOutCount, 0);
+    expect(replacementAuth.signOutCount, 0);
+    expect(find.text('David King'), findsOneWidget);
   });
 }
