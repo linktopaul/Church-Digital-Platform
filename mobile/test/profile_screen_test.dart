@@ -16,6 +16,7 @@ class FakeMemberApiClient implements MemberApiClient {
   bool shouldFailDirectory;
   bool shouldFailFamily;
   String? failureMessage;
+  String? nextUpdateFamilyId;
   Completer<void>? updateCompleter;
 
   FakeMemberApiClient({
@@ -69,7 +70,7 @@ class FakeMemberApiClient implements MemberApiClient {
       showPhoneNumber: input.showPhoneNumber,
       showAddress: input.showAddress,
       showBirthday: input.showBirthday,
-      familyId: myProfile?.familyId,
+      familyId: nextUpdateFamilyId ?? myProfile?.familyId,
       familyName: myProfile?.familyName,
       familyRole: myProfile?.familyRole ?? FamilyRole.individual,
     );
@@ -550,5 +551,75 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Sarah Connor'), findsOneWidget);
+  });
+
+  testWidgets('clears cached family details when familyId changes and shows error/retry on failure', (tester) async {
+    fakeClient.myProfile = fakeClient.myProfile?.copyWith(
+      familyId: 'fam-1',
+      familyName: 'Connor Family',
+    );
+    fakeClient.family = const FamilyData(
+      id: 'fam-1',
+      tenantId: 'ten-1',
+      familyName: 'Connor Family',
+      members: [
+        DirectoryMember(
+          id: 'mem-3',
+          fullName: 'Old Family Member',
+          familyId: 'fam-1',
+          familyName: 'Connor Family',
+          familyRole: FamilyRole.child,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(createSubject(
+      client: fakeClient,
+      authService: mockAuthService,
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Old Family Member'), findsOneWidget);
+
+    // Reassign to fam-2 on next save and make fam-2 fetch fail.
+    fakeClient.nextUpdateFamilyId = 'fam-2';
+    fakeClient.shouldFailFamily = true;
+    fakeClient.failureMessage = 'New family load failed';
+
+    final editBtn = find.text('Edit Profile');
+    await tester.ensureVisible(editBtn);
+    await tester.tap(editBtn);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    // Previous family details must be cleared and error/retry surfaced.
+    expect(find.text('Old Family Member'), findsNothing);
+    expect(find.text('New family load failed'), findsOneWidget);
+    expect(find.text('Retry Family'), findsOneWidget);
+
+    // Retrying succeeds with new family data.
+    fakeClient.shouldFailFamily = false;
+    fakeClient.family = const FamilyData(
+      id: 'fam-2',
+      tenantId: 'ten-1',
+      familyName: 'Reassigned Family',
+      members: [
+        DirectoryMember(
+          id: 'mem-4',
+          fullName: 'New Family Member',
+          familyId: 'fam-2',
+          familyName: 'Reassigned Family',
+          familyRole: FamilyRole.spouse,
+        ),
+      ],
+    );
+
+    final retryBtn = find.text('Retry Family');
+    await tester.ensureVisible(retryBtn);
+    await tester.tap(retryBtn);
+    await tester.pumpAndSettle();
+
+    expect(find.text('New Family Member'), findsOneWidget);
+    expect(find.text('Old Family Member'), findsNothing);
   });
 }
