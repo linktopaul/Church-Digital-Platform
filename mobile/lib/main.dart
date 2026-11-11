@@ -11,7 +11,6 @@ import 'screens/profile_screen.dart';
 import 'screens/worship_screen.dart';
 import 'services/celebration_api_client.dart';
 import 'services/offering_api_client.dart';
-import 'services/announcement_api_client.dart';
 import 'services/fellowship_api_client.dart';
 import 'services/member_api_client.dart';
 import 'services/prayer_api_client.dart';
@@ -73,7 +72,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   HttpMemberApiClient? _cachedMemberClient;
   HttpCelebrationApiClient? _cachedCelebrationClient;
   HttpOfferingApiClient? _cachedOfferingClient;
-  DefaultAnnouncementApiClient? _cachedAnnouncementClient;
   String? _cachedSessionKey;
   AuthService? _cachedAuthService;
   String? _cachedBaseUrl;
@@ -151,12 +149,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     return session.roles.any((r) => r.toLowerCase() == 'pastor');
   }
 
-  bool get _isAdmin {
-    final session = _currentSession;
-    if (session == null) return false;
-    return session.roles.any((r) => r.toLowerCase() == 'admin');
-  }
-
   bool get _canManageOfferings {
     final session = _currentSession;
     if (session == null) return false;
@@ -199,17 +191,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           client: authClient,
           baseUrl: effectiveBase,
         );
-        _cachedAnnouncementClient = DefaultAnnouncementApiClient(
-          client: authClient,
-          baseUrl: effectiveBase,
-        );
       } else {
         _cachedFellowshipClient = null;
         _cachedPrayerClient = null;
         _cachedMemberClient = null;
         _cachedCelebrationClient = null;
         _cachedOfferingClient = null;
-        _cachedAnnouncementClient = null;
       }
     }
   }
@@ -235,11 +222,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   List<Widget> get _screens => [
     HomeScreen(
-      announcementClient: _cachedAnnouncementClient,
       celebrationClient: _cachedCelebrationClient,
       offeringClient: _cachedOfferingClient,
       isPastor: _isPastor,
-      isAdmin: _isAdmin,
       canManageOfferings: _canManageOfferings,
     ),
     _buildMessagesScreen(),

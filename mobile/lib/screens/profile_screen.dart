@@ -130,9 +130,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         if (fetchedProfile.familyId != null && fetchedProfile.familyId!.isNotEmpty) {
           _loadFamily(fetchedProfile.familyId!);
         } else {
-          _familyLoadGeneration++;
           _familyData = null;
-          _isLoadingFamily = false;
           _familyErrorMessage = null;
         }
       }
@@ -165,12 +163,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
     final sessionGen = _sessionGeneration;
     final famGen = ++_familyLoadGeneration;
-    final bool familyChanged = _familyData != null && _familyData!.id != familyId;
 
     setState(() {
-      if (familyChanged) {
-        _familyData = null;
-      }
       _isLoadingFamily = true;
       _familyErrorMessage = null;
     });
@@ -297,9 +291,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         _loadFamily(updated.familyId!);
       } else {
         setState(() {
-          _familyLoadGeneration++;
           _familyData = null;
-          _isLoadingFamily = false;
           _familyErrorMessage = null;
         });
       }
@@ -616,7 +608,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       );
     }
 
-    if (_familyErrorMessage != null) {
+    if (_familyErrorMessage != null && _familyData == null) {
       return Card(
         elevation: 1,
         child: Padding(
