@@ -84,6 +84,16 @@ jobs:
                 core.info('PR #'+pull.number+' held: '+reasons.join('; '));
                 continue;
               }
-              if (!fresh.auto_merge) await github.graphql('mutation($id:ID!){enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:SQUASH}){pullRequest{number}}}',{id:pull.node_id});
+              if (!fresh.auto_merge) {
+                try {
+                  await github.graphql('mutation($id:ID!){enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:SQUASH}){pullRequest{number}}}',{id:pull.node_id});
+                } catch (e) {
+                  if (e.message && e.message.includes('Pull request is in clean status')) {
+                    core.info('PR #' + pull.number + ' auto-merge not updated (already in clean status).');
+                  } else {
+                    throw e;
+                  }
+                }
+              }
               core.info('PR #'+pull.number+' passed review gate; native repository rules still apply.');
             }
