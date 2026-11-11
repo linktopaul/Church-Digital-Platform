@@ -294,5 +294,47 @@ void main() {
         ),
       );
     });
+
+    test('Error handling maps 401 Unauthorized to authentication required MemberApiException', () async {
+      final client = MockClient((request) async {
+        return http.Response(
+          jsonEncode({'message': 'Unauthorized'}),
+          401,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final apiClient = HttpMemberApiClient(client: client, baseUrl: testBaseUrl);
+
+      expect(
+        () => apiClient.getMyProfile(),
+        throwsA(
+          isA<MemberApiException>()
+              .having((e) => e.statusCode, 'statusCode', 401)
+              .having((e) => e.message, 'message', contains('Authentication required')),
+        ),
+      );
+    });
+
+    test('Error handling maps 403 Forbidden to access denied MemberApiException', () async {
+      final client = MockClient((request) async {
+        return http.Response(
+          jsonEncode({'message': 'Forbidden'}),
+          403,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final apiClient = HttpMemberApiClient(client: client, baseUrl: testBaseUrl);
+
+      expect(
+        () => apiClient.getFamily('fam-forbidden'),
+        throwsA(
+          isA<MemberApiException>()
+              .having((e) => e.statusCode, 'statusCode', 403)
+              .having((e) => e.message, 'message', contains('Access denied')),
+        ),
+      );
+    });
   });
 }
