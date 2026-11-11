@@ -14,7 +14,9 @@ class FakeMemberApiClient implements MemberApiClient {
   bool shouldFailGetMyProfile;
   bool shouldFailUpdate;
   bool shouldFailDirectory;
+  bool shouldFailFamily;
   String? failureMessage;
+  String? nextUpdateFamilyId;
   Completer<void>? updateCompleter;
 
   FakeMemberApiClient({
@@ -24,6 +26,7 @@ class FakeMemberApiClient implements MemberApiClient {
     this.shouldFailGetMyProfile = false,
     this.shouldFailUpdate = false,
     this.shouldFailDirectory = false,
+    this.shouldFailFamily = false,
     this.failureMessage,
     this.updateCompleter,
   }) : directory = directory ?? [];
@@ -67,7 +70,7 @@ class FakeMemberApiClient implements MemberApiClient {
       showPhoneNumber: input.showPhoneNumber,
       showAddress: input.showAddress,
       showBirthday: input.showBirthday,
-      familyId: myProfile?.familyId,
+      familyId: nextUpdateFamilyId ?? myProfile?.familyId,
       familyName: myProfile?.familyName,
       familyRole: myProfile?.familyRole ?? FamilyRole.individual,
     );
@@ -104,6 +107,9 @@ class FakeMemberApiClient implements MemberApiClient {
 
   @override
   Future<FamilyData> getFamily(String id) async {
+    if (shouldFailFamily) {
+      throw MemberApiException(failureMessage ?? 'Failed to load family');
+    }
     return family ??
         FamilyData(
           id: id,
@@ -380,7 +386,7 @@ void main() {
     expect(find.text('John Reese'), findsOneWidget);
   });
 
-  testWidgets('sign out button triggers authService signOut', (tester) async {
+  testWidgets('sign out shows confirmation dialog, cancel leaves session intact', (tester) async {
     await tester.pumpWidget(createSubject(
       client: fakeClient,
       authService: mockAuthService,
@@ -391,9 +397,142 @@ void main() {
     final signOutButton = find.text('Sign Out');
     await tester.ensureVisible(signOutButton);
     await tester.tap(signOutButton);
-    await tester.pump();
+    await tester.pumpAndSettle();
+
+    // Verify confirmation dialog appears
+    expect(find.text('Are you sure you want to sign out? Your cached profile and church directory access will be cleared from this device.'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
+
+    // Tap Cancel
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(mockAuthService.signOutCount, 0);
+    expect(find.text('Sarah Connor'), findsOneWidget);
+  });
+
+  testWidgets('sign out confirms, calls authService signOut and clears cached session state', (tester) async {
+    await tester.pumpWidget(createSubject(
+      client: fakeClient,
+      authService: mockAuthService,
+    ));
+    await tester.pumpAndSettle();
+
+    // Scroll to Sign Out button in SingleChildScrollView
+    final signOutButton = find.text('Sign Out');
+    await tester.ensureVisible(signOutButton);
+    await tester.tap(signOutButton);
+    await tester.pumpAndSettle();
+
+    // Find the Confirm Sign Out button in the dialog (which has label 'Sign Out' inside AlertDialog)
+    final confirmButton = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.widgetWithText(FilledButton, 'Sign Out'),
+    );
+    await tester.tap(confirmButton);
+    await tester.pumpAndSettle();
 
     expect(mockAuthService.signOutCount, 1);
+    // Cached profile name should no longer be displayed
+    expect(find.text('Sarah Connor'), findsNothing);
+  });
+
+  testWidgets('renders family unit details when profile has familyId', (tester) async {
+    fakeClient.myProfile = fakeClient.myProfile?.copyWith(
+      familyId: 'fam-1',
+      familyName: 'Connor Family',
+      familyRole: FamilyRole.headOfHousehold,
+    );
+    fakeClient.family = const FamilyData(
+      id: 'fam-1',
+      tenantId: 'ten-1',
+      familyName: 'Connor Family',
+      members: [
+        DirectoryMember(
+          id: 'mem-1',
+          fullName: 'Sarah Connor',
+          email: 'sarah@church.local',
+          familyId: 'fam-1',
+          familyName: 'Connor Family',
+          familyRole: FamilyRole.headOfHousehold,
+        ),
+        DirectoryMember(
+          id: 'mem-3',
+          fullName: 'John Connor',
+          email: 'johnc@church.local',
+          familyId: 'fam-1',
+          familyName: 'Connor Family',
+          familyRole: FamilyRole.child,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(createSubject(
+      client: fakeClient,
+      authService: mockAuthService,
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Connor Family'), findsWidgets);
+    expect(find.text('John Connor'), findsOneWidget);
+    expect(find.text('You'), findsOneWidget);
+    expect(find.text('Child • johnc@church.local'), findsOneWidget);
+  });
+
+  testWidgets('displays error and retry when family fetch fails', (tester) async {
+    fakeClient.myProfile = fakeClient.myProfile?.copyWith(
+      familyId: 'fam-fail',
+      familyName: 'Failing Family',
+    );
+    fakeClient.family = null;
+    fakeClient.shouldFailFamily = true;
+    fakeClient.failureMessage = 'Family network error';
+
+    await tester.pumpWidget(createSubject(
+      client: fakeClient,
+      authService: mockAuthService,
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Family network error'), findsOneWidget);
+    expect(find.text('Retry Family'), findsOneWidget);
+
+    fakeClient.shouldFailFamily = false;
+    fakeClient.family = const FamilyData(
+      id: 'fam-fail',
+      tenantId: 'ten-1',
+      familyName: 'Failing Family',
+      members: [],
+    );
+
+    await tester.tap(find.text('Retry Family'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No other family members listed.'), findsOneWidget);
+  });
+
+  testWidgets('displays 401 authentication required error with retry button', (tester) async {
+    fakeClient.shouldFailGetMyProfile = true;
+    fakeClient.failureMessage = 'Authentication required. Please sign in.';
+
+    await tester.pumpWidget(createSubject(client: fakeClient));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Authentication required. Please sign in.'), findsOneWidget);
+    expect(find.byIcon(Icons.lock_outline), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+  });
+
+  testWidgets('displays 403 access denied error with retry button', (tester) async {
+    fakeClient.shouldFailGetMyProfile = true;
+    fakeClient.failureMessage = 'Access denied. You do not have permission for this member action.';
+
+    await tester.pumpWidget(createSubject(client: fakeClient));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Access denied. You do not have permission for this member action.'), findsOneWidget);
+    expect(find.byIcon(Icons.error_outline), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
   });
 
   testWidgets('displays error message and retry button when getMyProfile fails', (tester) async {
@@ -412,5 +551,75 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Sarah Connor'), findsOneWidget);
+  });
+
+  testWidgets('clears cached family details when familyId changes and shows error/retry on failure', (tester) async {
+    fakeClient.myProfile = fakeClient.myProfile?.copyWith(
+      familyId: 'fam-1',
+      familyName: 'Connor Family',
+    );
+    fakeClient.family = const FamilyData(
+      id: 'fam-1',
+      tenantId: 'ten-1',
+      familyName: 'Connor Family',
+      members: [
+        DirectoryMember(
+          id: 'mem-3',
+          fullName: 'Old Family Member',
+          familyId: 'fam-1',
+          familyName: 'Connor Family',
+          familyRole: FamilyRole.child,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(createSubject(
+      client: fakeClient,
+      authService: mockAuthService,
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Old Family Member'), findsOneWidget);
+
+    // Reassign to fam-2 on next save and make fam-2 fetch fail.
+    fakeClient.nextUpdateFamilyId = 'fam-2';
+    fakeClient.shouldFailFamily = true;
+    fakeClient.failureMessage = 'New family load failed';
+
+    final editBtn = find.text('Edit Profile');
+    await tester.ensureVisible(editBtn);
+    await tester.tap(editBtn);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    // Previous family details must be cleared and error/retry surfaced.
+    expect(find.text('Old Family Member'), findsNothing);
+    expect(find.text('New family load failed'), findsOneWidget);
+    expect(find.text('Retry Family'), findsOneWidget);
+
+    // Retrying succeeds with new family data.
+    fakeClient.shouldFailFamily = false;
+    fakeClient.family = const FamilyData(
+      id: 'fam-2',
+      tenantId: 'ten-1',
+      familyName: 'Reassigned Family',
+      members: [
+        DirectoryMember(
+          id: 'mem-4',
+          fullName: 'New Family Member',
+          familyId: 'fam-2',
+          familyName: 'Reassigned Family',
+          familyRole: FamilyRole.spouse,
+        ),
+      ],
+    );
+
+    final retryBtn = find.text('Retry Family');
+    await tester.ensureVisible(retryBtn);
+    await tester.tap(retryBtn);
+    await tester.pumpAndSettle();
+
+    expect(find.text('New Family Member'), findsOneWidget);
+    expect(find.text('Old Family Member'), findsNothing);
   });
 }

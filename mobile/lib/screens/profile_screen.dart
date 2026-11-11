@@ -29,6 +29,9 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   MemberProfile? _myProfile;
+  FamilyData? _familyData;
+  bool _isLoadingFamily = false;
+  String? _familyErrorMessage;
   List<DirectoryMember> _directory = [];
   bool _isLoading = false;
   bool _isSavingProfile = false;
@@ -44,6 +47,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   int _sessionGeneration = 0;
   int _profileMutationGeneration = 0;
   int _directoryLoadGeneration = 0;
+  int _familyLoadGeneration = 0;
 
   @override
   void initState() {
@@ -57,24 +61,32 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   @override
   void didUpdateWidget(covariant ProfileScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.apiClient != widget.apiClient) {
-      _sessionGeneration++;
-      _directoryLoadGeneration++;
-      _profileMutationGeneration++;
-      _myProfile = null;
-      _directory = [];
-      _directoryPage = 1;
-      _hasMoreDirectory = true;
-      _isLoadingMoreDirectory = false;
-      _isSearchingOrRefreshingDirectory = false;
-      _isSavingProfile = false;
-      _searchQuery = '';
-      _lastInputQuery = '';
-      _errorMessage = null;
+    if (oldWidget.apiClient != widget.apiClient || oldWidget.authService != widget.authService) {
+      _resetSessionState();
       if (widget.apiClient != null) {
         _loadData();
       }
     }
+  }
+
+  void _resetSessionState() {
+    _sessionGeneration++;
+    _directoryLoadGeneration++;
+    _profileMutationGeneration++;
+    _familyLoadGeneration++;
+    _myProfile = null;
+    _familyData = null;
+    _isLoadingFamily = false;
+    _familyErrorMessage = null;
+    _directory = [];
+    _directoryPage = 1;
+    _hasMoreDirectory = true;
+    _isLoadingMoreDirectory = false;
+    _isSearchingOrRefreshingDirectory = false;
+    _isSavingProfile = false;
+    _searchQuery = '';
+    _lastInputQuery = '';
+    _errorMessage = null;
   }
 
   @override
@@ -113,10 +125,19 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       final fetchedProfile = results[0] as MemberProfile;
       final fetchedDir = results[1] as List<DirectoryMember>;
 
-      setState(() {
-        if (profileGen == _profileMutationGeneration) {
-          _myProfile = fetchedProfile;
+      if (profileGen == _profileMutationGeneration) {
+        _myProfile = fetchedProfile;
+        if (fetchedProfile.familyId != null && fetchedProfile.familyId!.isNotEmpty) {
+          _loadFamily(fetchedProfile.familyId!);
+        } else {
+          _familyLoadGeneration++;
+          _familyData = null;
+          _isLoadingFamily = false;
+          _familyErrorMessage = null;
         }
+      }
+
+      setState(() {
         if (dirGen == _directoryLoadGeneration) {
           _searchQuery = queryToFetch;
           _directory = fetchedDir;
@@ -134,6 +155,40 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           _isSearchingOrRefreshingDirectory = false;
         }
         _errorMessage = e is MemberApiException ? e.message : 'Failed to load member profile.';
+      });
+    }
+  }
+
+  Future<void> _loadFamily(String familyId) async {
+    final client = widget.apiClient;
+    if (client == null) return;
+
+    final sessionGen = _sessionGeneration;
+    final famGen = ++_familyLoadGeneration;
+    final bool familyChanged = _familyData != null && _familyData!.id != familyId;
+
+    setState(() {
+      if (familyChanged) {
+        _familyData = null;
+      }
+      _isLoadingFamily = true;
+      _familyErrorMessage = null;
+    });
+
+    try {
+      final family = await client.getFamily(familyId);
+      if (!mounted || sessionGen != _sessionGeneration || famGen != _familyLoadGeneration || client != widget.apiClient) return;
+
+      setState(() {
+        _familyData = family;
+        _isLoadingFamily = false;
+        _familyErrorMessage = null;
+      });
+    } catch (e) {
+      if (!mounted || sessionGen != _sessionGeneration || famGen != _familyLoadGeneration || client != widget.apiClient) return;
+      setState(() {
+        _isLoadingFamily = false;
+        _familyErrorMessage = e is MemberApiException ? e.message : 'Failed to load family details.';
       });
     }
   }
@@ -237,6 +292,18 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         const SnackBar(content: Text('Profile updated successfully.')),
       );
 
+      // If family association is present, reload family details as well
+      if (updated.familyId != null && updated.familyId!.isNotEmpty) {
+        _loadFamily(updated.familyId!);
+      } else {
+        setState(() {
+          _familyLoadGeneration++;
+          _familyData = null;
+          _isLoadingFamily = false;
+          _familyErrorMessage = null;
+        });
+      }
+
       // Trigger directory reload under directory generation guard
       final dirGen = ++_directoryLoadGeneration;
       setState(() {
@@ -337,6 +404,12 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       'Directory Visibility',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Controls who can see your name in the church member directory.',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 4),
                     DropdownButton<DirectoryVisibility>(
                       value: selectedVisibility,
                       isExpanded: true,
@@ -352,10 +425,23 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         );
                       }).toList(),
                     ),
+                    if (selectedVisibility == DirectoryVisibility.private)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4.0),
+                        child: Text(
+                          'Your profile will be hidden from the member directory list.',
+                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.error),
+                        ),
+                      ),
                     const SizedBox(height: 12),
                     const Text(
                       'Privacy Opt-In Controls',
                       style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'By default, all contact details are hidden until you choose to share them.',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                     SwitchListTile(
                       title: const Text('Show Email in Directory'),
@@ -437,6 +523,39 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
+  Future<void> _confirmAndSignOut() async {
+    final auth = widget.authService;
+    if (auth == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Sign Out'),
+        content: const Text(
+          'Are you sure you want to sign out? Your cached profile and church directory access will be cleared from this device.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            child: const Text('Sign Out'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      // Clear sensitive profile/family/directory state immediately
+      setState(() {
+        _resetSessionState();
+      });
+      await auth.signOut();
+    }
+  }
+
   Widget _buildUnauthenticatedView() {
     return Center(
       child: Padding(
@@ -476,18 +595,171 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
+  Widget _buildFamilyCard(MemberProfile profile) {
+    if (_isLoadingFamily && _familyData == null) {
+      return Card(
+        elevation: 1,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: const [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 12),
+              Text('Loading family unit...'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_familyErrorMessage != null) {
+      return Card(
+        elevation: 1,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _familyErrorMessage!,
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: () {
+                  if (profile.familyId != null) {
+                    _loadFamily(profile.familyId!);
+                  }
+                },
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Retry Family'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final family = _familyData;
+    final familyName = family?.familyName ?? profile.familyName ?? 'Family';
+    final members = family?.members ?? [];
+
+    return Card(
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.family_restroom, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  familyName,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const Divider(),
+            if (members.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8.0),
+                child: Text('No other family members listed.', style: TextStyle(color: Colors.grey)),
+              )
+            else
+              ...members.map((m) {
+                final isCurrentMember = m.id == profile.id;
+                return ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(
+                    radius: 16,
+                    backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                    child: Text(
+                      m.fullName.isNotEmpty ? m.fullName[0].toUpperCase() : '?',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                  ),
+                  title: Row(
+                    children: [
+                      Text(
+                        m.fullName,
+                        style: TextStyle(
+                          fontWeight: isCurrentMember ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                      if (isCurrentMember) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.secondaryContainer,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text('You', style: TextStyle(fontSize: 10)),
+                        ),
+                      ],
+                    ],
+                  ),
+                  subtitle: Text(
+                    '${m.familyRole.label}${m.email != null ? ' • ${m.email}' : ''}',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                );
+              }),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildMyProfileTab() {
     final profile = _myProfile;
     if (profile == null) {
       if (_errorMessage != null) {
         return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(_errorMessage!, style: const TextStyle(color: Colors.red)),
-              const SizedBox(height: 12),
-              FilledButton(onPressed: _loadData, child: const Text('Retry')),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  _errorMessage!.contains('Authentication') || _errorMessage!.contains('401')
+                      ? Icons.lock_outline
+                      : Icons.error_outline,
+                  color: Colors.red,
+                  size: 48,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _errorMessage!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.red, fontSize: 16),
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: _loadData,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry'),
+                ),
+              ],
+            ),
           ),
         );
       }
@@ -531,6 +803,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             ),
           ],
           const SizedBox(height: 16),
+          if (profile.familyId != null && profile.familyId!.isNotEmpty) ...[
+            _buildFamilyCard(profile),
+            const SizedBox(height: 12),
+          ],
           Card(
             elevation: 1,
             child: Padding(
@@ -626,9 +902,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               if (widget.authService != null)
                 Expanded(
                   child: FilledButton.tonalIcon(
-                    onPressed: () async {
-                      await widget.authService?.signOut();
-                    },
+                    onPressed: _confirmAndSignOut,
                     icon: const Icon(Icons.logout),
                     label: const Text('Sign Out'),
                   ),
