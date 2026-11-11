@@ -934,6 +934,129 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('Switching apiClient invalidates and dismisses open setlist detail route and stale detail response',
+      (tester) async {
+    final detailCompleter = Completer<SetlistItemData>();
+    final summarySetlist = SetlistItemData(
+      id: 's-secret',
+      title: 'Tenant A Sunday Service',
+      serviceDate: DateTime.utc(2026, 11, 29),
+      itemCount: 1,
+    );
+    final detailedSetlist = SetlistItemData(
+      id: 's-secret',
+      title: 'Tenant A Sunday Service',
+      serviceDate: DateTime.utc(2026, 11, 29),
+      notes: 'Confidential Tenant A Notes',
+      items: const [
+        SetlistSongItem(
+          id: 'item-1',
+          songId: '1',
+          title: 'Tenant A Secret Hymn',
+          lyrics: 'Confidential Tenant A Lyrics',
+          chords: '[G] Confidential Tenant A Chords',
+          order: 1,
+        ),
+      ],
+    );
+    final clientA = _PendingSetlistDetailWorshipClient(
+      summarySetlist: summarySetlist,
+      detailCompleter: detailCompleter,
+    );
+    final clientB = FakeWorshipApiClient(songs: const [], setlists: const []);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: WorshipScreen(
+          apiClient: clientA,
+          canManageWorship: false,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Sunday Setlists'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Tenant A Sunday Service'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Setlist Order'), findsOneWidget);
+
+    // Switch session/tenant while setlist detail request is still in-flight
+    await tester.pumpWidget(
+      MaterialApp(
+        home: WorshipScreen(
+          apiClient: clientB,
+          canManageWorship: false,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    detailCompleter.complete(detailedSetlist);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Confidential Tenant A Notes'), findsNothing);
+    expect(find.text('Tenant A Secret Hymn'), findsNothing);
+    expect(find.text('Setlist Order'), findsNothing);
+  });
+
+  testWidgets('Switching apiClient dismisses open song detail sheet',
+      (tester) async {
+    final clientA = FakeWorshipApiClient(
+      songs: const [
+        SongItem(
+          id: 'song-a',
+          title: 'Tenant A Song',
+          lyrics: 'Secret Tenant A Lyrics',
+          chords: '[G] Secret Tenant A Chords',
+        ),
+      ],
+      setlists: const [],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: WorshipScreen(
+          apiClient: clientA,
+          canManageWorship: false,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Tenant A Song'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('songDetailTitle')), findsOneWidget);
+
+    // Switch to unauthenticated/different session while sheet is open
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: WorshipScreen(
+          apiClient: null,
+          canManageWorship: false,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('songDetailTitle')), findsNothing);
+    expect(find.text('Secret Tenant A Chords'), findsNothing);
+  });
+}
+
+class _PendingSetlistDetailWorshipClient extends FakeWorshipApiClient {
+  final Completer<SetlistItemData> detailCompleter;
+
+  _PendingSetlistDetailWorshipClient({
+    required SetlistItemData summarySetlist,
+    required this.detailCompleter,
+  }) : super(songs: const [], setlists: [summarySetlist]);
+
+  @override
+  Future<SetlistItemData> getSetlist(String id) => detailCompleter.future;
 }
 
 class _DeferredFirstLoadWorshipClient extends FakeWorshipApiClient {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/worship_models.dart';
 import '../services/worship_api_client.dart';
@@ -39,6 +40,7 @@ class _WorshipScreenState extends State<WorshipScreen>
   bool _savingSetlist = false;
 
   int _sessionGeneration = 0;
+  final ValueNotifier<int> _sessionVersion = ValueNotifier<int>(0);
   int _songsLoadGeneration = 0;
   int _setlistsLoadGeneration = 0;
 
@@ -74,6 +76,7 @@ class _WorshipScreenState extends State<WorshipScreen>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.apiClient != widget.apiClient) {
       _sessionGeneration++;
+      _sessionVersion.value = _sessionGeneration;
       _songsLoadGeneration++;
       _setlistsLoadGeneration++;
       _songs = List<SongItem>.from(widget.initialSongs ?? const []);
@@ -106,6 +109,7 @@ class _WorshipScreenState extends State<WorshipScreen>
 
   @override
   void dispose() {
+    _sessionVersion.dispose();
     _tabController.removeListener(_handleTabChanged);
     _tabController.dispose();
     super.dispose();
@@ -430,6 +434,8 @@ class _WorshipScreenState extends State<WorshipScreen>
   }
 
   void _openSongDetail(SongItem song, {bool isSetlistPreview = false}) {
+    final capturedClient = widget.apiClient;
+    final capturedSession = _sessionGeneration;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -439,16 +445,28 @@ class _WorshipScreenState extends State<WorshipScreen>
       builder: (sheetContext) => _SongDetailSheet(
         song: song,
         isSetlistPreview: isSetlistPreview,
-        apiClient: widget.apiClient,
+        apiClient: capturedClient,
+        sessionListenable: _sessionVersion,
+        expectedSession: capturedSession,
         canManageWorship: widget.canManageWorship,
         onEdit: widget.canManageWorship
             ? (currentSong) {
                 Navigator.of(sheetContext).pop();
+                if (!mounted ||
+                    capturedSession != _sessionGeneration ||
+                    !identical(widget.apiClient, capturedClient)) {
+                  return;
+                }
                 _openSongFormDialog(existingSong: currentSong);
               }
             : null,
         onDelete: widget.canManageWorship
             ? (currentSong) {
+                if (!mounted ||
+                    capturedSession != _sessionGeneration ||
+                    !identical(widget.apiClient, capturedClient)) {
+                  return;
+                }
                 _confirmAndDeleteSong(
                   currentSong,
                   onDeleted: () {
@@ -471,8 +489,17 @@ class _WorshipScreenState extends State<WorshipScreen>
         builder: (routeContext) => _SetlistDetailScreen(
           setlist: setlist,
           apiClient: capturedClient,
+          sessionListenable: _sessionVersion,
+          expectedSession: capturedSession,
           canManageWorship: widget.canManageWorship,
-          onSongTap: (songItem, {isSetlistPreview = true}) => _openSongDetail(songItem, isSetlistPreview: isSetlistPreview),
+          onSongTap: (songItem, {isSetlistPreview = true}) {
+            if (!mounted ||
+                capturedSession != _sessionGeneration ||
+                !identical(widget.apiClient, capturedClient)) {
+              return;
+            }
+            _openSongDetail(songItem, isSetlistPreview: isSetlistPreview);
+          },
           onSetlistLoaded: (loadedSetlist) {
             if (!mounted ||
                 capturedSession != _sessionGeneration ||
@@ -487,6 +514,11 @@ class _WorshipScreenState extends State<WorshipScreen>
           },
           onEditSetlist: widget.canManageWorship
               ? (currentSetlist, updateDetailState) {
+                  if (!mounted ||
+                      capturedSession != _sessionGeneration ||
+                      !identical(widget.apiClient, capturedClient)) {
+                    return;
+                  }
                   _openSetlistFormDialog(
                     existingSetlist: currentSetlist,
                     onSaved: updateDetailState,
@@ -495,6 +527,11 @@ class _WorshipScreenState extends State<WorshipScreen>
               : null,
           onDeleteSetlist: widget.canManageWorship
               ? (currentSetlist) {
+                  if (!mounted ||
+                      capturedSession != _sessionGeneration ||
+                      !identical(widget.apiClient, capturedClient)) {
+                    return;
+                  }
                   _confirmAndDeleteSetlist(
                     currentSetlist,
                     onDeleted: () {
@@ -1368,6 +1405,8 @@ class _SongDetailSheet extends StatefulWidget {
   final SongItem song;
   final bool isSetlistPreview;
   final WorshipApiClient? apiClient;
+  final ValueListenable<int>? sessionListenable;
+  final int? expectedSession;
   final bool canManageWorship;
   final ValueChanged<SongItem>? onEdit;
   final ValueChanged<SongItem>? onDelete;
@@ -1376,6 +1415,8 @@ class _SongDetailSheet extends StatefulWidget {
     required this.song,
     this.isSetlistPreview = false,
     this.apiClient,
+    this.sessionListenable,
+    this.expectedSession,
     this.canManageWorship = false,
     this.onEdit,
     this.onDelete,
@@ -1392,15 +1433,64 @@ class _SongDetailSheetState extends State<_SongDetailSheet> {
   bool _loadingDetail = false;
   bool _loadingCanonicalForEdit = false;
   String? _editError;
+  bool _sessionInvalidated = false;
+  ModalRoute<dynamic>? _route;
+
+  bool get _isSessionActive =>
+      mounted &&
+      !_sessionInvalidated &&
+      (widget.expectedSession == null ||
+          widget.sessionListenable?.value == widget.expectedSession);
 
   @override
   void initState() {
     super.initState();
     _song = widget.song;
-    if (widget.apiClient != null &&
+    widget.sessionListenable?.addListener(_handleSessionChanged);
+    if (_isSessionActive &&
+        widget.apiClient != null &&
         ((_song.lyrics.isEmpty && _song.chords.isEmpty) ||
             widget.isSetlistPreview)) {
       _fetchSongDetail();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _route ??= ModalRoute.of(context);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SongDetailSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.sessionListenable != widget.sessionListenable) {
+      oldWidget.sessionListenable?.removeListener(_handleSessionChanged);
+      widget.sessionListenable?.addListener(_handleSessionChanged);
+    }
+    _handleSessionChanged();
+  }
+
+  @override
+  void dispose() {
+    widget.sessionListenable?.removeListener(_handleSessionChanged);
+    super.dispose();
+  }
+
+  void _handleSessionChanged() {
+    if (_sessionInvalidated) return;
+    if (widget.expectedSession != null &&
+        widget.sessionListenable?.value != widget.expectedSession) {
+      _sessionInvalidated = true;
+      final route = _route;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (route != null && route.isActive) {
+          Navigator.of(context).removeRoute(route);
+        } else {
+          setState(() {});
+        }
+      });
     }
   }
 
@@ -1423,18 +1513,18 @@ class _SongDetailSheetState extends State<_SongDetailSheet> {
 
   Future<void> _fetchSongDetail() async {
     final client = widget.apiClient;
-    if (client == null) return;
+    if (client == null || !_isSessionActive) return;
     setState(() => _loadingDetail = true);
     try {
       final fetched = await client.getSong(_song.id);
-      if (!mounted) return;
+      if (!_isSessionActive) return;
       _canonicalSong = fetched;
       setState(() {
         _song = _mergeSetlistDisplay(fetched);
         _loadingDetail = false;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!_isSessionActive) return;
       setState(() => _loadingDetail = false);
     }
   }
@@ -1455,11 +1545,11 @@ class _SongDetailSheetState extends State<_SongDetailSheet> {
       });
       try {
         final fetched = await client.getSong(_song.id);
-        if (!mounted) return;
+        if (!_isSessionActive) return;
         _canonicalSong = fetched;
         targetSong = fetched;
       } catch (_) {
-        if (!mounted) return;
+        if (!_isSessionActive) return;
         setState(() {
           _loadingCanonicalForEdit = false;
           _editError = 'Could not load library song defaults before editing.';
@@ -1468,12 +1558,15 @@ class _SongDetailSheetState extends State<_SongDetailSheet> {
       }
       setState(() => _loadingCanonicalForEdit = false);
     }
-    if (!mounted) return;
+    if (!_isSessionActive) return;
     onEdit(targetSong);
   }
 
   @override
   Widget build(BuildContext context) {
+    if (!_isSessionActive) {
+      return const SizedBox.shrink();
+    }
     return DraggableScrollableSheet(
       initialChildSize: 0.85,
       minChildSize: 0.5,
@@ -1621,6 +1714,8 @@ class _SongDetailSheetState extends State<_SongDetailSheet> {
 class _SetlistDetailScreen extends StatefulWidget {
   final SetlistItemData setlist;
   final WorshipApiClient? apiClient;
+  final ValueListenable<int>? sessionListenable;
+  final int? expectedSession;
   final bool canManageWorship;
   final void Function(SongItem song, {bool isSetlistPreview}) onSongTap;
   final ValueChanged<SetlistItemData>? onSetlistLoaded;
@@ -1633,6 +1728,8 @@ class _SetlistDetailScreen extends StatefulWidget {
   const _SetlistDetailScreen({
     required this.setlist,
     this.apiClient,
+    this.sessionListenable,
+    this.expectedSession,
     this.canManageWorship = false,
     required this.onSongTap,
     this.onSetlistLoaded,
@@ -1648,33 +1745,81 @@ class _SetlistDetailScreenState extends State<_SetlistDetailScreen> {
   late SetlistItemData _setlist;
   bool _loadingDetail = false;
   String? _detailError;
+  bool _sessionInvalidated = false;
+  ModalRoute<dynamic>? _route;
+
+  bool get _isSessionActive =>
+      mounted &&
+      !_sessionInvalidated &&
+      (widget.expectedSession == null ||
+          widget.sessionListenable?.value == widget.expectedSession);
 
   @override
   void initState() {
     super.initState();
     _setlist = widget.setlist;
-    if (widget.apiClient != null) {
+    widget.sessionListenable?.addListener(_handleSessionChanged);
+    if (_isSessionActive && widget.apiClient != null) {
       _loadSetlistDetail();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _route ??= ModalRoute.of(context);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SetlistDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.sessionListenable != widget.sessionListenable) {
+      oldWidget.sessionListenable?.removeListener(_handleSessionChanged);
+      widget.sessionListenable?.addListener(_handleSessionChanged);
+    }
+    _handleSessionChanged();
+  }
+
+  @override
+  void dispose() {
+    widget.sessionListenable?.removeListener(_handleSessionChanged);
+    super.dispose();
+  }
+
+  void _handleSessionChanged() {
+    if (_sessionInvalidated) return;
+    if (widget.expectedSession != null &&
+        widget.sessionListenable?.value != widget.expectedSession) {
+      _sessionInvalidated = true;
+      final route = _route;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (route != null && route.isActive) {
+          Navigator.of(context).removeRoute(route);
+        } else {
+          setState(() {});
+        }
+      });
     }
   }
 
   Future<void> _loadSetlistDetail() async {
     final client = widget.apiClient;
-    if (client == null) return;
+    if (client == null || !_isSessionActive) return;
     setState(() {
       _loadingDetail = true;
       _detailError = null;
     });
     try {
       final fetched = await client.getSetlist(_setlist.id);
-      if (!mounted) return;
+      if (!_isSessionActive) return;
       setState(() {
         _setlist = fetched;
         _loadingDetail = false;
       });
       widget.onSetlistLoaded?.call(fetched);
     } catch (error) {
-      if (!mounted) return;
+      if (!_isSessionActive) return;
       setState(() {
         _detailError = error is WorshipApiException
             ? error.message
@@ -1686,6 +1831,9 @@ class _SetlistDetailScreenState extends State<_SetlistDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_isSessionActive) {
+      return const SizedBox.shrink();
+    }
     final formattedDate =
         '${_setlist.serviceDate.year}-${_setlist.serviceDate.month.toString().padLeft(2, '0')}-${_setlist.serviceDate.day.toString().padLeft(2, '0')}';
 
