@@ -22,7 +22,7 @@ This document defines the production authentication and authorization contract i
 | Setting | Default Value | Configuration Key |
 |---|---|---|
 | Client ID | `church_mobile_app` | `Authentication:AllowedClientIds` |
-| Redirect URIs | `com.church.app://oauthredirect`, `http://localhost/callback`, `https://localhost/callback` | `Authentication:AllowedRedirectUris` |
+| Redirect URIs | `com.church.app:/oauthredirect`, `com.church.app://oauthredirect`, `http://localhost/callback`, `https://localhost/callback` | `Authentication:AllowedRedirectUris` |
 | Response Type | `code` | Fixed |
 | PKCE Method | `S256` (required; `plain` and missing challenge rejected) | Fixed |
 | Supported Grants | `authorization_code`, `refresh_token` (`password` grant explicitly disabled) | Fixed |

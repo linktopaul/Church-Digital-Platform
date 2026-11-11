@@ -119,7 +119,7 @@ jobs:
             --dart-define=CHURCH_API_BASE_URL="https://ci-verify.invalid" \
             --dart-define=CHURCH_AUTH_ISSUER="https://ci-verify.invalid" \
             --dart-define=CHURCH_AUTH_CLIENT_ID="church_mobile_app" \
-            --dart-define=CHURCH_AUTH_REDIRECT_URI="com.church.app://oauthredirect" \
+            --dart-define=CHURCH_AUTH_REDIRECT_URI="com.church.app:/oauthredirect" \
             --dart-define=CHURCH_AUTH_SCOPES="openid profile email offline_access roles church_api" \
             --dart-define=CHURCH_AUTH_MEMBER_ID_CLAIM="member_id" \
             --dart-define=CHURCH_AUTH_TENANT_ID_CLAIM="tenant_id" \
@@ -143,7 +143,7 @@ jobs:
           API_BASE_URL: ${{ inputs.api_base_url || vars.CHURCH_API_BASE_URL }}
           AUTH_ISSUER: ${{ inputs.auth_issuer || vars.CHURCH_AUTH_ISSUER }}
           AUTH_CLIENT_ID: ${{ inputs.auth_client_id || vars.CHURCH_AUTH_CLIENT_ID || 'church_mobile_app' }}
-          AUTH_REDIRECT_URI: ${{ inputs.auth_redirect_uri || vars.CHURCH_AUTH_REDIRECT_URI || 'com.church.app://oauthredirect' }}
+          AUTH_REDIRECT_URI: ${{ inputs.auth_redirect_uri || vars.CHURCH_AUTH_REDIRECT_URI || 'com.church.app:/oauthredirect' }}
           AUTH_SCOPES: ${{ inputs.auth_scopes || vars.CHURCH_AUTH_SCOPES || 'openid profile email offline_access roles church_api' }}
           AUTH_MEMBER_ID_CLAIM: ${{ vars.CHURCH_AUTH_MEMBER_ID_CLAIM || 'member_id' }}
           AUTH_TENANT_ID_CLAIM: ${{ vars.CHURCH_AUTH_TENANT_ID_CLAIM || 'tenant_id' }}
