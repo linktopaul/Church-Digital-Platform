@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/celebration_models.dart';
 import '../services/celebration_api_client.dart';
+import '../theme/app_theme.dart';
 
 /// Screen displaying today's and upcoming church member celebrations
 /// (birthdays and wedding anniversaries) with scripture blessing actions.
@@ -301,18 +302,24 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
 
   Widget _buildCelebrationTile(CelebrationEvent celebration, {bool showDate = false}) {
     final isBirthday = celebration.type == CelebrationType.birthday;
-    final icon = isBirthday ? Icons.cake : Icons.favorite;
-    final color = isBirthday ? Colors.deepPurple : Colors.pink;
+    final icon = isBirthday ? Icons.cake_outlined : Icons.favorite_border;
+    final color = isBirthday ? SanctuaryColors.gold : const Color(0xFFB83B5E);
+    final bg = isBirthday ? SanctuaryColors.goldSoft : const Color(0xFFFCEEF2);
     final subtitleText = showDate
         ? '${_formatCelebrationDate(celebration.date)} • ${celebration.milestoneLabel}'
         : celebration.milestoneLabel;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      elevation: 1,
       child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: color.withAlpha(38),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        leading: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(12),
+          ),
           child: Icon(icon, color: color),
         ),
         title: Text(
@@ -364,27 +371,13 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
               hasScrollBody: false,
               child: Center(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.cake_outlined, size: 64, color: Theme.of(context).colorScheme.outline),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No Celebrations Found',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        emptyMessage,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
-                      ),
-                    ],
+                  padding: const EdgeInsets.all(24),
+                  child: SanctuaryEmptyState(
+                    icon: Icons.cake_outlined,
+                    title: 'No Celebrations Found',
+                    description: emptyMessage,
+                    accentColor: SanctuaryColors.gold,
+                    accentBackground: SanctuaryColors.goldSoft,
                   ),
                 ),
               ),
