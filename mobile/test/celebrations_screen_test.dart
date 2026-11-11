@@ -10,6 +10,7 @@ class FakeCelebrationApiClient implements CelebrationApiClient {
   List<BlessingTemplate> templates;
   bool shouldFail;
   String? failureMessage;
+  int? failureStatusCode;
 
   FakeCelebrationApiClient({
     List<CelebrationEvent>? todayEvents,
@@ -17,6 +18,7 @@ class FakeCelebrationApiClient implements CelebrationApiClient {
     List<BlessingTemplate>? templates,
     this.shouldFail = false,
     this.failureMessage,
+    this.failureStatusCode,
   })  : todayEvents = todayEvents ?? [],
         upcomingEvents = upcomingEvents ?? [],
         templates = templates ?? [];
@@ -24,7 +26,10 @@ class FakeCelebrationApiClient implements CelebrationApiClient {
   @override
   Future<List<CelebrationEvent>> getTodayCelebrations({DateTime? date}) async {
     if (shouldFail) {
-      throw CelebrationApiException(failureMessage ?? 'Error fetching today celebrations');
+      throw CelebrationApiException(
+        failureMessage ?? 'Error fetching today celebrations',
+        statusCode: failureStatusCode,
+      );
     }
     return List.from(todayEvents);
   }
@@ -32,7 +37,10 @@ class FakeCelebrationApiClient implements CelebrationApiClient {
   @override
   Future<List<CelebrationEvent>> getUpcomingCelebrations({int days = 7, DateTime? startDate}) async {
     if (shouldFail) {
-      throw CelebrationApiException(failureMessage ?? 'Error fetching upcoming celebrations');
+      throw CelebrationApiException(
+        failureMessage ?? 'Error fetching upcoming celebrations',
+        statusCode: failureStatusCode,
+      );
     }
     return List.from(upcomingEvents);
   }
@@ -40,7 +48,10 @@ class FakeCelebrationApiClient implements CelebrationApiClient {
   @override
   Future<List<BlessingTemplate>> getBlessingTemplates() async {
     if (shouldFail) {
-      throw CelebrationApiException(failureMessage ?? 'Error fetching templates');
+      throw CelebrationApiException(
+        failureMessage ?? 'Error fetching templates',
+        statusCode: failureStatusCode,
+      );
     }
     return List.from(templates);
   }
@@ -123,15 +134,25 @@ void main() {
 
   testWidgets('renders unauthenticated state when apiClient is null', (tester) async {
     await tester.pumpWidget(buildTestWidget(client: null));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sign In Required'), findsOneWidget);
     expect(find.text('Please sign in to view church celebrations.'), findsOneWidget);
   });
 
-  testWidgets('renders empty state when there are no celebrations', (tester) async {
+  testWidgets('renders empty state when there are no celebrations and supports pull-to-refresh', (tester) async {
     final client = FakeCelebrationApiClient();
     await tester.pumpWidget(buildTestWidget(client: client));
     await tester.pumpAndSettle();
 
+    expect(find.text('No Celebrations Found'), findsOneWidget);
     expect(find.text('No celebrations today. Check back tomorrow!'), findsOneWidget);
+
+    client.todayEvents = sampleToday;
+    await tester.drag(find.text('No Celebrations Found'), const Offset(0, 300));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Grace Hopper'), findsOneWidget);
   });
 
   testWidgets('renders today celebrations with milestone badges and contact controls', (tester) async {
@@ -250,5 +271,33 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Grace Hopper'), findsOneWidget);
+  });
+
+  testWidgets('shows user-friendly session expired error on HTTP 401', (tester) async {
+    final client = FakeCelebrationApiClient(
+      shouldFail: true,
+      failureStatusCode: 401,
+      failureMessage: '401 Unauthorized',
+    );
+
+    await tester.pumpWidget(buildTestWidget(client: client));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Unable to Load Celebrations'), findsOneWidget);
+    expect(find.text('Your session has expired. Please sign in again.'), findsOneWidget);
+  });
+
+  testWidgets('shows user-friendly access denied error on HTTP 403', (tester) async {
+    final client = FakeCelebrationApiClient(
+      shouldFail: true,
+      failureStatusCode: 403,
+      failureMessage: '403 Forbidden',
+    );
+
+    await tester.pumpWidget(buildTestWidget(client: client));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Unable to Load Celebrations'), findsOneWidget);
+    expect(find.text('Access denied. You do not have permission to view celebrations.'), findsOneWidget);
   });
 }

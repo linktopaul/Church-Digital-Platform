@@ -6,17 +6,25 @@ import 'package:church_digital_platform_mobile/services/offering_api_client.dart
 
 class FakeOfferingApiClient implements OfferingApiClient {
   final ChurchGivingConfig config;
-  final List<Contribution> myContributions;
-  final List<Contribution> ledgerContributions;
+  List<Contribution> myContributions;
+  List<Contribution> ledgerContributions;
   final LedgerSummary ledgerSummary;
   RecordContributionInput? lastRecordedInput;
   bool verifyCalled = false;
+  bool shouldFailMyGiving = false;
+  bool shouldFailLedger = false;
+  String? failureMessage;
+  int? failureStatusCode;
 
   FakeOfferingApiClient({
     ChurchGivingConfig? config,
     List<Contribution>? myContributions,
     List<Contribution>? ledgerContributions,
     LedgerSummary? ledgerSummary,
+    this.shouldFailMyGiving = false,
+    this.shouldFailLedger = false,
+    this.failureMessage,
+    this.failureStatusCode,
   })  : config = config ??
             const ChurchGivingConfig(
               upiId: 'churchgiving@upi',
@@ -72,10 +80,24 @@ class FakeOfferingApiClient implements OfferingApiClient {
   }
 
   @override
-  Future<List<Contribution>> getMyContributions() async => myContributions;
+  Future<List<Contribution>> getMyContributions() async {
+    if (shouldFailMyGiving) {
+      throw OfferingApiException(
+        failureMessage ?? 'Error fetching my contributions',
+        statusCode: failureStatusCode,
+      );
+    }
+    return myContributions;
+  }
 
   @override
   Future<List<Contribution>> getLedger({OfferingFundType? fundType, ContributionStatus? status}) async {
+    if (shouldFailLedger) {
+      throw OfferingApiException(
+        failureMessage ?? 'Error fetching ledger',
+        statusCode: failureStatusCode,
+      );
+    }
     if (fundType != null) {
       return ledgerContributions.where((c) => c.fundType == fundType).toList();
     }
@@ -107,23 +129,45 @@ class FakeOfferingApiClient implements OfferingApiClient {
   }
 
   @override
-  Future<LedgerSummary> getLedgerSummary() async => ledgerSummary;
+  Future<LedgerSummary> getLedgerSummary() async {
+    if (shouldFailLedger) {
+      throw OfferingApiException(
+        failureMessage ?? 'Error fetching ledger summary',
+        statusCode: failureStatusCode,
+      );
+    }
+    return ledgerSummary;
+  }
 }
 
 void main() {
   Widget buildTestWidget({
-    required OfferingApiClient apiClient,
+    OfferingApiClient? apiClient,
     bool isPastor = false,
+    bool canManageOfferings = false,
     Future<bool> Function(String)? onLaunchUrl,
   }) {
     return MaterialApp(
       home: OfferingsScreen(
         apiClient: apiClient,
         isPastor: isPastor,
+        canManageOfferings: canManageOfferings,
         onLaunchUrl: onLaunchUrl,
       ),
     );
   }
+
+  testWidgets('renders unauthenticated state when apiClient is null', (tester) async {
+    await tester.pumpWidget(buildTestWidget(apiClient: null));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sign In Required'), findsOneWidget);
+    expect(
+      find.textContaining('Recording offerings, viewing receipts, and managing tithes require an active, authenticated member session.'),
+      findsOneWidget,
+    );
+    expect(find.text('Give Now'), findsNothing);
+  });
 
   testWidgets('Renders Give Now and My Giving tabs for regular members', (tester) async {
     final client = FakeOfferingApiClient();
@@ -194,7 +238,7 @@ void main() {
     expect(find.text('Contribution Intent Recorded'), findsNothing);
   });
 
-  testWidgets('My Giving tab displays user receipts', (tester) async {
+  testWidgets('My Giving tab displays user receipts and supports pull-to-refresh', (tester) async {
     final client = FakeOfferingApiClient(
       myContributions: [
         Contribution(
@@ -224,6 +268,71 @@ void main() {
     expect(find.text('INR 500.00 - Tithe'), findsOneWidget);
     expect(find.text('Receipt: REC-TITHE-001'), findsOneWidget);
     expect(find.text('Verified'), findsOneWidget);
+
+    // Pull to refresh
+    client.myContributions = [
+      ...client.myContributions,
+      Contribution(
+        id: 'c-2',
+        memberId: 'm-1',
+        memberName: 'Grace Hopper',
+        fundType: OfferingFundType.generalOffering,
+        fundName: 'General Offering',
+        amount: 200.0,
+        currency: 'INR',
+        upiPayeeId: 'church@upi',
+        upiIntentUri: 'upi://pay',
+        status: ContributionStatus.submitted,
+        receiptNumber: 'REC-GEN-002',
+        createdAt: DateTime.utc(2026, 11, 2),
+      ),
+    ];
+
+    await tester.drag(find.text('INR 500.00 - Tithe'), const Offset(0, 300));
+    await tester.pumpAndSettle();
+
+    expect(find.text('INR 200.00 - General Offering'), findsOneWidget);
+  });
+
+  testWidgets('My Giving tab handles HTTP 401 error with retry', (tester) async {
+    final client = FakeOfferingApiClient(
+      shouldFailMyGiving: true,
+      failureStatusCode: 401,
+      failureMessage: '401 Unauthorized',
+    );
+
+    await tester.pumpWidget(buildTestWidget(apiClient: client, isPastor: false));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('My Giving'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Unable to Load Giving Records'), findsOneWidget);
+    expect(find.text('Your session has expired. Please sign in again.'), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+
+    client.shouldFailMyGiving = false;
+    client.myContributions = [
+      Contribution(
+        id: 'c-rec',
+        memberId: 'm-1',
+        memberName: 'Grace Hopper',
+        fundType: OfferingFundType.tithe,
+        fundName: 'Tithe',
+        amount: 1000.0,
+        currency: 'INR',
+        upiPayeeId: 'church@upi',
+        upiIntentUri: 'upi://pay',
+        status: ContributionStatus.verified,
+        receiptNumber: 'REC-1000',
+        createdAt: DateTime.utc(2026, 11, 2),
+      ),
+    ];
+
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('INR 1000.00 - Tithe'), findsOneWidget);
   });
 
   testWidgets('Pastor mode shows Ledger tab with summary cards and verify action', (tester) async {
@@ -275,6 +384,23 @@ void main() {
     expect(client.verifyCalled, isTrue);
   });
 
+  testWidgets('Ledger tab handles HTTP 403 error', (tester) async {
+    final client = FakeOfferingApiClient(
+      shouldFailLedger: true,
+      failureStatusCode: 403,
+      failureMessage: '403 Forbidden',
+    );
+
+    await tester.pumpWidget(buildTestWidget(apiClient: client, isPastor: true));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Ledger'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Unable to Load Ledger'), findsOneWidget);
+    expect(find.text('Access denied: Restricted to pastoral leadership or authorized staff.'), findsOneWidget);
+  });
+
   testWidgets('Renders without overflow on narrow 320px viewport', (tester) async {
     tester.view.physicalSize = const Size(320, 640);
     tester.view.devicePixelRatio = 1.0;
@@ -289,7 +415,6 @@ void main() {
     expect(find.text('Give Now'), findsOneWidget);
     expect(find.text('Select Ministry Fund'), findsOneWidget);
   });
-
 
   testWidgets('Admin role (canManageOfferings) shows Ledger tab for non-pastor admin', (tester) async {
     final client = FakeOfferingApiClient();
@@ -306,5 +431,55 @@ void main() {
     await tester.tap(find.text('Ledger'));
     await tester.pumpAndSettle();
     expect(find.text('Total Given'), findsOneWidget);
+  });
+
+  testWidgets('Updating isPastor or canManageOfferings rebuilds TabController cleanly without ticker assertion', (tester) async {
+    final client = FakeOfferingApiClient();
+    await tester.pumpWidget(MaterialApp(
+      home: OfferingsScreen(
+        apiClient: client,
+        isPastor: false,
+        canManageOfferings: false,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ledger'), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(MaterialApp(
+      home: OfferingsScreen(
+        apiClient: client,
+        isPastor: false,
+        canManageOfferings: true,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ledger'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(MaterialApp(
+      home: OfferingsScreen(
+        apiClient: client,
+        isPastor: true,
+        canManageOfferings: false,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ledger'), findsOneWidget);
+
+    await tester.pumpWidget(MaterialApp(
+      home: OfferingsScreen(
+        apiClient: client,
+        isPastor: false,
+        canManageOfferings: false,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ledger'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 }

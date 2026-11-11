@@ -89,6 +89,27 @@ class _PrayerScreenState extends State<PrayerScreen> with TickerProviderStateMix
     super.dispose();
   }
 
+  String _sanitizeErrorMessage(dynamic e, String defaultMessage) {
+    if (e is PrayerApiException) {
+      final msg = e.message.toLowerCase();
+      if (e.statusCode == 401 || msg.contains('401') || msg.contains('unauthorized')) {
+        return 'Your session has expired. Please sign in again.';
+      }
+      if (e.statusCode == 403 || msg.contains('403') || msg.contains('forbidden')) {
+        return 'Access denied: You do not have permission for this pastoral prayer action.';
+      }
+      return e.message;
+    }
+    final str = e.toString().toLowerCase();
+    if (str.contains('401') || str.contains('unauthorized')) {
+      return 'Your session has expired. Please sign in again.';
+    }
+    if (str.contains('403') || str.contains('forbidden')) {
+      return 'Access denied: You do not have permission for this pastoral prayer action.';
+    }
+    return defaultMessage;
+  }
+
   Future<void> _loadData() async {
     final client = widget.apiClient;
     if (client == null) return;
@@ -137,9 +158,7 @@ class _PrayerScreenState extends State<PrayerScreen> with TickerProviderStateMix
       }
       setState(() {
         _isLoading = false;
-        _errorMessage = e is PrayerApiException
-            ? e.message
-            : 'Failed to load prayer requests. Please try again.';
+        _errorMessage = _sanitizeErrorMessage(e, 'Failed to load prayer requests. Please try again.');
       });
     }
   }
@@ -270,7 +289,7 @@ class _PrayerScreenState extends State<PrayerScreen> with TickerProviderStateMix
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            e is PrayerApiException ? e.message : 'Failed to update prayer status.',
+            _sanitizeErrorMessage(e, 'Failed to update prayer status.'),
           ),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
@@ -625,6 +644,21 @@ class _PrayerSubmitBottomSheetState extends State<_PrayerSubmitBottomSheet> {
     super.dispose();
   }
 
+  String _sanitizeSubmitError(dynamic e) {
+    final str = (e is PrayerApiException ? e.message : e.toString()).toLowerCase();
+    final code = e is PrayerApiException ? e.statusCode : null;
+    if (code == 401 || str.contains('401') || str.contains('unauthorized')) {
+      return 'Your session has expired. Please sign in again.';
+    }
+    if (code == 403 || str.contains('403') || str.contains('forbidden')) {
+      return 'Access denied: You do not have permission to submit pastoral prayer requests.';
+    }
+    if (e is PrayerApiException) {
+      return e.message;
+    }
+    return 'Failed to submit prayer request. Please check your connection.';
+  }
+
   Future<void> _submit() async {
     if (!_isSessionValid) {
       if (mounted) {
@@ -649,9 +683,7 @@ class _PrayerSubmitBottomSheetState extends State<_PrayerSubmitBottomSheet> {
       if (mounted && _isSessionValid) {
         setState(() {
           _isSubmitting = false;
-          _submitError = e is PrayerApiException
-              ? e.message
-              : 'Failed to submit prayer request. Please check your connection.';
+          _submitError = _sanitizeSubmitError(e);
         });
       }
     }
