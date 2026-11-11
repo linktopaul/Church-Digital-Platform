@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/announcement_models.dart';
+import '../theme/app_theme.dart';
 
 typedef AnnouncementSubmitCallback = Future<void> Function(CreateAnnouncementInput input);
 
@@ -223,18 +224,40 @@ class _AnnouncementComposerScreenState extends State<AnnouncementComposerScreen>
                     ),
                   ],
 
+                  if (_errorMessage == null) ...[
+                    Card(
+                      color: SanctuaryColors.stone,
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        child: Row(
+                          children: [
+                            Icon(Icons.campaign_outlined, color: SanctuaryColors.navy, size: 18),
+                            SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Share church news, schedule changes, or urgent alerts with your congregation.',
+                                style: TextStyle(fontSize: 12.5, color: SanctuaryColors.inkMuted),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   // Title Input
                   TextFormField(
                     key: const Key('announcement_title_field'),
                     controller: _titleController,
                     enabled: !_isSubmitting,
                     maxLength: 255,
+                    maxLines: 2,
+                    minLines: 1,
                     textInputAction: TextInputAction.next,
                     decoration: const InputDecoration(
                       labelText: 'Title *',
                       hintText: 'e.g. Sunday Service Schedule',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.campaign_outlined),
+                      prefixIcon: Icon(Icons.title),
                     ),
                     validator: (value) {
                       if (value == null || value.trim().isEmpty) {
@@ -255,7 +278,6 @@ class _AnnouncementComposerScreenState extends State<AnnouncementComposerScreen>
                   initialValue: _selectedPriority,
                   decoration: const InputDecoration(
                     labelText: 'Priority',
-                    border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.flag_outlined),
                   ),
                   items: AnnouncementPriority.values.map((priority) {
@@ -291,7 +313,6 @@ class _AnnouncementComposerScreenState extends State<AnnouncementComposerScreen>
                   decoration: const InputDecoration(
                     labelText: 'Content *',
                     hintText: 'Write the details of the announcement here...',
-                    border: OutlineInputBorder(),
                     alignLabelWithHint: true,
                     prefixIcon: Padding(
                       padding: EdgeInsets.only(bottom: 72),
