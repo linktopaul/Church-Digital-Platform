@@ -4,6 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:church_digital_platform_mobile/auth/auth_provider.dart';
 import 'package:church_digital_platform_mobile/auth/auth_session.dart';
 import 'package:church_digital_platform_mobile/auth/auth_session_manager.dart';
+import 'package:church_digital_platform_mobile/auth/oidc_configuration.dart';
+import 'package:church_digital_platform_mobile/auth/openiddict_auth_provider.dart';
+import 'package:church_digital_platform_mobile/auth/platform_secure_token_storage.dart';
 
 void main() {
   group('AuthSessionManager Lifecycle Tests', () {
@@ -155,6 +158,43 @@ void main() {
       expect(emissions.contains(null), isTrue);
 
       await sub.cancel();
+    });
+
+    test('AuthSessionManager.production wires OpenIddictAuthProvider and PlatformSecureTokenStorage', () async {
+      final config = OidcConfiguration(
+        issuer: 'https://issuer.example.test',
+        clientId: 'production-client',
+        redirectUri: 'test.church:/callback',
+        scopes: const ['openid', 'offline_access', 'church_api'],
+        memberIdClaim: 'member_id',
+        tenantIdClaim: 'tenant_id',
+        rolesClaim: 'roles',
+      );
+
+      final productionManager = AuthSessionManager.production(
+        configuration: config,
+      );
+
+      expect(productionManager.provider, isA<OpenIddictAuthProvider>());
+      expect(productionManager.storage, isA<PlatformSecureTokenStorage>());
+      expect(productionManager.oidcConfiguration, same(config));
+      expect(productionManager.supportsInteractiveSignIn, isTrue);
+
+      productionManager.dispose();
+      // Calling dispose again is idempotent and signInInteractively fails closed after dispose
+      productionManager.dispose();
+      await expectLater(
+        productionManager.signInInteractively(),
+        throwsStateError,
+      );
+    });
+
+    test('signInInteractively throws UnsupportedError when provider is non-interactive', () async {
+      expect(sessionManager.supportsInteractiveSignIn, isFalse);
+      await expectLater(
+        sessionManager.signInInteractively(),
+        throwsUnsupportedError,
+      );
     });
   });
 }
