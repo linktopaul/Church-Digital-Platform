@@ -432,4 +432,54 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Total Given'), findsOneWidget);
   });
+
+  testWidgets('Updating isPastor or canManageOfferings rebuilds TabController cleanly without ticker assertion', (tester) async {
+    final client = FakeOfferingApiClient();
+    await tester.pumpWidget(MaterialApp(
+      home: OfferingsScreen(
+        apiClient: client,
+        isPastor: false,
+        canManageOfferings: false,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ledger'), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(MaterialApp(
+      home: OfferingsScreen(
+        apiClient: client,
+        isPastor: false,
+        canManageOfferings: true,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ledger'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(MaterialApp(
+      home: OfferingsScreen(
+        apiClient: client,
+        isPastor: true,
+        canManageOfferings: false,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ledger'), findsOneWidget);
+
+    await tester.pumpWidget(MaterialApp(
+      home: OfferingsScreen(
+        apiClient: client,
+        isPastor: false,
+        canManageOfferings: false,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ledger'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }

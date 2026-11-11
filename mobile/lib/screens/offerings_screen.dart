@@ -22,7 +22,7 @@ class OfferingsScreen extends StatefulWidget {
   State<OfferingsScreen> createState() => _OfferingsScreenState();
 }
 
-class _OfferingsScreenState extends State<OfferingsScreen> with SingleTickerProviderStateMixin {
+class _OfferingsScreenState extends State<OfferingsScreen> with TickerProviderStateMixin {
   late TabController _tabController;
 
   // Giving Form State
