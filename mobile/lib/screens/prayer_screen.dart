@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/prayer_models.dart';
 import '../services/prayer_api_client.dart';
+import '../theme/app_theme.dart';
 
 /// Screen for viewing and submitting confidential pastoral prayer requests.
 ///
@@ -446,14 +447,7 @@ class _PrayerScreenState extends State<PrayerScreen> with TickerProviderStateMix
 
   Widget _buildRequestCard(PrayerRequestData request, {required bool canManageStatus}) {
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: Theme.of(context).colorScheme.outlineVariant,
-        ),
-      ),
+      margin: const EdgeInsets.only(bottom: 10),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -463,19 +457,12 @@ class _PrayerScreenState extends State<PrayerScreen> with TickerProviderStateMix
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
-                  children: [
-                    Icon(
-                      Icons.lock,
-                      size: 14,
-                      color: Theme.of(context).colorScheme.secondary,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Confidential',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: Theme.of(context).colorScheme.secondary,
-                            fontWeight: FontWeight.w600,
-                          ),
+                  children: const [
+                    SanctuaryStatusBadge(
+                      label: 'Confidential',
+                      icon: Icons.lock_outline,
+                      foregroundColor: SanctuaryColors.plum,
+                      backgroundColor: SanctuaryColors.plumSoft,
                     ),
                   ],
                 ),
@@ -548,6 +535,7 @@ class _PrayerScreenState extends State<PrayerScreen> with TickerProviderStateMix
       onRefresh: _loadData,
       child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
         itemCount: requests.length,
         itemBuilder: (context, index) {
           final req = requests[index];
@@ -565,12 +553,18 @@ class _PrayerScreenState extends State<PrayerScreen> with TickerProviderStateMix
 
     return Scaffold(
       appBar: widget.isPastor
-          ? TabBar(
-              controller: _tabController,
-              tabs: const [
-                Tab(text: 'My Requests', icon: Icon(Icons.person)),
-                Tab(text: 'All Pastoral Requests', icon: Icon(Icons.admin_panel_settings)),
-              ],
+          ? PreferredSize(
+              preferredSize: const Size.fromHeight(62),
+              child: ColoredBox(
+                color: SanctuaryColors.surfaceCard,
+                child: TabBar(
+                  controller: _tabController,
+                  tabs: const [
+                    Tab(text: 'My Requests', icon: Icon(Icons.person_outline)),
+                    Tab(text: 'All Pastoral Requests', icon: Icon(Icons.admin_panel_settings_outlined)),
+                  ],
+                ),
+              ),
             )
           : null,
       body: _isLoading
