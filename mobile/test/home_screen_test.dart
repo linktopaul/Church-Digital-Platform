@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:church_digital_platform_mobile/models/announcement_models.dart';
@@ -13,9 +14,15 @@ import 'package:church_digital_platform_mobile/services/offering_api_client.dart
 class StubAnnouncementApiClient implements AnnouncementApiClient {
   List<Announcement> announcementsToReturn = [];
   bool shouldThrow = false;
+  int getCalls = 0;
+  Completer<List<Announcement>>? pendingCompleter;
 
   @override
   Future<List<Announcement>> getAnnouncements() async {
+    getCalls++;
+    if (pendingCompleter != null) {
+      return pendingCompleter!.future;
+    }
     if (shouldThrow) throw Exception('Network error');
     return announcementsToReturn;
   }
@@ -239,5 +246,105 @@ void main() {
     await tester.tap(find.byType(FloatingActionButton));
     await tester.pumpAndSettle();
     expect(find.text('New Announcement'), findsOneWidget);
+  });
+
+  testWidgets('resets feed and ignores stale response when announcementClient changes', (tester) async {
+    final slowCompleter = Completer<List<Announcement>>();
+    final clientA = StubAnnouncementApiClient()
+      ..announcementsToReturn = [
+        Announcement(
+          id: 'a1',
+          churchId: 'church-a',
+          authorId: 'u1',
+          title: 'Church A News',
+          content: 'Tenant A content',
+          priority: AnnouncementPriority.routine,
+          publishedAt: DateTime(2026, 11, 1),
+        ),
+      ];
+
+    await tester.pumpWidget(MaterialApp(
+      home: HomeScreen(announcementClient: clientA),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Church A News'), findsOneWidget);
+
+    // Start a slow refresh on clientA, then switch to clientB before it finishes.
+    clientA.pendingCompleter = slowCompleter;
+    await tester.fling(find.byType(ListView), const Offset(0, 300), 1000);
+    await tester.pump();
+
+    final clientB = StubAnnouncementApiClient()
+      ..announcementsToReturn = [
+        Announcement(
+          id: 'b1',
+          churchId: 'church-b',
+          authorId: 'u2',
+          title: 'Church B News',
+          content: 'Tenant B content',
+          priority: AnnouncementPriority.routine,
+          publishedAt: DateTime(2026, 11, 2),
+        ),
+      ];
+
+    await tester.pumpWidget(MaterialApp(
+      home: HomeScreen(announcementClient: clientB),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Church B News'), findsOneWidget);
+    expect(find.text('Church A News'), findsNothing);
+
+    // Complete stale clientA request and ensure it does not overwrite clientB data.
+    slowCompleter.complete([
+      Announcement(
+        id: 'stale',
+        churchId: 'church-a',
+        authorId: 'u1',
+        title: 'Stale Church A News',
+        content: 'Should be ignored',
+        priority: AnnouncementPriority.routine,
+        publishedAt: DateTime(2026, 11, 3),
+      ),
+    ]);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Church B News'), findsOneWidget);
+    expect(find.text('Stale Church A News'), findsNothing);
+
+    // Switching to null clears cached session announcements.
+    await tester.pumpWidget(const MaterialApp(home: HomeScreen()));
+    await tester.pumpAndSettle();
+    expect(find.text('Church B News'), findsNothing);
+    expect(find.text('Welcome'), findsOneWidget);
+  });
+
+  testWidgets('pull-to-refresh works on empty feed within viewport', (tester) async {
+    final announcementClient = StubAnnouncementApiClient();
+    await tester.pumpWidget(MaterialApp(
+      home: HomeScreen(announcementClient: announcementClient),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(announcementClient.getCalls, 1);
+    expect(find.text('No announcements yet.'), findsOneWidget);
+
+    announcementClient.announcementsToReturn = [
+      Announcement(
+        id: '2',
+        churchId: 'c1',
+        authorId: 'a1',
+        title: 'Refreshed Announcement',
+        content: 'Pulled cleanly',
+        priority: AnnouncementPriority.routine,
+        publishedAt: DateTime(2026, 11, 4),
+      ),
+    ];
+
+    await tester.fling(find.byType(ListView), const Offset(0, 300), 1000);
+    await tester.pumpAndSettle();
+
+    expect(announcementClient.getCalls, 2);
+    expect(find.text('Refreshed Announcement'), findsOneWidget);
   });
 }

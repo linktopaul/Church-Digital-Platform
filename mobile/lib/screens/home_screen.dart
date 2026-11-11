@@ -37,6 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Announcement> _announcements = [];
   bool _isLoading = false;
   String? _error;
+  int _fetchGeneration = 0;
 
   @override
   void initState() {
@@ -44,29 +45,43 @@ class _HomeScreenState extends State<HomeScreen> {
     _fetchAnnouncements();
   }
 
-  Future<void> _fetchAnnouncements() async {
-    if (widget.announcementClient == null) return;
+  @override
+  void didUpdateWidget(covariant HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.announcementClient != widget.announcementClient) {
+      _fetchGeneration++;
+      _announcements = [];
+      _error = null;
+      _isLoading = false;
+      if (widget.announcementClient != null) {
+        _fetchAnnouncements();
+      }
+    }
+  }
 
+  Future<void> _fetchAnnouncements() async {
+    final client = widget.announcementClient;
+    if (client == null) return;
+
+    final int generation = ++_fetchGeneration;
     setState(() {
       _isLoading = true;
       _error = null;
     });
 
     try {
-      final announcements = await widget.announcementClient!.getAnnouncements();
-      if (mounted) {
-        setState(() {
-          _announcements = announcements;
-          _isLoading = false;
-        });
-      }
+      final announcements = await client.getAnnouncements();
+      if (!mounted || generation != _fetchGeneration) return;
+      setState(() {
+        _announcements = announcements;
+        _isLoading = false;
+      });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
-          _isLoading = false;
-        });
-      }
+      if (!mounted || generation != _fetchGeneration) return;
+      setState(() {
+        _error = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+        _isLoading = false;
+      });
     }
   }
 
@@ -107,6 +122,7 @@ class _HomeScreenState extends State<HomeScreen> {
       body: RefreshIndicator(
         onRefresh: _fetchAnnouncements,
         child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
           children: [
             Card(
