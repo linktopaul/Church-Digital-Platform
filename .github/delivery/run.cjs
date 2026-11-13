@@ -12,7 +12,7 @@ function readRecord(body){
  if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw Error('Malformed state payload');
  return parsed;
 }
-async function run({github,context,core,dryRun=false}){
+async function run({github,context,core,dryRun=false,dispatchBlocker=null}){
  const config=JSON.parse(fs.readFileSync('.github/delivery/plan.json','utf8'));
  if(config.version!==1)throw Error('Unsupported delivery plan version');
  const {owner,repo}=context.repo;
@@ -40,6 +40,17 @@ async function run({github,context,core,dryRun=false}){
   }
  }
  const leases=[...leaseMap.values()];
+ const held=leases.filter(lease=>['active','dispatched','blocked'].includes(lease.status));
+ const capacity={
+  total:{held:held.length,limit:config.maxActive},
+  agents:Object.fromEntries(Object.entries(config.maxPerAgent).map(([agent,limit])=>[
+   agent,{held:held.filter(lease=>lease.agent===agent).length,limit,automatedDispatch:config.enabledAgents.includes(agent)&&!dispatchBlocker}
+  ])),
+  vendorQuota:'unknown',
+  antigravity:'manual handoff; activity tracked outside the coordinator'
+ };
+ const unregisteredOpenIssues=issues.filter(issue=>issue.state==='open'&&!issue.pull_request&&!config.tasks.some(task=>task.issue===issue.number))
+  .map(issue=>({issue:issue.number,title:issue.title}));
  const decision=plan({tasks:config.tasks,issues,pulls,leases,maxActive:config.maxActive,maxPerAgent:config.maxPerAgent,enabledAgents:config.enabledAgents});
  decision.alerts.push(...problems);
  if(decision.alerts.length)decision.dispatch=[];
@@ -96,7 +107,7 @@ async function run({github,context,core,dryRun=false}){
    actions.push({issue:task.issue,pullRequest:pr.number,status:'one bounded existing-session follow-up'});
   }
  }
- const report={version:1,generatedAt:new Date().toISOString(),dryRun,limits:{maxActive:config.maxActive,maxPerAgent:config.maxPerAgent},codexDispatch:'disabled: environment integration not verified; no automatic coding mentions',leases,decision,actions};
+ const report={version:1,generatedAt:new Date().toISOString(),dryRun,dispatchBlocker,capacity,unregisteredOpenIssues,limits:{maxActive:config.maxActive,maxPerAgent:config.maxPerAgent},codexDispatch:'disabled: environment integration not verified; no automatic coding mentions',leases,decision,actions};
  fs.mkdirSync('delivery-report',{recursive:true});
  fs.writeFileSync('delivery-report/status.json',JSON.stringify(report,null,2));
  await core.summary.addHeading('Delivery coordinator').addRaw('Owner assignments and accepted dependencies govern dispatch. Existing leases never expire automatically. Codex unattended dispatch is disabled.\n').addCodeBlock(JSON.stringify(report,null,2),'json').write();

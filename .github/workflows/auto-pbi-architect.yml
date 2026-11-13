@@ -6,6 +6,12 @@ on:
     paths:
       - ".github/product_roadmap.md"
   workflow_dispatch:
+  schedule:
+    - cron: "23 4 * * 1"
+
+concurrency:
+  group: roadmap-backlog
+  cancel-in-progress: false
 
 permissions:
   issues: write
@@ -13,6 +19,7 @@ permissions:
 
 jobs:
   generate-backlog:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Check out roadmap
@@ -57,22 +64,6 @@ jobs:
                 .map(match => Number(match[1]))
             );
 
-            const labelName = 'ready-for-dev';
-            try {
-              await github.rest.issues.getLabel({ owner, repo, name: labelName });
-              core.info(`Label "${labelName}" already exists.`);
-            } catch (error) {
-              if (error.status !== 404) throw error;
-              await github.rest.issues.createLabel({
-                owner,
-                repo,
-                name: labelName,
-                color: '0E8A16',
-                description: 'Roadmap PBI ready for development'
-              });
-              core.info(`Created label "${labelName}".`);
-            }
-
             for (const module of modules) {
               if (represented.has(module.number)) {
                 core.info(`Skipping Module ${module.number}; an issue already represents it.`);
@@ -111,8 +102,7 @@ jobs:
                 owner,
                 repo,
                 title: `[PBI #${module.number}]: ${module.title}`,
-                body,
-                labels: [labelName]
+                body
               });
               represented.add(module.number);
               core.info(`Created ${created.data.html_url}`);
