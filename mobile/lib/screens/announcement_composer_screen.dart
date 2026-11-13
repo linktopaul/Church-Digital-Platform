@@ -176,7 +176,25 @@ class _AnnouncementComposerScreenState extends State<AnnouncementComposerScreen>
       canPop: !_isSubmitting,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('New Announcement'),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'New Announcement',
+                style: TextStyle(fontFamily: 'serif', fontWeight: FontWeight.bold),
+              ),
+              Text(
+                'Nuntius Paroecialis · Notificatio',
+                style: TextStyle(
+                  fontFamily: 'serif',
+                  fontSize: 11,
+                  letterSpacing: 0.8,
+                  color: BasilicaColors.burgundy.withAlpha(180),
+                ),
+              ),
+            ],
+          ),
           leading: IconButton(
             key: const Key('announcement_cancel_button'),
             icon: const Icon(Icons.close),
@@ -226,17 +244,21 @@ class _AnnouncementComposerScreenState extends State<AnnouncementComposerScreen>
 
                   if (_errorMessage == null) ...[
                     Card(
-                      color: SanctuaryColors.stone,
+                      color: BasilicaColors.stone,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        side: const BorderSide(color: BasilicaColors.borderSoft),
+                      ),
                       child: const Padding(
                         padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         child: Row(
                           children: [
-                            Icon(Icons.campaign_outlined, color: SanctuaryColors.navy, size: 18),
+                            Icon(Icons.campaign_outlined, color: BasilicaColors.burgundy, size: 18),
                             SizedBox(width: 10),
                             Expanded(
                               child: Text(
                                 'Share church news, schedule changes, or urgent alerts with your congregation.',
-                                style: TextStyle(fontSize: 12.5, color: SanctuaryColors.inkMuted),
+                                style: TextStyle(fontSize: 12.5, color: BasilicaColors.inkMuted),
                               ),
                             ),
                           ],

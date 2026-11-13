@@ -783,19 +783,20 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
-                color: SanctuaryColors.gold.withValues(alpha: 0.45),
+                color: BasilicaColors.gold,
                 width: 2,
               ),
             ),
             child: CircleAvatar(
               radius: 38,
-              backgroundColor: SanctuaryColors.navySoft,
+              backgroundColor: BasilicaColors.burgundy,
               child: Text(
                 initials.toUpperCase(),
                 style: const TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.bold,
-                  color: SanctuaryColors.navy,
+                  fontFamily: 'serif',
+                  color: Colors.white,
                 ),
               ),
             ),
@@ -1051,13 +1052,18 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(48),
         child: ColoredBox(
-          color: SanctuaryColors.surfaceCard,
+          color: BasilicaColors.parchment,
           child: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'My Profile', icon: Icon(Icons.person, size: 20)),
-            Tab(text: 'Directory', icon: Icon(Icons.people, size: 20)),
-          ],
+            controller: _tabController,
+            indicatorColor: BasilicaColors.burgundy,
+            labelColor: BasilicaColors.burgundy,
+            unselectedLabelColor: BasilicaColors.inkMuted,
+            labelStyle: const TextStyle(fontFamily: 'serif', fontWeight: FontWeight.bold),
+            unselectedLabelStyle: const TextStyle(fontFamily: 'serif'),
+            tabs: const [
+              Tab(text: 'My Profile', icon: Icon(Icons.person, size: 20)),
+              Tab(text: 'Directory', icon: Icon(Icons.people, size: 20)),
+            ],
           ),
         ),
       ),

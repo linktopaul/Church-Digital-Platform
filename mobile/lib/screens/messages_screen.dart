@@ -556,18 +556,22 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                       width: 44,
                                       height: 44,
                                       decoration: BoxDecoration(
-                                        color: SanctuaryColors.navySoft,
+                                        color: BasilicaColors.stone,
                                         borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(color: BasilicaColors.borderSoft),
                                       ),
                                       child: Icon(
                                         _getCategoryIcon(group.category),
-                                        color: SanctuaryColors.navy,
+                                        color: BasilicaColors.burgundy,
                                       ),
                                     ),
                                     title: Text(
                                       group.name,
                                       style: const TextStyle(
-                                          fontWeight: FontWeight.bold),
+                                        fontWeight: FontWeight.bold,
+                                        fontFamily: 'serif',
+                                        color: BasilicaColors.burgundy,
+                                      ),
                                     ),
                                     subtitle: Column(
                                       crossAxisAlignment:
@@ -577,9 +581,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                           _getCategoryLabel(group.category),
                                           style: TextStyle(
                                             fontSize: 12,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .primary,
+                                            fontFamily: 'serif',
+                                            color: BasilicaColors.burgundy.withAlpha(200),
                                             fontWeight: FontWeight.w600,
                                           ),
                                         ),

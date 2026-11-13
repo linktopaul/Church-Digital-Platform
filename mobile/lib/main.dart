@@ -534,12 +534,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       appBar: AppBar(
         title: const Row(
           children: [
-            Icon(Icons.church_outlined, color: SanctuaryColors.navy, size: 22),
+            Icon(Icons.church_outlined, color: BasilicaColors.burgundy, size: 22),
             SizedBox(width: 8),
             Expanded(
               child: Text(
                 'Church Digital Platform',
                 overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontFamily: 'serif', fontWeight: FontWeight.bold),
               ),
             ),
           ],
@@ -552,8 +553,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 440),
               child: Card(
+                color: BasilicaColors.stoneLow,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  side: const BorderSide(color: BasilicaColors.borderSoft),
+                ),
                 child: Padding(
-                  padding: const EdgeInsets.all(22),
+                  padding: const EdgeInsets.all(24),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -561,17 +567,17 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                         width: 68,
                         height: 68,
                         decoration: BoxDecoration(
-                          color: SanctuaryColors.navySoft,
+                          color: BasilicaColors.burgundy,
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: SanctuaryColors.gold.withValues(alpha: 0.45),
+                            color: BasilicaColors.gold,
                             width: 1.5,
                           ),
                         ),
                         child: const Icon(
                           Icons.lock_outline,
                           size: 32,
-                          color: SanctuaryColors.navy,
+                          color: Colors.white,
                         ),
                       ),
                       const SizedBox(height: 14),
@@ -579,7 +585,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                         'Sign In Required',
                         style: theme.textTheme.headlineSmall?.copyWith(
                           fontWeight: FontWeight.w700,
-                          color: SanctuaryColors.ink,
+                          fontFamily: 'serif',
+                          color: BasilicaColors.burgundy,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -587,7 +594,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                         'Sign in with your church member account to access announcements, fellowship messages, confidential prayer, worship setlists, and the member directory.',
                         textAlign: TextAlign.center,
                         style: theme.textTheme.bodyMedium?.copyWith(
-                          color: SanctuaryColors.inkMuted,
+                          color: BasilicaColors.inkMuted,
                           height: 1.4,
                         ),
                       ),
@@ -600,20 +607,20 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                           SanctuaryStatusBadge(
                             label: 'Announcements',
                             icon: Icons.campaign_outlined,
-                            foregroundColor: SanctuaryColors.navy,
-                            backgroundColor: SanctuaryColors.navySoft,
+                            foregroundColor: BasilicaColors.burgundy,
+                            backgroundColor: BasilicaColors.stone,
                           ),
                           SanctuaryStatusBadge(
                             label: 'Prayer',
                             icon: Icons.favorite_border,
-                            foregroundColor: SanctuaryColors.plum,
-                            backgroundColor: SanctuaryColors.plumSoft,
+                            foregroundColor: BasilicaColors.burgundy,
+                            backgroundColor: BasilicaColors.stone,
                           ),
                           SanctuaryStatusBadge(
                             label: 'Worship',
                             icon: Icons.library_music_outlined,
-                            foregroundColor: SanctuaryColors.gold,
-                            backgroundColor: SanctuaryColors.goldSoft,
+                            foregroundColor: BasilicaColors.gold,
+                            backgroundColor: BasilicaColors.stone,
                           ),
                         ],
                       ),

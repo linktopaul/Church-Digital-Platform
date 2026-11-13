@@ -1038,9 +1038,14 @@ class _WorshipScreenState extends State<WorshipScreen>
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(48),
         child: ColoredBox(
-          color: SanctuaryColors.surfaceCard,
+          color: BasilicaColors.parchment,
           child: TabBar(
             controller: _tabController,
+            indicatorColor: BasilicaColors.burgundy,
+            labelColor: BasilicaColors.burgundy,
+            unselectedLabelColor: BasilicaColors.inkMuted,
+            labelStyle: const TextStyle(fontFamily: 'serif', fontWeight: FontWeight.bold),
+            unselectedLabelStyle: const TextStyle(fontFamily: 'serif'),
             tabs: const [
               Tab(
                 iconMargin: EdgeInsets.zero,

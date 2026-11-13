@@ -416,29 +416,31 @@ class _PrayerScreenState extends State<PrayerScreen> with TickerProviderStateMix
     Color fg;
     switch (status) {
       case PrayerRequestStatus.submitted:
-        bg = Colors.amber.shade100;
-        fg = Colors.amber.shade900;
+        bg = BasilicaColors.gold.withAlpha(40);
+        fg = BasilicaColors.burgundy;
         break;
       case PrayerRequestStatus.praying:
-        bg = Colors.blue.shade100;
-        fg = Colors.blue.shade900;
+        bg = BasilicaColors.burgundy.withAlpha(25);
+        fg = BasilicaColors.burgundy;
         break;
       case PrayerRequestStatus.answered:
-        bg = Colors.green.shade100;
-        fg = Colors.green.shade900;
+        bg = BasilicaColors.olive.withAlpha(35);
+        fg = BasilicaColors.olive;
         break;
     }
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: fg.withAlpha(60)),
       ),
       child: Text(
         status.displayName,
         style: TextStyle(
           color: fg,
           fontSize: 12,
+          fontFamily: 'serif',
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -447,7 +449,11 @@ class _PrayerScreenState extends State<PrayerScreen> with TickerProviderStateMix
 
   Widget _buildRequestCard(PrayerRequestData request, {required bool canManageStatus}) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: BasilicaColors.borderSoft),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -456,15 +462,11 @@ class _PrayerScreenState extends State<PrayerScreen> with TickerProviderStateMix
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: const [
-                    SanctuaryStatusBadge(
-                      label: 'Confidential',
-                      icon: Icons.lock_outline,
-                      foregroundColor: SanctuaryColors.plum,
-                      backgroundColor: SanctuaryColors.plumSoft,
-                    ),
-                  ],
+                const SanctuaryStatusBadge(
+                  label: 'Confidential',
+                  icon: Icons.lock_outline,
+                  foregroundColor: BasilicaColors.burgundy,
+                  backgroundColor: BasilicaColors.stone,
                 ),
                 _buildStatusChip(request.status),
               ],
@@ -472,7 +474,10 @@ class _PrayerScreenState extends State<PrayerScreen> with TickerProviderStateMix
             const SizedBox(height: 12),
             Text(
               request.content,
-              style: Theme.of(context).textTheme.bodyLarge,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    fontFamily: 'serif',
+                    color: BasilicaColors.ink,
+                  ),
             ),
             const SizedBox(height: 12),
             Row(
@@ -481,7 +486,8 @@ class _PrayerScreenState extends State<PrayerScreen> with TickerProviderStateMix
                 Text(
                   _formatDate(request.createdAt),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
+                        fontFamily: 'serif',
+                        color: BasilicaColors.inkMuted,
                       ),
                 ),
                 if (canManageStatus)

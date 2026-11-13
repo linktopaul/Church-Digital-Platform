@@ -126,48 +126,176 @@ class _HomeScreenState extends State<HomeScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
           children: [
+            Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                decoration: BoxDecoration(
+                  color: BasilicaColors.goldSoft,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: BasilicaColors.gold.withValues(alpha: 0.3)),
+                ),
+                child: const Text(
+                  '◆ TEMPO ORDINARIO · HEBDOMADA XIV ◆',
+                  style: TextStyle(
+                    fontFamily: 'serif',
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
+                    color: BasilicaColors.gold,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'PAX CHRISTI',
+                      style: TextStyle(
+                        fontFamily: 'serif',
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.5,
+                        color: BasilicaColors.burgundy,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: const [
+                        Icon(Icons.church_outlined, size: 14, color: BasilicaColors.gold),
+                        SizedBox(width: 4),
+                        Text(
+                          'Basilica Maior · Missa & Vesperae',
+                          style: TextStyle(
+                            fontFamily: 'serif',
+                            fontSize: 12,
+                            fontStyle: FontStyle.italic,
+                            color: BasilicaColors.inkMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: BasilicaColors.stoneLow,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: BasilicaColors.borderSoft),
+                  ),
+                  child: const Icon(Icons.notifications_none, size: 20, color: BasilicaColors.burgundy),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [SanctuaryColors.navy, SanctuaryColors.navyDeep],
+                  colors: [BasilicaColors.burgundyContainer, BasilicaColors.burgundy],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(18),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.16),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(Icons.church_outlined, color: Colors.white),
+                boxShadow: [
+                  BoxShadow(
+                    color: BasilicaColors.burgundy.withValues(alpha: 0.2),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
                   ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Church Sanctuary',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                              ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: BasilicaColors.gold.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: BasilicaColors.gold.withValues(alpha: 0.4)),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Weekly updates, celebrations, and ministry giving.',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Colors.white.withValues(alpha: 0.85),
-                              ),
+                        child: const Text(
+                          'MISSA SOLEMNIS & CHORALIS',
+                          style: TextStyle(
+                            fontFamily: 'serif',
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.0,
+                            color: BasilicaColors.goldLight,
+                          ),
                         ),
-                      ],
+                      ),
+                      const Spacer(),
+                      const Text(
+                        'ORDO MISSAE',
+                        style: TextStyle(
+                          fontFamily: 'serif',
+                          fontSize: 10.5,
+                          letterSpacing: 0.8,
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Solemn Pontifical Mass & Gregorian Chants',
+                    style: TextStyle(
+                      fontFamily: 'serif',
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      height: 1.25,
                     ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Celebrant: Canon Marco Bellini · Schola Cantorum singing Palestrina in sacred harmony.',
+                    style: TextStyle(
+                      fontFamily: 'serif',
+                      fontSize: 12,
+                      color: Colors.white.withValues(alpha: 0.85),
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      const Icon(Icons.schedule, size: 13, color: BasilicaColors.goldLight),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Domenica 10:30 CET',
+                        style: TextStyle(
+                          fontFamily: 'serif',
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.9),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Icon(Icons.location_on_outlined, size: 13, color: BasilicaColors.goldLight),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          'Pantheon & Main Nave',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: 'serif',
+                            fontSize: 11.5,
+                            color: Colors.white.withValues(alpha: 0.85),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -181,21 +309,27 @@ class _HomeScreenState extends State<HomeScreen> {
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      color: SanctuaryColors.goldSoft,
+                      color: BasilicaColors.goldSoft,
                       borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: BasilicaColors.gold.withValues(alpha: 0.2)),
                     ),
-                    child: const Icon(Icons.cake_outlined, color: SanctuaryColors.gold),
+                    child: const Icon(Icons.cake_outlined, color: BasilicaColors.gold),
                   ),
                   title: const Text(
                     'Celebrations & Blessings',
-                    style: TextStyle(fontWeight: FontWeight.w700),
+                    style: TextStyle(
+                      fontFamily: 'serif',
+                      fontWeight: FontWeight.w700,
+                      color: BasilicaColors.ink,
+                    ),
                   ),
                   subtitle: const Text(
-                    'Share birthdays, anniversaries & scripture blessings.',
+                    'Share birthdays, anniversaries & sacred blessings.',
+                    style: TextStyle(fontFamily: 'serif'),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  trailing: const Icon(Icons.chevron_right, color: SanctuaryColors.inkMuted),
+                  trailing: const Icon(Icons.chevron_right, color: BasilicaColors.inkMuted),
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
@@ -219,21 +353,27 @@ class _HomeScreenState extends State<HomeScreen> {
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      color: SanctuaryColors.sageSoft,
+                      color: BasilicaColors.oliveSoft,
                       borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: BasilicaColors.olive.withValues(alpha: 0.2)),
                     ),
-                    child: const Icon(Icons.volunteer_activism_outlined, color: SanctuaryColors.sage),
+                    child: const Icon(Icons.volunteer_activism_outlined, color: BasilicaColors.olive),
                   ),
                   title: const Text(
                     'Digital Offerings & Giving',
-                    style: TextStyle(fontWeight: FontWeight.w700),
+                    style: TextStyle(
+                      fontFamily: 'serif',
+                      fontWeight: FontWeight.w700,
+                      color: BasilicaColors.ink,
+                    ),
                   ),
                   subtitle: const Text(
                     'Give securely via UPI and view receipts.',
+                    style: TextStyle(fontFamily: 'serif'),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  trailing: const Icon(Icons.chevron_right, color: SanctuaryColors.inkMuted),
+                  trailing: const Icon(Icons.chevron_right, color: BasilicaColors.inkMuted),
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
@@ -357,6 +497,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   );
                 }),
             ],
+            const SizedBox(height: 16),
+            const BasilicaVerseCard(
+              quote: 'Ubi caritas et amor, Deus ibi est. Congregavit nos in unum Christi amor.',
+              attribution: 'Antiphon from the Roman Missal & Early Christian Fathers',
+              rubric: 'Anno Domini MMXXVI',
+            ),
           ],
         ),
       ),
