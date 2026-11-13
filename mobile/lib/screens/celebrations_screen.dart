@@ -303,14 +303,18 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
   Widget _buildCelebrationTile(CelebrationEvent celebration, {bool showDate = false}) {
     final isBirthday = celebration.type == CelebrationType.birthday;
     final icon = isBirthday ? Icons.cake_outlined : Icons.favorite_border;
-    final color = isBirthday ? SanctuaryColors.gold : const Color(0xFFB83B5E);
-    final bg = isBirthday ? SanctuaryColors.goldSoft : const Color(0xFFFCEEF2);
+    final color = isBirthday ? BasilicaColors.gold : BasilicaColors.burgundy;
+    final bg = isBirthday ? BasilicaColors.gold.withAlpha(25) : BasilicaColors.burgundy.withAlpha(25);
     final subtitleText = showDate
         ? '${_formatCelebrationDate(celebration.date)} • ${celebration.milestoneLabel}'
         : celebration.milestoneLabel;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: BasilicaColors.borderSoft),
+      ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         leading: Container(
@@ -319,12 +323,13 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
           decoration: BoxDecoration(
             color: bg,
             borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withAlpha(40)),
           ),
           child: Icon(icon, color: color),
         ),
         title: Text(
           celebration.memberName,
-          style: const TextStyle(fontWeight: FontWeight.bold),
+          style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'serif'),
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -332,7 +337,7 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
             const SizedBox(height: 2),
             Text(
               subtitleText,
-              style: TextStyle(color: color, fontWeight: FontWeight.w500),
+              style: TextStyle(color: color, fontWeight: FontWeight.w500, fontFamily: 'serif'),
             ),
             if (!celebration.canMessageDirectly)
               const Text(
@@ -484,9 +489,32 @@ class _CelebrationsScreenState extends State<CelebrationsScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Celebrations & Blessings'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Celebrations & Blessings',
+              style: TextStyle(fontFamily: 'serif', fontWeight: FontWeight.bold),
+            ),
+            Text(
+              'Benedictiones & Festa Paroeciae',
+              style: TextStyle(
+                fontFamily: 'serif',
+                fontSize: 11,
+                letterSpacing: 0.8,
+                color: BasilicaColors.burgundy.withAlpha(180),
+              ),
+            ),
+          ],
+        ),
         bottom: TabBar(
           controller: _tabController,
+          indicatorColor: BasilicaColors.burgundy,
+          labelColor: BasilicaColors.burgundy,
+          unselectedLabelColor: BasilicaColors.inkMuted,
+          labelStyle: const TextStyle(fontFamily: 'serif', fontWeight: FontWeight.bold),
+          unselectedLabelStyle: const TextStyle(fontFamily: 'serif'),
           tabs: const [
             Tab(text: "Today's Celebrations"),
             Tab(text: 'Upcoming (7 Days)'),

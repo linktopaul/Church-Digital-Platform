@@ -1,103 +1,132 @@
 import 'package:flutter/material.dart';
 
-/// Shared "Warm Sanctuary" color tokens for the Church Digital Platform app.
+/// Roman Basilica & Sacred Sanctuary color tokens for Church Digital Platform.
 ///
-/// Combines deep sanctuary navy with a warm ivory canvas, gentle stone borders,
-/// brass/gold highlights for celebrations, and muted sage for giving verification.
-abstract final class SanctuaryColors {
-  static const Color navy = Color(0xFF2F5075);
-  static const Color navyDeep = Color(0xFF203956);
-  static const Color navySoft = Color(0xFFE7EEF6);
+/// Combines deep imperial Roman burgundy (#4E051A / #6B1D2F) with warm alabaster
+/// parchment (#FFF8F6), antique travertine stone (#F2E6E1 / #FDF1EC), marble
+/// hairline borders (#DAC0C2), Roman liturgical gold (#B8860B), sacred laurel
+/// olive (#2B6A4F), and deep warm sepia ink (#201A18).
+abstract final class BasilicaColors {
+  static const Color burgundy = Color(0xFF4E051A);
+  static const Color burgundyDeep = Color(0xFF360312);
+  static const Color burgundyContainer = Color(0xFF6B1D2F);
+  static const Color burgundySoft = Color(0xFFF8EBE6);
 
-  static const Color ivory = Color(0xFFFAF8F4);
+  static const Color parchment = Color(0xFFFFF8F6);
   static const Color surfaceCard = Color(0xFFFFFFFF);
-  static const Color stone = Color(0xFFF3EFE7);
-  static const Color borderSoft = Color(0xFFE3DDD1);
+  static const Color stone = Color(0xFFF2E6E1);
+  static const Color stoneLow = Color(0xFFFDF1EC);
+  static const Color borderSoft = Color(0xFFDAC0C2);
 
-  static const Color gold = Color(0xFFB57C24);
-  static const Color goldSoft = Color(0xFFFDF4E3);
+  static const Color gold = Color(0xFFB8860B);
+  static const Color goldLight = Color(0xFFFED488);
+  static const Color goldSoft = Color(0xFFFDF1EC);
 
-  static const Color sage = Color(0xFF2B6A4F);
-  static const Color sageSoft = Color(0xFFE9F4EE);
+  static const Color olive = Color(0xFF2B6A4F);
+  static const Color oliveSoft = Color(0xFFE9F4EE);
 
-  static const Color plum = Color(0xFF6E4B7F);
-  static const Color plumSoft = Color(0xFFF4EEF7);
+  static const Color porphyry = Color(0xFF6B1D2F);
+  static const Color porphyrySoft = Color(0xFFF8EBE6);
 
-  static const Color ink = Color(0xFF1F2937);
-  static const Color inkMuted = Color(0xFF5E6773);
+  static const Color ink = Color(0xFF201A18);
+  static const Color inkMuted = Color(0xFF544244);
 }
 
-/// Centralized Material 3 theme definition for Warm Sanctuary styling.
+/// Backward-compatible alias for existing Sanctuary color references.
+abstract final class SanctuaryColors {
+  static const Color navy = BasilicaColors.burgundy;
+  static const Color navyDeep = BasilicaColors.burgundyDeep;
+  static const Color navySoft = BasilicaColors.burgundySoft;
+
+  static const Color ivory = BasilicaColors.parchment;
+  static const Color surfaceCard = BasilicaColors.surfaceCard;
+  static const Color stone = BasilicaColors.stone;
+  static const Color borderSoft = BasilicaColors.borderSoft;
+
+  static const Color gold = BasilicaColors.gold;
+  static const Color goldSoft = BasilicaColors.goldSoft;
+
+  static const Color sage = BasilicaColors.olive;
+  static const Color sageSoft = BasilicaColors.oliveSoft;
+
+  static const Color plum = BasilicaColors.porphyry;
+  static const Color plumSoft = BasilicaColors.porphyrySoft;
+
+  static const Color ink = BasilicaColors.ink;
+  static const Color inkMuted = BasilicaColors.inkMuted;
+}
+
+/// Centralized Material 3 theme definition for the Roman Basilica aesthetic.
 abstract final class AppTheme {
   static ThemeData light() {
     final baseScheme = ColorScheme.fromSeed(
-      seedColor: SanctuaryColors.navy,
+      seedColor: BasilicaColors.burgundy,
       brightness: Brightness.light,
-      surface: SanctuaryColors.ivory,
+      surface: BasilicaColors.parchment,
     );
 
     final colorScheme = baseScheme.copyWith(
-      primary: SanctuaryColors.navy,
+      primary: BasilicaColors.burgundy,
       onPrimary: Colors.white,
-      primaryContainer: SanctuaryColors.navySoft,
-      onPrimaryContainer: SanctuaryColors.navyDeep,
-      secondary: SanctuaryColors.gold,
-      secondaryContainer: SanctuaryColors.goldSoft,
-      onSecondaryContainer: const Color(0xFF5D3E0D),
-      surface: SanctuaryColors.ivory,
-      surfaceContainerLowest: SanctuaryColors.surfaceCard,
-      surfaceContainerLow: SanctuaryColors.surfaceCard,
-      surfaceContainer: SanctuaryColors.stone,
-      surfaceContainerHighest: SanctuaryColors.stone,
-      outline: SanctuaryColors.borderSoft,
-      outlineVariant: SanctuaryColors.borderSoft,
-      onSurface: SanctuaryColors.ink,
-      onSurfaceVariant: SanctuaryColors.inkMuted,
+      primaryContainer: BasilicaColors.burgundySoft,
+      onPrimaryContainer: BasilicaColors.burgundyDeep,
+      secondary: BasilicaColors.gold,
+      secondaryContainer: BasilicaColors.goldLight,
+      onSecondaryContainer: const Color(0xFF3B2700),
+      surface: BasilicaColors.parchment,
+      surfaceContainerLowest: BasilicaColors.surfaceCard,
+      surfaceContainerLow: BasilicaColors.stoneLow,
+      surfaceContainer: BasilicaColors.stone,
+      surfaceContainerHighest: BasilicaColors.stone,
+      outline: BasilicaColors.borderSoft,
+      outlineVariant: BasilicaColors.borderSoft,
+      onSurface: BasilicaColors.ink,
+      onSurfaceVariant: BasilicaColors.inkMuted,
     );
 
     return ThemeData(
       useMaterial3: true,
-      fontFamily: 'Roboto',
+      fontFamily: 'serif',
       colorScheme: colorScheme,
-      scaffoldBackgroundColor: SanctuaryColors.ivory,
+      scaffoldBackgroundColor: BasilicaColors.parchment,
       appBarTheme: const AppBarTheme(
-        backgroundColor: SanctuaryColors.surfaceCard,
-        foregroundColor: SanctuaryColors.ink,
+        backgroundColor: BasilicaColors.surfaceCard,
+        foregroundColor: BasilicaColors.ink,
         elevation: 0,
         scrolledUnderElevation: 0,
         surfaceTintColor: Colors.transparent,
         centerTitle: false,
         titleTextStyle: TextStyle(
-          fontFamily: 'Roboto',
-          color: SanctuaryColors.ink,
+          fontFamily: 'serif',
+          color: BasilicaColors.ink,
           fontSize: 20,
           fontWeight: FontWeight.w700,
-          letterSpacing: -0.2,
+          letterSpacing: 0.5,
         ),
         shape: Border(
-          bottom: BorderSide(color: SanctuaryColors.borderSoft, width: 1),
+          bottom: BorderSide(color: BasilicaColors.borderSoft, width: 1),
         ),
       ),
       cardTheme: CardThemeData(
-        color: SanctuaryColors.surfaceCard,
+        color: BasilicaColors.surfaceCard,
         surfaceTintColor: Colors.transparent,
-        shadowColor: SanctuaryColors.navy.withValues(alpha: 0.08),
+        shadowColor: BasilicaColors.burgundy.withValues(alpha: 0.06),
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: SanctuaryColors.borderSoft, width: 1),
+          borderRadius: BorderRadius.circular(18),
+          side: const BorderSide(color: BasilicaColors.borderSoft, width: 1),
         ),
       ),
       dividerTheme: const DividerThemeData(
-        color: SanctuaryColors.borderSoft,
+        color: BasilicaColors.borderSoft,
         thickness: 1,
         space: 1,
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         elevation: 0,
         highlightElevation: 2,
-        backgroundColor: SanctuaryColors.navy,
+        backgroundColor: BasilicaColors.burgundy,
         foregroundColor: Colors.white,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
@@ -105,7 +134,7 @@ abstract final class AppTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          backgroundColor: SanctuaryColors.navy,
+          backgroundColor: BasilicaColors.burgundy,
           foregroundColor: Colors.white,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
@@ -113,15 +142,16 @@ abstract final class AppTheme {
             borderRadius: BorderRadius.circular(14),
           ),
           textStyle: const TextStyle(
-            fontFamily: 'Roboto',
-            fontWeight: FontWeight.w500,
+            fontFamily: 'serif',
+            fontWeight: FontWeight.w600,
             fontSize: 15,
+            letterSpacing: 0.5,
           ),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: SanctuaryColors.navy,
+          backgroundColor: BasilicaColors.burgundy,
           foregroundColor: Colors.white,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
@@ -129,41 +159,43 @@ abstract final class AppTheme {
             borderRadius: BorderRadius.circular(14),
           ),
           textStyle: const TextStyle(
-            fontFamily: 'Roboto',
-            fontWeight: FontWeight.w500,
+            fontFamily: 'serif',
+            fontWeight: FontWeight.w600,
             fontSize: 15,
+            letterSpacing: 0.5,
           ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: SanctuaryColors.navy,
-          side: const BorderSide(color: SanctuaryColors.borderSoft),
+          foregroundColor: BasilicaColors.burgundy,
+          side: const BorderSide(color: BasilicaColors.borderSoft),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
           ),
           textStyle: const TextStyle(
-            fontFamily: 'Roboto',
-            fontWeight: FontWeight.w500,
+            fontFamily: 'serif',
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.5,
           ),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: SanctuaryColors.surfaceCard,
+        fillColor: BasilicaColors.surfaceCard,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: SanctuaryColors.borderSoft),
+          borderSide: const BorderSide(color: BasilicaColors.borderSoft),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: SanctuaryColors.borderSoft),
+          borderSide: const BorderSide(color: BasilicaColors.borderSoft),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: SanctuaryColors.navy, width: 1.5),
+          borderSide: const BorderSide(color: BasilicaColors.burgundy, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
@@ -171,38 +203,49 @@ abstract final class AppTheme {
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: SanctuaryColors.surfaceCard,
+        backgroundColor: BasilicaColors.surfaceCard,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        indicatorColor: SanctuaryColors.navySoft,
+        indicatorColor: BasilicaColors.burgundySoft,
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           final isSelected = states.contains(WidgetState.selected);
           return TextStyle(
-            fontFamily: 'Roboto',
-            fontSize: 12,
+            fontFamily: 'serif',
+            fontSize: 11,
             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-            color: isSelected ? SanctuaryColors.navy : SanctuaryColors.inkMuted,
+            letterSpacing: 0.5,
+            color: isSelected ? BasilicaColors.burgundy : BasilicaColors.inkMuted,
           );
         }),
         iconTheme: WidgetStateProperty.resolveWith((states) {
           final isSelected = states.contains(WidgetState.selected);
           return IconThemeData(
-            color: isSelected ? SanctuaryColors.navy : SanctuaryColors.inkMuted,
+            color: isSelected ? BasilicaColors.burgundy : BasilicaColors.inkMuted,
           );
         }),
       ),
       tabBarTheme: const TabBarThemeData(
-        labelColor: SanctuaryColors.navy,
-        unselectedLabelColor: SanctuaryColors.inkMuted,
-        indicatorColor: SanctuaryColors.navy,
-        dividerColor: SanctuaryColors.borderSoft,
-        labelStyle: TextStyle(fontFamily: 'Roboto', fontWeight: FontWeight.w700, fontSize: 14),
-        unselectedLabelStyle: TextStyle(fontFamily: 'Roboto', fontWeight: FontWeight.w500, fontSize: 14),
+        labelColor: BasilicaColors.burgundy,
+        unselectedLabelColor: BasilicaColors.inkMuted,
+        indicatorColor: BasilicaColors.burgundy,
+        dividerColor: BasilicaColors.borderSoft,
+        labelStyle: TextStyle(
+          fontFamily: 'serif',
+          fontWeight: FontWeight.w700,
+          fontSize: 13,
+          letterSpacing: 0.6,
+        ),
+        unselectedLabelStyle: TextStyle(
+          fontFamily: 'serif',
+          fontWeight: FontWeight.w500,
+          fontSize: 13,
+          letterSpacing: 0.6,
+        ),
       ),
       chipTheme: ChipThemeData(
-        backgroundColor: SanctuaryColors.stone,
-        selectedColor: SanctuaryColors.navySoft,
-        side: const BorderSide(color: SanctuaryColors.borderSoft),
+        backgroundColor: BasilicaColors.stone,
+        selectedColor: BasilicaColors.burgundySoft,
+        side: const BorderSide(color: BasilicaColors.borderSoft),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
       snackBarTheme: SnackBarThemeData(
@@ -213,7 +256,7 @@ abstract final class AppTheme {
   }
 }
 
-/// Soft pill status badge reused across announcements, prayer, giving, and worship screens.
+/// Pill status badge for liturgical tags, urgency, and category indicators.
 class SanctuaryStatusBadge extends StatelessWidget {
   final String label;
   final Color foregroundColor;
@@ -235,19 +278,25 @@ class SanctuaryStatusBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: backgroundColor,
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: foregroundColor.withValues(alpha: 0.2),
+          width: 0.8,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 13, color: foregroundColor),
+            Icon(icon, size: 12, color: foregroundColor),
             const SizedBox(width: 4),
           ],
           Text(
             label,
             style: TextStyle(
-              fontSize: 12,
+              fontFamily: 'serif',
+              fontSize: 11,
               fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
               color: foregroundColor,
             ),
           ),
@@ -257,7 +306,7 @@ class SanctuaryStatusBadge extends StatelessWidget {
   }
 }
 
-/// Clean section header with optional trailing count pill or action widget.
+/// Clean section header with classical Roman small-caps styling.
 class SanctuarySectionHeader extends StatelessWidget {
   final String title;
   final String? subtitle;
@@ -282,9 +331,11 @@ class SanctuarySectionHeader extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: theme.textTheme.titleLarge?.copyWith(
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontFamily: 'serif',
                   fontWeight: FontWeight.w700,
-                  color: SanctuaryColors.ink,
+                  letterSpacing: 0.8,
+                  color: BasilicaColors.burgundy,
                 ),
               ),
               if (subtitle != null) ...[
@@ -292,7 +343,9 @@ class SanctuarySectionHeader extends StatelessWidget {
                 Text(
                   subtitle!,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: SanctuaryColors.inkMuted,
+                    fontFamily: 'serif',
+                    fontStyle: FontStyle.italic,
+                    color: BasilicaColors.inkMuted,
                   ),
                 ),
               ],
@@ -305,7 +358,7 @@ class SanctuarySectionHeader extends StatelessWidget {
   }
 }
 
-/// Friendly warm-tinted empty state card with icon emblem and optional action button.
+/// Dignified Roman Basilica empty state card with icon emblem and optional action button.
 class SanctuaryEmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -327,31 +380,34 @@ class SanctuaryEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final fg = accentColor ?? SanctuaryColors.navy;
-    final bg = accentBackground ?? SanctuaryColors.navySoft;
+    final fg = accentColor ?? BasilicaColors.burgundy;
+    final bg = accentBackground ?? BasilicaColors.burgundySoft;
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 56,
-              height: 56,
+              width: 58,
+              height: 58,
               decoration: BoxDecoration(
                 color: bg,
                 shape: BoxShape.circle,
+                border: Border.all(color: fg.withValues(alpha: 0.2)),
               ),
               child: Icon(icon, size: 28, color: fg),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
             Text(
               title,
               textAlign: TextAlign.center,
               style: theme.textTheme.titleMedium?.copyWith(
+                fontFamily: 'serif',
                 fontWeight: FontWeight.w700,
-                color: SanctuaryColors.ink,
+                letterSpacing: 0.5,
+                color: BasilicaColors.ink,
               ),
             ),
             const SizedBox(height: 6),
@@ -359,16 +415,90 @@ class SanctuaryEmptyState extends StatelessWidget {
               description,
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: SanctuaryColors.inkMuted,
-                height: 1.4,
+                fontFamily: 'serif',
+                color: BasilicaColors.inkMuted,
+                height: 1.45,
               ),
             ),
             if (action != null) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: 18),
               action!,
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Roman liturgical scripture quote card (Inscriptio Sacra / Benediction banner).
+class BasilicaVerseCard extends StatelessWidget {
+  final String quote;
+  final String attribution;
+  final String? rubric;
+
+  const BasilicaVerseCard({
+    super.key,
+    required this.quote,
+    required this.attribution,
+    this.rubric,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+      decoration: BoxDecoration(
+        color: BasilicaColors.stoneLow,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: BasilicaColors.borderSoft),
+      ),
+      child: Column(
+        children: [
+          const Icon(
+            Icons.church_outlined,
+            size: 24,
+            color: BasilicaColors.gold,
+          ),
+          const SizedBox(height: 10),
+          if (rubric != null) ...[
+            Text(
+              rubric!.toUpperCase(),
+              style: const TextStyle(
+                fontFamily: 'serif',
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.2,
+                color: BasilicaColors.gold,
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+          Text(
+            '« $quote »',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: 'serif',
+              fontSize: 15,
+              fontStyle: FontStyle.italic,
+              height: 1.5,
+              color: BasilicaColors.burgundy,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '— $attribution',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: 'serif',
+              fontSize: 12.5,
+              fontStyle: FontStyle.italic,
+              color: BasilicaColors.inkMuted,
+            ),
+          ),
+        ],
       ),
     );
   }

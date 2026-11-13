@@ -534,14 +534,35 @@ class _OfferingsScreenState extends State<OfferingsScreen> with TickerProviderSt
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Digital Offerings & Giving',
-          overflow: TextOverflow.ellipsis,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Digital Offerings & Giving',
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontFamily: 'serif', fontWeight: FontWeight.bold),
+            ),
+            Text(
+              'Caritas Romana · Oblationes & Eleemosynae',
+              style: TextStyle(
+                fontFamily: 'serif',
+                fontSize: 11,
+                letterSpacing: 0.8,
+                color: BasilicaColors.burgundy.withAlpha(180),
+              ),
+            ),
+          ],
         ),
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
           tabAlignment: TabAlignment.start,
+          indicatorColor: BasilicaColors.burgundy,
+          labelColor: BasilicaColors.burgundy,
+          unselectedLabelColor: BasilicaColors.inkMuted,
+          labelStyle: const TextStyle(fontFamily: 'serif', fontWeight: FontWeight.bold),
+          unselectedLabelStyle: const TextStyle(fontFamily: 'serif'),
           tabs: [
             const Tab(text: 'Give Now'),
             const Tab(text: 'My Giving'),
@@ -573,20 +594,25 @@ class _OfferingsScreenState extends State<OfferingsScreen> with TickerProviderSt
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Card(
-                color: SanctuaryColors.sageSoft,
+                color: BasilicaColors.stone,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: const BorderSide(color: BasilicaColors.borderSoft),
+                ),
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(12),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Container(
-                        width: 44,
-                        height: 44,
+                        width: 40,
+                        height: 40,
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
+                          color: BasilicaColors.burgundy,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: BasilicaColors.gold.withAlpha(120)),
                         ),
-                        child: const Icon(Icons.qr_code_2, color: SanctuaryColors.sage),
+                        child: const Icon(Icons.qr_code_2, color: Colors.white, size: 22),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -597,17 +623,18 @@ class _OfferingsScreenState extends State<OfferingsScreen> with TickerProviderSt
                               'Support the Church Ministry',
                               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                     fontWeight: FontWeight.w700,
-                                    color: SanctuaryColors.ink,
+                                    fontFamily: 'serif',
+                                    color: BasilicaColors.burgundy,
                                   ),
                             ),
-                            const SizedBox(height: 4),
+                            const SizedBox(height: 2),
                             Text(
                               _config != null
                                   ? 'UPI ID: ${_config!.upiId} (${_config!.payeeName})'
                                   : 'Give faithfully and cheerfully via UPI instant transfer.',
                               style: const TextStyle(
-                                fontSize: 13,
-                                color: SanctuaryColors.inkMuted,
+                                fontSize: 12,
+                                color: BasilicaColors.inkMuted,
                               ),
                             ),
                           ],
@@ -617,7 +644,7 @@ class _OfferingsScreenState extends State<OfferingsScreen> with TickerProviderSt
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
 
               DropdownButtonFormField<OfferingFundType>(
                 isExpanded: true,
@@ -929,7 +956,7 @@ class _OfferingsScreenState extends State<OfferingsScreen> with TickerProviderSt
                     'Total Given',
                     '₹${_ledgerSummary!.totalAmount.toStringAsFixed(0)}',
                     '${_ledgerSummary!.totalCount} records',
-                    Colors.blue,
+                    BasilicaColors.burgundy,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -938,7 +965,7 @@ class _OfferingsScreenState extends State<OfferingsScreen> with TickerProviderSt
                     'Verified',
                     '₹${_ledgerSummary!.verifiedAmount.toStringAsFixed(0)}',
                     'Audited',
-                    Colors.green,
+                    BasilicaColors.olive,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -947,7 +974,7 @@ class _OfferingsScreenState extends State<OfferingsScreen> with TickerProviderSt
                     'Pending',
                     '₹${_ledgerSummary!.pendingAmount.toStringAsFixed(0)}',
                     'To Verify',
-                    Colors.orange,
+                    BasilicaColors.gold,
                   ),
                 ),
               ],

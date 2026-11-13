@@ -556,18 +556,22 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                       width: 44,
                                       height: 44,
                                       decoration: BoxDecoration(
-                                        color: SanctuaryColors.navySoft,
+                                        color: BasilicaColors.stone,
                                         borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(color: BasilicaColors.borderSoft),
                                       ),
                                       child: Icon(
                                         _getCategoryIcon(group.category),
-                                        color: SanctuaryColors.navy,
+                                        color: BasilicaColors.burgundy,
                                       ),
                                     ),
                                     title: Text(
                                       group.name,
                                       style: const TextStyle(
-                                          fontWeight: FontWeight.bold),
+                                        fontWeight: FontWeight.bold,
+                                        fontFamily: 'serif',
+                                        color: BasilicaColors.burgundy,
+                                      ),
                                     ),
                                     subtitle: Column(
                                       crossAxisAlignment:
@@ -577,9 +581,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                           _getCategoryLabel(group.category),
                                           style: TextStyle(
                                             fontSize: 12,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .primary,
+                                            fontFamily: 'serif',
+                                            color: BasilicaColors.burgundy.withAlpha(200),
                                             fontWeight: FontWeight.w600,
                                           ),
                                         ),
@@ -597,11 +600,15 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                               const Icon(Icons.access_time,
                                                   size: 14, color: Colors.grey),
                                               const SizedBox(width: 4),
-                                              Text(
-                                                group.meetingSchedule!,
-                                                style: const TextStyle(
-                                                    fontSize: 12,
-                                                    color: Colors.grey),
+                                              Expanded(
+                                                child: Text(
+                                                  group.meetingSchedule!,
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                      fontSize: 12,
+                                                      color: Colors.grey),
+                                                ),
                                               ),
                                             ],
                                           ),
