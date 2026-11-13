@@ -150,37 +150,43 @@ class _HomeScreenState extends State<HomeScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'PAX CHRISTI',
-                      style: TextStyle(
-                        fontFamily: 'serif',
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.5,
-                        color: BasilicaColors.burgundy,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: const [
-                        Icon(Icons.church_outlined, size: 14, color: BasilicaColors.gold),
-                        SizedBox(width: 4),
-                        Text(
-                          'Basilica Maior · Missa & Vesperae',
-                          style: TextStyle(
-                            fontFamily: 'serif',
-                            fontSize: 12,
-                            fontStyle: FontStyle.italic,
-                            color: BasilicaColors.inkMuted,
-                          ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'PAX CHRISTI',
+                        style: TextStyle(
+                          fontFamily: 'serif',
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.5,
+                          color: BasilicaColors.burgundy,
                         ),
-                      ],
-                    ),
-                  ],
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: const [
+                          Icon(Icons.church_outlined, size: 14, color: BasilicaColors.gold),
+                          SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              'Basilica Maior · Missa & Vesperae',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontFamily: 'serif',
+                                fontSize: 12,
+                                fontStyle: FontStyle.italic,
+                                color: BasilicaColors.inkMuted,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Container(
                   width: 40,
                   height: 40,
@@ -215,26 +221,30 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: BasilicaColors.gold.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: BasilicaColors.gold.withValues(alpha: 0.4)),
-                        ),
-                        child: const Text(
-                          'MISSA SOLEMNIS & CHORALIS',
-                          style: TextStyle(
-                            fontFamily: 'serif',
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1.0,
-                            color: BasilicaColors.goldLight,
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: BasilicaColors.gold.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: BasilicaColors.gold.withValues(alpha: 0.4)),
+                          ),
+                          child: const Text(
+                            'MISSA SOLEMNIS',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'serif',
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.0,
+                              color: BasilicaColors.goldLight,
+                            ),
                           ),
                         ),
                       ),
-                      const Spacer(),
+                      const SizedBox(width: 8),
                       const Text(
                         'ORDO MISSAE',
                         style: TextStyle(

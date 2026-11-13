@@ -1051,10 +1051,16 @@ class _WorshipScreenState extends State<WorshipScreen>
                 iconMargin: EdgeInsets.zero,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.library_music),
-                    SizedBox(width: 8),
-                    Text('Song Library'),
+                    Icon(Icons.library_music, size: 18),
+                    SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'Song Library',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1062,10 +1068,16 @@ class _WorshipScreenState extends State<WorshipScreen>
                 iconMargin: EdgeInsets.zero,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.playlist_play),
-                    SizedBox(width: 8),
-                    Text('Sunday Setlists'),
+                    Icon(Icons.playlist_play, size: 20),
+                    SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'Sunday Setlists',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ],
                 ),
               ),

@@ -600,11 +600,15 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                               const Icon(Icons.access_time,
                                                   size: 14, color: Colors.grey),
                                               const SizedBox(width: 4),
-                                              Text(
-                                                group.meetingSchedule!,
-                                                style: const TextStyle(
-                                                    fontSize: 12,
-                                                    color: Colors.grey),
+                                              Expanded(
+                                                child: Text(
+                                                  group.meetingSchedule!,
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                      fontSize: 12,
+                                                      color: Colors.grey),
+                                                ),
                                               ),
                                             ],
                                           ),
