@@ -232,7 +232,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             border: Border.all(color: BasilicaColors.gold.withValues(alpha: 0.4)),
                           ),
                           child: const Text(
-                            'MISSA SOLEMNIS',
+                            'COMMUNIO & ORATIO',
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontFamily: 'serif',
@@ -246,7 +246,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(width: 8),
                       const Text(
-                        'ORDO MISSAE',
+                        'SANCTUARIUM',
                         style: TextStyle(
                           fontFamily: 'serif',
                           fontSize: 10.5,
@@ -258,7 +258,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(height: 10),
                   const Text(
-                    'Solemn Pontifical Mass & Gregorian Chants',
+                    'Welcome to Church Digital Platform',
                     style: TextStyle(
                       fontFamily: 'serif',
                       fontSize: 17,
@@ -269,7 +269,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Celebrant: Canon Marco Bellini · Schola Cantorum singing Palestrina in sacred harmony.',
+                    'United in prayer, word, and fellowship. Explore today\'s parish announcements and celebrations below.',
                     style: TextStyle(
                       fontFamily: 'serif',
                       fontSize: 12,
@@ -280,29 +280,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 10),
                   Row(
                     children: [
-                      const Icon(Icons.schedule, size: 13, color: BasilicaColors.goldLight),
-                      const SizedBox(width: 4),
+                      const Icon(Icons.church_outlined, size: 14, color: BasilicaColors.goldLight),
+                      const SizedBox(width: 6),
                       Text(
-                        'Domenica 10:30 CET',
+                        'Parish Fellowship & Sacred Liturgy',
                         style: TextStyle(
                           fontFamily: 'serif',
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
                           color: Colors.white.withValues(alpha: 0.9),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      const Icon(Icons.location_on_outlined, size: 13, color: BasilicaColors.goldLight),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          'Pantheon & Main Nave',
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontFamily: 'serif',
-                            fontSize: 11.5,
-                            color: Colors.white.withValues(alpha: 0.85),
-                          ),
                         ),
                       ),
                     ],
