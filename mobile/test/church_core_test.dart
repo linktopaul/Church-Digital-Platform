@@ -48,7 +48,16 @@ void main() {
       expect(custom.id, 'custom-church');
       expect(custom.displayName, 'Midnight Cathedral');
       expect(custom.primary, const Color(0xFF0F172A));
+      expect(custom.onPrimary, Colors.white);
       expect(custom.fontFamily, 'serif');
+    });
+
+    test('fromSeed produces dark onPrimary when given light primary color', () {
+      final lightSeed = ChurchThemeConfig.fromSeed(
+        primary: const Color(0xFFFEF08A), // Light yellow
+        displayName: 'Light Sanctuary',
+      );
+      expect(lightSeed.onPrimary, const Color(0xFF111827));
     });
   });
 

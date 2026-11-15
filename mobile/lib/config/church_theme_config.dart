@@ -171,12 +171,17 @@ class ChurchThemeConfig {
       brightness: Brightness.light,
     );
 
+    final computedOnPrimary =
+        ThemeData.estimateBrightnessForColor(primary) == Brightness.dark
+            ? Colors.white
+            : const Color(0xFF111827);
+
     return ChurchThemeConfig(
       id: id,
       displayName: displayName,
       primary: primary,
       primaryContainer: scheme.primaryContainer,
-      onPrimary: scheme.onPrimary,
+      onPrimary: computedOnPrimary,
       onPrimaryContainer: scheme.onPrimaryContainer,
       secondary: accent ?? scheme.secondary,
       secondaryContainer: scheme.secondaryContainer,

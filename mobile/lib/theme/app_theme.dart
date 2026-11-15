@@ -228,7 +228,7 @@ abstract final class AppTheme {
         iconTheme: WidgetStateProperty.resolveWith((states) {
           final isSelected = states.contains(WidgetState.selected);
           return IconThemeData(
-            color: isSelected ? config.primary : config.inkMuted,
+            color: isSelected ? config.onPrimaryContainer : config.inkMuted,
           );
         }),
       ),
