@@ -90,7 +90,7 @@ abstract final class AppTheme {
       onSurfaceVariant: config.inkMuted,
     );
 
-    final font = config.fontFamily ?? 'serif';
+    final font = config.fontFamily;
 
     return ThemeData(
       useMaterial3: true,
@@ -255,6 +255,15 @@ abstract final class AppTheme {
         selectedColor: config.primaryContainer,
         side: BorderSide(color: config.hairlineBorder),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        labelStyle: TextStyle(
+          fontFamily: font,
+          color: config.ink,
+        ),
+        secondaryLabelStyle: TextStyle(
+          fontFamily: font,
+          color: config.onPrimaryContainer,
+        ),
+        checkmarkColor: config.onPrimaryContainer,
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
