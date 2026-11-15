@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../config/church_theme_config.dart';
+
 /// Roman Basilica & Sacred Sanctuary color tokens for Church Digital Platform.
 ///
 /// Combines deep imperial Roman burgundy (#4E051A / #6B1D2F) with warm alabaster
@@ -56,93 +58,99 @@ abstract final class SanctuaryColors {
   static const Color inkMuted = BasilicaColors.inkMuted;
 }
 
-/// Centralized Material 3 theme definition for the Roman Basilica aesthetic.
+/// Centralized Material 3 theme definition for church applications.
 abstract final class AppTheme {
-  static ThemeData light() {
+  /// Default Roman Basilica theme for backward compatibility.
+  static ThemeData light() => fromConfig(ChurchThemeConfig.romanBasilica());
+
+  /// Builds a cohesive Material 3 [ThemeData] tailored to a specific [ChurchThemeConfig].
+  static ThemeData fromConfig(ChurchThemeConfig config) {
     final baseScheme = ColorScheme.fromSeed(
-      seedColor: BasilicaColors.burgundy,
+      seedColor: config.primary,
       brightness: Brightness.light,
-      surface: BasilicaColors.parchment,
+      surface: config.scaffoldBackground,
     );
 
     final colorScheme = baseScheme.copyWith(
-      primary: BasilicaColors.burgundy,
-      onPrimary: Colors.white,
-      primaryContainer: BasilicaColors.burgundySoft,
-      onPrimaryContainer: BasilicaColors.burgundyDeep,
-      secondary: BasilicaColors.gold,
-      secondaryContainer: BasilicaColors.goldLight,
+      primary: config.primary,
+      onPrimary: config.onPrimary,
+      primaryContainer: config.primaryContainer,
+      onPrimaryContainer: config.onPrimaryContainer,
+      secondary: config.secondary,
+      secondaryContainer: config.secondaryContainer,
       onSecondaryContainer: const Color(0xFF3B2700),
-      surface: BasilicaColors.parchment,
-      surfaceContainerLowest: BasilicaColors.surfaceCard,
-      surfaceContainerLow: BasilicaColors.stoneLow,
-      surfaceContainer: BasilicaColors.stone,
-      surfaceContainerHighest: BasilicaColors.stone,
-      outline: BasilicaColors.borderSoft,
-      outlineVariant: BasilicaColors.borderSoft,
-      onSurface: BasilicaColors.ink,
-      onSurfaceVariant: BasilicaColors.inkMuted,
+      surface: config.scaffoldBackground,
+      surfaceContainerLowest: config.cardBackground,
+      surfaceContainerLow: config.containerLow,
+      surfaceContainer: config.containerBackground,
+      surfaceContainerHighest: config.containerBackground,
+      outline: config.hairlineBorder,
+      outlineVariant: config.hairlineBorder,
+      onSurface: config.ink,
+      onSurfaceVariant: config.inkMuted,
     );
+
+    final font = config.fontFamily ?? 'serif';
 
     return ThemeData(
       useMaterial3: true,
-      fontFamily: 'serif',
+      fontFamily: font,
       colorScheme: colorScheme,
-      scaffoldBackgroundColor: BasilicaColors.parchment,
-      appBarTheme: const AppBarTheme(
-        backgroundColor: BasilicaColors.surfaceCard,
-        foregroundColor: BasilicaColors.ink,
+      scaffoldBackgroundColor: config.scaffoldBackground,
+      appBarTheme: AppBarTheme(
+        backgroundColor: config.cardBackground,
+        foregroundColor: config.ink,
         elevation: 0,
         scrolledUnderElevation: 0,
         surfaceTintColor: Colors.transparent,
         centerTitle: false,
         titleTextStyle: TextStyle(
-          fontFamily: 'serif',
-          color: BasilicaColors.ink,
+          fontFamily: font,
+          color: config.ink,
           fontSize: 20,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.5,
         ),
         shape: Border(
-          bottom: BorderSide(color: BasilicaColors.borderSoft, width: 1),
+          bottom: BorderSide(color: config.hairlineBorder, width: 1),
         ),
       ),
       cardTheme: CardThemeData(
-        color: BasilicaColors.surfaceCard,
+        color: config.cardBackground,
         surfaceTintColor: Colors.transparent,
-        shadowColor: BasilicaColors.burgundy.withValues(alpha: 0.06),
+        shadowColor: config.primary.withValues(alpha: 0.06),
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: const BorderSide(color: BasilicaColors.borderSoft, width: 1),
+          borderRadius: BorderRadius.circular(config.cardRadius),
+          side: BorderSide(color: config.hairlineBorder, width: 1),
         ),
       ),
-      dividerTheme: const DividerThemeData(
-        color: BasilicaColors.borderSoft,
+      dividerTheme: DividerThemeData(
+        color: config.hairlineBorder,
         thickness: 1,
         space: 1,
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         elevation: 0,
         highlightElevation: 2,
-        backgroundColor: BasilicaColors.burgundy,
-        foregroundColor: Colors.white,
+        backgroundColor: config.primary,
+        foregroundColor: config.onPrimary,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          backgroundColor: BasilicaColors.burgundy,
-          foregroundColor: Colors.white,
+          backgroundColor: config.primary,
+          foregroundColor: config.onPrimary,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
-          textStyle: const TextStyle(
-            fontFamily: 'serif',
+          textStyle: TextStyle(
+            fontFamily: font,
             fontWeight: FontWeight.w600,
             fontSize: 15,
             letterSpacing: 0.5,
@@ -151,15 +159,15 @@ abstract final class AppTheme {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: BasilicaColors.burgundy,
-          foregroundColor: Colors.white,
+          backgroundColor: config.primary,
+          foregroundColor: config.onPrimary,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
-          textStyle: const TextStyle(
-            fontFamily: 'serif',
+          textStyle: TextStyle(
+            fontFamily: font,
             fontWeight: FontWeight.w600,
             fontSize: 15,
             letterSpacing: 0.5,
@@ -168,14 +176,14 @@ abstract final class AppTheme {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: BasilicaColors.burgundy,
-          side: const BorderSide(color: BasilicaColors.borderSoft),
+          foregroundColor: config.primary,
+          side: BorderSide(color: config.hairlineBorder),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
-          textStyle: const TextStyle(
-            fontFamily: 'serif',
+          textStyle: TextStyle(
+            fontFamily: font,
             fontWeight: FontWeight.w600,
             letterSpacing: 0.5,
           ),
@@ -183,19 +191,19 @@ abstract final class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: BasilicaColors.surfaceCard,
+        fillColor: config.cardBackground,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: BasilicaColors.borderSoft),
+          borderSide: BorderSide(color: config.hairlineBorder),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: BasilicaColors.borderSoft),
+          borderSide: BorderSide(color: config.hairlineBorder),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: BasilicaColors.burgundy, width: 1.5),
+          borderSide: BorderSide(color: config.primary, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
@@ -203,49 +211,49 @@ abstract final class AppTheme {
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: BasilicaColors.surfaceCard,
+        backgroundColor: config.cardBackground,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        indicatorColor: BasilicaColors.burgundySoft,
+        indicatorColor: config.primaryContainer,
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           final isSelected = states.contains(WidgetState.selected);
           return TextStyle(
-            fontFamily: 'serif',
+            fontFamily: font,
             fontSize: 11,
             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
             letterSpacing: 0.5,
-            color: isSelected ? BasilicaColors.burgundy : BasilicaColors.inkMuted,
+            color: isSelected ? config.primary : config.inkMuted,
           );
         }),
         iconTheme: WidgetStateProperty.resolveWith((states) {
           final isSelected = states.contains(WidgetState.selected);
           return IconThemeData(
-            color: isSelected ? BasilicaColors.burgundy : BasilicaColors.inkMuted,
+            color: isSelected ? config.primary : config.inkMuted,
           );
         }),
       ),
-      tabBarTheme: const TabBarThemeData(
-        labelColor: BasilicaColors.burgundy,
-        unselectedLabelColor: BasilicaColors.inkMuted,
-        indicatorColor: BasilicaColors.burgundy,
-        dividerColor: BasilicaColors.borderSoft,
+      tabBarTheme: TabBarThemeData(
+        labelColor: config.primary,
+        unselectedLabelColor: config.inkMuted,
+        indicatorColor: config.primary,
+        dividerColor: config.hairlineBorder,
         labelStyle: TextStyle(
-          fontFamily: 'serif',
+          fontFamily: font,
           fontWeight: FontWeight.w700,
           fontSize: 13,
           letterSpacing: 0.6,
         ),
         unselectedLabelStyle: TextStyle(
-          fontFamily: 'serif',
+          fontFamily: font,
           fontWeight: FontWeight.w500,
           fontSize: 13,
           letterSpacing: 0.6,
         ),
       ),
       chipTheme: ChipThemeData(
-        backgroundColor: BasilicaColors.stone,
-        selectedColor: BasilicaColors.burgundySoft,
-        side: const BorderSide(color: BasilicaColors.borderSoft),
+        backgroundColor: config.containerBackground,
+        selectedColor: config.primaryContainer,
+        side: BorderSide(color: config.hairlineBorder),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
       snackBarTheme: SnackBarThemeData(
