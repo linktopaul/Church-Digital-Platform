@@ -37,15 +37,15 @@ jobs:
         uses: actions/github-script@v7
         env:
           COORDINATOR_TOKEN: ${{ secrets.PR_BRANCH_UPDATE_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run != false }}
         with:
           github-token: ${{ secrets.PR_BRANCH_UPDATE_TOKEN || github.token }}
           script: |
             const {run}=require(process.cwd()+'/.github/delivery/run.cjs');
-            const dryRun=process.env.DRY_RUN==='true';
-            if (!dryRun && !process.env.COORDINATOR_TOKEN) throw new Error('Owner dispatch token missing; no work dispatched');
-            const client=github;
-            await run({github:client,context,core,dryRun});
+            const dispatchBlocker = process.env.COORDINATOR_TOKEN ? null : 'Owner dispatch token missing';
+            const requestedDryRun = process.env.DRY_RUN === 'true';
+            await run({github, context, core, dryRun: requestedDryRun || Boolean(dispatchBlocker), dispatchBlocker});
+            if (!requestedDryRun && dispatchBlocker) core.setFailed(dispatchBlocker);
       - uses: actions/upload-artifact@v4
         if: always()
         with:
