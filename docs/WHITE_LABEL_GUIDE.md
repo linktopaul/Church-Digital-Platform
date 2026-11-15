@@ -44,7 +44,7 @@ cd church_grace_community
 ```
 
 ### Step 2: Configure `pubspec.yaml`
-Add `church_core` directly from your Git repository:
+Add the mobile core package directly from your Git repository:
 
 ```yaml
 name: grace_community_app
@@ -60,14 +60,13 @@ dependencies:
   flutter:
     sdk: flutter
   # Reusable core platform engine
-  church_core:
+  church_digital_platform_mobile:
     git:
       url: https://github.com/linktopaul/Church-Digital-Platform.git
       path: mobile
       ref: main # Or pin to a release tag: v1.0.0
 
-  flutter_secure_storage: ^9.0.0
-  shared_preferences: ^2.2.2
+  shared_preferences: ^2.5.6
 ```
 
 ### Step 3: Define Church Configuration (`lib/config/church_config.dart`)
@@ -75,7 +74,7 @@ Define the church identity, branding tokens, UPI payment routing, and liturgical
 
 ```dart
 import 'package:flutter/material.dart';
-import 'package:church_core/church_core.dart';
+import 'package:church_digital_platform_mobile/church_core.dart';
 
 class GraceChurchProfile {
   static final theme = ChurchThemeConfig.warmSanctuary();
@@ -103,7 +102,7 @@ class GraceChurchProfile {
 ### Step 4: Bootstrap `main.dart`
 ```dart
 import 'package:flutter/material.dart';
-import 'package:church_core/church_core.dart';
+import 'package:church_digital_platform_mobile/church_core.dart';
 import 'config/church_config.dart';
 
 void main() async {
@@ -117,7 +116,7 @@ class GraceChurchApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: GraceChurchProfile.profile.name,
+      title: GraceChurchProfile.profile.churchName,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.fromConfig(GraceChurchProfile.theme),
       home: const ChurchRootGateway(
